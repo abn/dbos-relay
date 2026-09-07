@@ -1,0 +1,23 @@
+# Documentation update log
+
+This log tracks the evolution of the knowledge base: page additions,
+deprecations, and structural refactors. It does not track software releases or
+implementation milestones; those belong in the commit history.
+
+## 2026-09-07
+
+* **Creation**: Opened the bundle with the operational baseline. Added the
+  root index, this log, the [overview](overview.md), the design section
+  ([goals](design/goals.md), [compatibility
+  tiers](design/compatibility-tiers.md), [terminology](design/terminology.md)),
+  the architecture section ([components](architecture/components.md),
+  [recovery](architecture/recovery.md)), the first two decision records, and
+  the contribution section ([guide](contribution/guide.md), [clean-room
+  rules](contribution/clean-room.md), [maintainer
+  guide](contribution/maintainers.md)).
+* **Note**: The bundle deliberately has no usage or reference section yet.
+  There is nothing to run, so a page describing how to run it would be
+  fiction. Both sections open when the first binary does.
+* **Note**: Every architecture page describes an intended design, not shipped
+  behaviour, and says so. Pages are rewritten against the code as the code
+  lands.
