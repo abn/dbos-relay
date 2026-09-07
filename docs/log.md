@@ -6,11 +6,18 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Opened the [discovery](discovery/index.md) section and its
+  [provenance ledger](discovery/provenance.md) recording permitted public
+  sources for clean-room derivation.
+* **Creation**: Opened the [protocol](protocol/index.md) section index for the
+  executor WebSocket specification and wire mappings.
 * **Creation**: Added [ADR 0003](adr/0003-implementation-language.md)
   recording Go as the implementation language, which closes the stack question
   discovery item D1 was opened to answer. The record also fixes the supporting
   library choices, including the corrected import path for the WebSocket
   library, whose old path appears in older design notes.
+* **Update**: Linked both discovery and protocol sections from the root
+  [index](index.md).
 * **Update**: [Components](architecture/components.md) now names the planned
   Go package for each module. The page still describes an intended design, and
   says so.

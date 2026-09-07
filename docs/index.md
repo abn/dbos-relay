@@ -23,6 +23,17 @@ the implementation does.
 * [Clean-room rules](contribution/clean-room.md) - the sourcing rules that
   bind every contributor
 
+## Discovery
+
+* [Discovery overview](discovery/index.md) - phase 0 discovery findings
+* [Provenance ledger](discovery/provenance.md) - permitted sources for every
+  claim
+
+## Protocol
+
+* [Protocol overview](protocol/index.md) - executor WebSocket protocol
+  specification
+
 ## Design
 
 * [Design overview](design/index.md) - the high-level approach
