@@ -7,7 +7,6 @@ consequences. One decision per file, added as the project makes them.
   permitted sources
 * [ADR 0002](0002-licence-and-project-naming.md) - MIT licence and naming
   constraints
+* [ADR 0003](0003-implementation-language.md) - implementation language
 
-Open decisions that have not been made yet are not recorded here. The
-implementation language, in particular, is chosen during discovery and gets a
-record when it is decided.
+Open decisions that have not been made yet are not recorded here.

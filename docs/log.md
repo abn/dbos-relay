@@ -4,6 +4,17 @@ This log tracks the evolution of the knowledge base: page additions,
 deprecations, and structural refactors. It does not track software releases or
 implementation milestones; those belong in the commit history.
 
+## 2026-09-08
+
+* **Creation**: Added [ADR 0003](adr/0003-implementation-language.md)
+  recording Go as the implementation language, which closes the stack question
+  discovery item D1 was opened to answer. The record also fixes the supporting
+  library choices, including the corrected import path for the WebSocket
+  library, whose old path appears in older design notes.
+* **Update**: [Components](architecture/components.md) now names the planned
+  Go package for each module. The page still describes an intended design, and
+  says so.
+
 ## 2026-09-07
 
 * **Creation**: Opened the bundle with the operational baseline. Added the
