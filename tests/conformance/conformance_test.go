@@ -147,6 +147,30 @@ func (m *inMemoryStore) RevokeAPIKey(_ context.Context, arg storegen.RevokeAPIKe
 	return storegen.ApiKey{}, fmt.Errorf("token not found")
 }
 
+func (m *inMemoryStore) CreateAlertingRule(_ context.Context, arg storegen.CreateAlertingRuleParams) (storegen.AlertingRule, error) {
+	return storegen.AlertingRule{
+		ID:                     pgtype.UUID{Bytes: [16]byte{1, 1, 1}, Valid: true},
+		ApplicationID:          arg.ApplicationID,
+		ReceivingApplicationID: arg.ReceivingApplicationID,
+		RuleType:               arg.RuleType,
+		RuleMetadata:           arg.RuleMetadata,
+		MinIntervalSecs:        arg.MinIntervalSecs,
+		CreatedAt:              pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}, nil
+}
+
+func (m *inMemoryStore) GetAlertingRule(_ context.Context, _ storegen.GetAlertingRuleParams) (storegen.AlertingRule, error) {
+	return storegen.AlertingRule{}, fmt.Errorf("rule not found")
+}
+
+func (m *inMemoryStore) ListAlertingRulesByApplication(_ context.Context, _ pgtype.UUID) ([]storegen.AlertingRule, error) {
+	return nil, nil
+}
+
+func (m *inMemoryStore) DeleteAlertingRule(_ context.Context, _ storegen.DeleteAlertingRuleParams) (int64, error) {
+	return 1, nil
+}
+
 func formatUUID(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
