@@ -18,6 +18,7 @@ import (
 	"github.com/abn/relay/internal/alerting"
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/config"
+	"github.com/abn/relay/internal/dashboard"
 	"github.com/abn/relay/internal/ha"
 	"github.com/abn/relay/internal/hub"
 	"github.com/abn/relay/internal/liveness"
@@ -92,8 +93,10 @@ func newServeCommand() *cobra.Command {
 
 			forwardHandler := router.NewForwardHandler(h, []byte(cfg.InternalSecret), 30*time.Second)
 
+			dashHandler := dashboard.Handler(handler)
+
 			mux := http.NewServeMux()
-			mux.Handle("/", handler)
+			mux.Handle("/", dashHandler)
 			mux.Handle("/websocket/", h)
 			mux.Handle("/internal/v1/forward/", forwardHandler)
 			mux.Handle("/v1/metrics", metrics.NewHandler(s.Queries()))

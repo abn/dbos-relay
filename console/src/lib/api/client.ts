@@ -1,0 +1,278 @@
+// Relay Conductor v2 API Client
+
+import type {
+  Application,
+  Executor,
+  Workflow,
+  Step,
+  Event,
+  Notification,
+  StreamEntry,
+  Queue,
+  Schedule,
+  AlertingRule,
+  CreateAlertInput,
+  ApiKey,
+  WorkflowSearchQuery,
+} from "./types.js";
+
+export class ApiClient {
+  private baseUrl: string;
+  private apiKey: string | null;
+
+  constructor(baseUrl: string = "", apiKey: string | null = null) {
+    this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.apiKey = apiKey;
+  }
+
+  setApiKey(key: string | null): void {
+    this.apiKey = key;
+  }
+
+  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const headers = new Headers(options.headers || {});
+    headers.set("Accept", "application/json");
+
+    if (options.body && typeof options.body === "string") {
+      headers.set("Content-Type", "application/json");
+    }
+
+    if (this.apiKey) {
+      headers.set("Authorization", `Bearer ${this.apiKey}`);
+    }
+
+    const url = `${this.baseUrl}${path}`;
+    const response = await fetch(url, { ...options, headers });
+
+    if (!response.ok) {
+      let errorDetail = `HTTP ${response.status} ${response.statusText}`;
+      try {
+        const errorJson = await response.json();
+        if (errorJson.detail) {
+          errorDetail = errorJson.detail;
+        } else if (errorJson.title) {
+          errorDetail = errorJson.title;
+        } else if (errorJson.message) {
+          errorDetail = errorJson.message;
+        }
+      } catch {
+        // Non-json response
+      }
+      throw new Error(errorDetail);
+    }
+
+    if (response.status === 204) {
+      return undefined as unknown as T;
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  // System & Health
+  async getHealth(): Promise<{ status: string }> {
+    return this.request<{ status: string }>("/healthz");
+  }
+
+  // Applications
+  async listApplications(orgName: string = "default"): Promise<Application[]> {
+    return this.request<Application[]>(`/v2/orgs/${encodeURIComponent(orgName)}/apps`);
+  }
+
+  async getApplication(orgName: string, appName: string): Promise<Application> {
+    return this.request<Application>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}`
+    );
+  }
+
+  async listExecutors(orgName: string, appName: string): Promise<Executor[]> {
+    return this.request<Executor[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/executors`
+    );
+  }
+
+  // Workflows
+  async listWorkflows(
+    orgName: string,
+    appName: string,
+    query: WorkflowSearchQuery = {}
+  ): Promise<Workflow[]> {
+    const params = new URLSearchParams();
+    if (query.workflowIds && query.workflowIds.length > 0) {
+      for (const id of query.workflowIds) params.append("workflowIds", id);
+    }
+    if (query.workflowName && query.workflowName.length > 0) {
+      for (const name of query.workflowName) params.append("workflowName", name);
+    }
+    if (query.status && query.status.length > 0) {
+      for (const s of query.status) params.append("status", s);
+    }
+    if (query.queueName && query.queueName.length > 0) {
+      for (const q of query.queueName) params.append("queueName", q);
+    }
+    if (query.appVersion && query.appVersion.length > 0) {
+      for (const v of query.appVersion) params.append("appVersion", v);
+    }
+    if (query.limit) params.append("limit", query.limit.toString());
+    if (query.offset) params.append("offset", query.offset.toString());
+    if (query.sortDesc !== undefined) params.append("sortDesc", query.sortDesc ? "true" : "false");
+
+    const qs = params.toString();
+    const path = `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows${qs ? "?" + qs : ""}`;
+    return this.request<Workflow[]>(path);
+  }
+
+  async getWorkflow(orgName: string, appName: string, workflowId: string): Promise<Workflow> {
+    return this.request<Workflow>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}`
+    );
+  }
+
+  async listSteps(orgName: string, appName: string, workflowId: string): Promise<Step[]> {
+    return this.request<Step[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/steps`
+    );
+  }
+
+  async getWorkflowEvents(orgName: string, appName: string, workflowId: string): Promise<Event[]> {
+    return this.request<Event[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/events`
+    );
+  }
+
+  async getWorkflowNotifications(
+    orgName: string,
+    appName: string,
+    workflowId: string
+  ): Promise<Notification[]> {
+    return this.request<Notification[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/notifications`
+    );
+  }
+
+  async getWorkflowStreams(
+    orgName: string,
+    appName: string,
+    workflowId: string,
+    key?: string
+  ): Promise<StreamEntry[]> {
+    const qs = key ? `?key=${encodeURIComponent(key)}` : "";
+    return this.request<StreamEntry[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/streams${qs}`
+    );
+  }
+
+  async cancelWorkflow(orgName: string, appName: string, workflowId: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/cancel`,
+      { method: "POST", body: "{}" }
+    );
+  }
+
+  async resumeWorkflow(orgName: string, appName: string, workflowId: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/resume`,
+      { method: "POST", body: "{}" }
+    );
+  }
+
+  async restartWorkflow(orgName: string, appName: string, workflowId: string): Promise<{ workflowId: string }> {
+    return this.request<{ workflowId: string }>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
+      { method: "POST", body: "{}" }
+    );
+  }
+
+  // Queues
+  async listQueues(orgName: string, appName: string): Promise<Queue[]> {
+    return this.request<Queue[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/queues`
+    );
+  }
+
+  // Schedules
+  async listSchedules(orgName: string, appName: string): Promise<Schedule[]> {
+    return this.request<Schedule[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules`
+    );
+  }
+
+  async pauseSchedule(orgName: string, appName: string, scheduleName: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/pause`,
+      { method: "POST" }
+    );
+  }
+
+  async resumeSchedule(orgName: string, appName: string, scheduleName: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/resume`,
+      { method: "POST" }
+    );
+  }
+
+  async triggerSchedule(
+    orgName: string,
+    appName: string,
+    scheduleName: string
+  ): Promise<{ workflowId: string }> {
+    return this.request<{ workflowId: string }>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/trigger`,
+      { method: "POST" }
+    );
+  }
+
+  // Alerting Rules
+  async listAlertingRules(orgName: string, appName: string): Promise<AlertingRule[]> {
+    return this.request<AlertingRule[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`
+    );
+  }
+
+  async createAlertingRule(
+    orgName: string,
+    appName: string,
+    rule: CreateAlertInput
+  ): Promise<AlertingRule> {
+    return this.request<AlertingRule>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`,
+      {
+        method: "POST",
+        body: JSON.stringify(rule),
+      }
+    );
+  }
+
+  async deleteAlertingRule(orgName: string, appName: string, ruleId: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules/${encodeURIComponent(ruleId)}`,
+      { method: "DELETE" }
+    );
+  }
+
+  // API Keys (Tokens)
+  async listAPIKeys(orgName: string): Promise<ApiKey[]> {
+    return this.request<ApiKey[]>(`/v2/orgs/${encodeURIComponent(orgName)}/tokens`);
+  }
+
+  async createAPIKey(
+    orgName: string,
+    name: string,
+    permissions: string[] = ["*"],
+    appNames: string[] = []
+  ): Promise<{ token: string; tokenName: string }> {
+    return this.request<{ token: string; tokenName: string }>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ permissions, appNames }),
+      }
+    );
+  }
+
+  async revokeAPIKey(orgName: string, name: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
+      { method: "DELETE" }
+    );
+  }
+}

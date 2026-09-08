@@ -118,8 +118,20 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if infoRes.Hostname != nil {
 			hostname = *infoRes.Hostname
 		}
+		md := make(map[string]any)
 		if len(infoRes.ExecutorMetadata) > 0 {
-			metadata, _ = json.Marshal(infoRes.ExecutorMetadata)
+			for k, v := range infoRes.ExecutorMetadata {
+				md[k] = v
+			}
+		}
+		if infoRes.Language != "" {
+			md["language"] = infoRes.Language
+		}
+		if infoRes.DBOSVersion != "" {
+			md["dbosVersion"] = infoRes.DBOSVersion
+		}
+		if len(md) > 0 {
+			metadata, _ = json.Marshal(md)
 		}
 	} else if _, isReq := msg.(*protocol.ExecutorInfoRequest); isReq {
 		_ = conn.Close(websocket.StatusPolicyViolation, "expected executor info response with details")

@@ -72,6 +72,10 @@ Open interactive documentation:
 curl -fsS http://localhost:8090/docs
 ```
 
+Open the web dashboard:
+
+Point your browser to `http://localhost:8090/` to inspect connected executors, workflows, step execution graphs, queues, schedules, and alerts.
+
 ## 6. Connecting an executor
 
 A DBOS Transact application connects to Relay by configuring the `RELAY_URL` and `RELAY_API_KEY` environment variables.

@@ -20,6 +20,9 @@ setup: ## Install git hooks and generate local tool shims
 build: ## Build the binary
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
 
+dashboard/build: ## Build the web dashboard assets
+	node console/build.js
+
 test: ## Run the test suite
 	go test ./...
 

@@ -1,0 +1,10 @@
+{
+  "name": "relay-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Web dashboard for Relay control plane",
+  "scripts": {
+    "build": "node build.js"
+  }
+}
