@@ -6,6 +6,8 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Implemented the Phase 5 scale and operational architecture featuring high-availability instance clustering with lease adoption, HMAC-SHA256 signed HTTP peer forwarding with loop prevention, an OpenMetrics scrape endpoint at `/v1/metrics`, alerting rule management REST API, background alert evaluation loop dispatching WebSocket notifications to executors, and a multi-node integration test suite.
+* **Update**: Documented alerting WebSocket dispatch and multi-instance peer forwarding in [Executor WebSocket Protocol](protocol/executor-ws.md).
 * **Creation**: Implemented the Phase 4 workflow recovery engine featuring an isolated pure lifecycle state machine, deterministic virtual timer clock, version-preferring recovery dispatcher with strict tenant isolation, connection hub integration, and an end-to-end chaos test suite.
 * **Update**: Documented executor lifecycle state transitions, timeout parameters, and recovery failover mechanics in [Executor WebSocket Protocol](protocol/executor-ws.md).
 * **Creation**: Implemented the Phase 3 REST API surface with typed OpenAPI 3.0 code-generation, router-mediated executor dispatch, application metadata and token persistence in Postgres, and conformance test suite for upstream `dbosctl` compatibility.

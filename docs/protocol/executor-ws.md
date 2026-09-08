@@ -100,6 +100,32 @@ When an executor transitions to `Dead`:
 * Workflow outcomes are exactly-once.
 * Recovery dispatch is idempotent; multiple dispatches for the same dead executor do not corrupt execution state.
 
+## Alert Notifications
+
+Relay supports alerting rules evaluated against application and workflow metrics.
+When a configured rule condition fires, Relay dispatches an `alert` message to connected executors registered under the configured receiving application:
+
+```json
+{
+  "type": "alert",
+  "request_id": "alert-uuid",
+  "rule_type": "RULE_TYPE",
+  "rule_metadata": "{\"metric_name\":\"...\",\"threshold\":...}",
+  "application_id": "target-app-id"
+}
+```
+
+Receiving executors process alerts via registered SDK alert handlers (`@DBOS.alert_handler` in Python, `DBOS.setAlertHandler` in TypeScript, and conductor protocol handler in Go).
+
+## High Availability and Peer Forwarding
+
+In multi-instance deployments, Relay instances coordinate state through the control plane database:
+
+1. **Instance Registration**: Each Relay instance registers its unique ID, advertise address, and port in the `instances` table and maintains a periodic heartbeat.
+2. **Executor Lease Ownership**: Executors connecting via WebSocket are assigned to the receiving Relay instance with a lease. If an instance crashes or disconnects, surviving instances adopt expired leases upon heartbeat timeout.
+3. **Cross-Instance Peer Forwarding**: When an API request targets an application whose connected executors reside on a peer Relay instance, the receiving instance signs the request payload using HMAC-SHA256 and forwards it over HTTP to `/internal/v1/forward/{appID}` on the target peer.
+4. **Loop Prevention and Drift Check**: Forwarded requests carry an `X-Relay-Forward-Hop` header. Requests with `hop >= 1` are rejected with HTTP 409 Conflict to strictly prohibit multi-hop forwarding loops. Forward signatures include Unix timestamps with a maximum allowed drift of 30 seconds.
+
 ## SDK Differences Matrix
 
 | Field | TypeScript | Python | Go | Java |
