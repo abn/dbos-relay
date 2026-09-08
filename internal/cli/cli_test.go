@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -208,5 +209,21 @@ func TestDiffRequiresFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "required flag") && !strings.Contains(err.Error(), "file") {
 		t.Fatalf("expected flag error, got: %v", err)
+	}
+}
+
+func TestApplyEnvOut_GitIgnore(t *testing.T) {
+	ctx := context.Background()
+
+	// deploy/.env is explicitly gitignored
+	if err := ensureGitIgnoredIfInRepo(ctx, "deploy/.env"); err != nil {
+		t.Errorf("expected deploy/.env to be allowed, got error: %v", err)
+	}
+
+	// README.md is tracked and not gitignored
+	if err := ensureGitIgnoredIfInRepo(ctx, "README.md"); err == nil {
+		t.Errorf("expected error when targeting tracked file README.md, got nil")
+	} else if !strings.Contains(err.Error(), "refusing to write secrets") {
+		t.Errorf("expected refusal message, got: %v", err)
 	}
 }

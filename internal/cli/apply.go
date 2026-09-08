@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -52,6 +55,9 @@ func newApplyCommand() *cobra.Command {
 			}
 
 			if envOut != "" && len(plan.GeneratedKeys) > 0 {
+				if err := ensureGitIgnoredIfInRepo(cmd.Context(), envOut); err != nil {
+					return err
+				}
 				var lines []string
 				for _, v := range plan.GeneratedKeys {
 					lines = append(lines, fmt.Sprintf("RELAY_API_KEY=%s\n", v))
@@ -124,4 +130,32 @@ func newDiffCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("file")
 
 	return cmd
+}
+
+func ensureGitIgnoredIfInRepo(ctx context.Context, path string) error {
+	dir := filepath.Dir(path)
+	if absDir, err := filepath.Abs(dir); err == nil {
+		dir = absDir
+	}
+	topLevelCmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	topLevelCmd.Dir = dir
+	topOut, err := topLevelCmd.Output()
+	if err != nil {
+		return nil
+	}
+	topLevel := strings.TrimSpace(string(topOut))
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(topLevel, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return nil
+	}
+	checkCmd := exec.CommandContext(ctx, "git", "check-ignore", "-q", absPath)
+	checkCmd.Dir = topLevel
+	if err := checkCmd.Run(); err != nil {
+		return fmt.Errorf("refusing to write secrets to unignored path %s inside git repository", path)
+	}
+	return nil
 }
