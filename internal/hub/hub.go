@@ -91,6 +91,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Send executor_info request to prompt executor registration per D7 protocol
+	infoReq := &protocol.ExecutorInfoRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: "req-init-info",
+		},
+	}
+	if reqData, err := protocol.Encode(infoReq); err == nil {
+		_ = conn.Write(r.Context(), websocket.MessageText, reqData)
+	}
+
 	// First message must be executor info
 	typ, data, err := conn.Read(r.Context())
 	if err != nil {

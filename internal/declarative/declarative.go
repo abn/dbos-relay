@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"gopkg.in/yaml.v3"
 
+	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
 )
@@ -31,9 +32,10 @@ type Config struct {
 
 // Application represents an application definition.
 type Application struct {
-	Name         string `yaml:"name"`
-	Description  string `yaml:"description,omitempty"`
-	StuckSLASecs int32  `yaml:"stuck_sla_secs,omitempty"`
+	Name                string `yaml:"name"`
+	Description         string `yaml:"description,omitempty"`
+	StuckSLASecs        int32  `yaml:"stuck_sla_secs,omitempty"`
+	ExecutorTimeoutSecs int64  `yaml:"executor_timeout_secs,omitempty"`
 }
 
 // AlertRule represents a declarative alerting rule.
@@ -355,6 +357,22 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 		items = append(items, DiffItem{Action: ActionUnchanged, Kind: "Organisation", Name: orgName})
 	}
 
+	// Ensure default API key exists for conductor WebSocket connections
+	if org.ID.Valid {
+		keys, err := s.Queries().ListAPIKeys(ctx, org.ID)
+		if err == nil && len(keys) == 0 {
+			rawKey := "dbos_sec_live_key"
+			_, _ = s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+				OrganisationID:   org.ID,
+				Name:             "default-conductor-key",
+				Lookup:           auth.Lookup(rawKey),
+				KeyHash:          auth.Hash(rawKey),
+				ApplicationNames: []string{},
+				Permissions:      []string{"application.read", "application.write", "websocket.connect"},
+			})
+		}
+	}
+
 	apps, err := s.Queries().ListApplicationsByOrganisation(ctx, org.ID)
 	if err != nil {
 		return nil, fmt.Errorf("listing applications: %w", err)
@@ -375,6 +393,9 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 			}
 			if app.StuckSLASecs > 0 {
 				settingsMap["stuck_sla_secs"] = app.StuckSLASecs
+			}
+			if app.ExecutorTimeoutSecs > 0 {
+				settingsMap["executorTimeoutSecs"] = app.ExecutorTimeoutSecs
 			}
 			settingsJSON, _ := json.Marshal(settingsMap)
 			created, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{

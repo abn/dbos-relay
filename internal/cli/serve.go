@@ -93,6 +93,9 @@ func newServeCommand() *cobra.Command {
 			dpManager := dataplane.NewManager(nil)
 			if configPath := os.Getenv("RELAY_CONFIG"); configPath != "" {
 				if decCfg, err := declarative.LoadFile(configPath); err == nil {
+					if _, err := declarative.Apply(ctx, s, decCfg); err != nil {
+						logger.Warn("failed to apply declarative config", "path", configPath, "error", err)
+					}
 					allApps, _ := s.Queries().ListAllApplications(ctx)
 					appMap := make(map[string]gen.Application)
 					for _, a := range allApps {

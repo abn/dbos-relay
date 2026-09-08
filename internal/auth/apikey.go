@@ -52,6 +52,11 @@ func Verify(key string, stored []byte) bool {
 	return subtle.ConstantTimeCompare(hash(key), stored) == 1
 }
 
+// Hash returns the SHA-256 digest of a key string.
+func Hash(key string) []byte {
+	return hash(key)
+}
+
 func hash(key string) []byte {
 	sum := sha256.Sum256([]byte(key))
 	return sum[:]
