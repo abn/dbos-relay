@@ -27,10 +27,10 @@ in the wiki under `docs/`.
 - **Ask when provenance is unclear.** If a fact is only obtainable from a
   forbidden source, stop and surface the gap. Design a fallback rather than
   guessing.
-- **Never touch an application's database.** Relay holds its own metadata
-  only. Workflow data is read from executors over the socket, never from the
-  application's system database. If a feature seems to need that access, it
-  belongs in the SDK.
+- **No direct application database queries.** Relay never speaks to an
+  application's system database except through the SDK's own client library,
+  and only for applications where the operator has explicitly configured a
+  data-plane connection. Raw SQL against `dbos.*` is still forbidden.
 - **Never require application-side changes.** An unmodified DBOS application
   must work by pointing its Conductor URL at Relay. If a feature needs an SDK
   change, file it upstream and keep Relay working without it.
