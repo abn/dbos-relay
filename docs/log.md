@@ -10,6 +10,10 @@ implementation milestones; those belong in the commit history.
   [Quickstart](usage/quickstart.md) for running Relay locally with Postgres.
 * **Update**: Added development targets to the [contributor guide](contribution/guide.md)
   and noted completion of discovery items D1-D8 and Phase 1 foundation packages.
+* **Update**: Added governance invariants to the [contributor guide](contribution/guide.md)
+  and [maintainer guide](contribution/maintainers.md) on scope tightness,
+  avoiding duplication and divergence, and keeping committed files free of
+  internal process references.
 * **Update**: Linked the usage section from the root [index](index.md).
 * **Creation**: Opened the [discovery](discovery/index.md) section and its
   [provenance ledger](discovery/provenance.md) recording permitted public

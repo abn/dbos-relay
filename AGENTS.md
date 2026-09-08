@@ -40,6 +40,22 @@ in the wiki under `docs/`.
   in its project name, package names, binary name, module names, logo, or
   domain. A module name becomes a package name, so the rule reaches inside the
   codebase. Descriptive use in prose is fine.
+- **Avoid duplication and divergence.** Maintain a single source of truth for
+  all code, schemas, wire types, models, and documentation. Look out for and
+  eliminate duplicate structures or parallel logic across packages. Guard
+  against divergence: keep protocol implementations strictly aligned with
+  upstream contracts, avoiding subtle drift or shadow representations.
+- **Tightly scoped changes.** Every change must be minimal and strictly
+  bounded to its stated scope: unit of work, target, and outcome. Avoid
+  opportunistic refactoring, speculative abstractions, feature creep, or
+  incidental edits in unrelated files. If a separate issue is spotted, handle
+  it in a distinct change.
+- **No internal process leaks.** All committed files (code, tests, schemas,
+  documentation, comments, and commit messages) must avoid internal references
+  to process, tracking, task IDs, work identifiers, ticket numbers, scratch
+  paths (`.agents/brain/`), wave or lane designations, or agent operational
+  notes. Internal tracking belongs in the scratch area only; the committed
+  repository represents a clean public project.
 - **Always-public-ready docs.** `docs/` is an OKF v0.2 bundle. No internal
   names, codenames, hostnames, absolute paths, tokens, or task identifiers.
 - **No AI slop.** No em-dashes, no marketing fluff, no filler prose, no

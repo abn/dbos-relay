@@ -21,12 +21,34 @@ contract; this file is the operating detail behind it.
 
 ## Scope discipline
 
+- All changes must be tightly scoped.
 - Before any work, state the scope in one sentence: unit of work (feature, bug
   fix, or maintenance), target, and outcome. Anything not needed for that
   outcome is out of scope by default.
-- Never widen a diff to look more thorough. The smallest change that fully and
-  correctly satisfies the scope, with passing tests and honest docs, is the
-  target.
+- Never widen a diff to look more thorough. No opportunistic refactoring,
+  speculative abstractions, feature creep, or unrelated formatting changes.
+  The smallest change that fully and correctly satisfies the scope, with
+  passing tests and honest docs, is the target.
+
+## Duplication and divergence
+
+- Actively identify and avoid both duplication and divergence across the
+  codebase.
+- Maintain a single source of truth for all types, wire schemas, protocol
+  definitions, and models. Do not introduce parallel structures or redundant
+  helper logic across packages.
+- When matching upstream specifications, ensure implementation behaviour and
+  types remain faithful to the source and do not subtly diverge over time.
+
+## Clean committed tree
+
+- All committed files (code, tests, comments, docs, configurations, commit
+  messages) must avoid internal references to process, tracking, task or ticket
+  IDs, wave or lane names, conversation IDs, or scratch area paths
+  (`.agents/brain/`).
+- The public history and committed codebase reflect only the product, its
+  design, its tests, and its documentation. Internal execution machinery stays
+  in the gitignored scratch area.
 
 ## Worktrees and history
 

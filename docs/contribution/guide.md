@@ -53,6 +53,13 @@ shims. It is idempotent, so re-run it whenever hooks or tooling change.
 - **Verification is automated.** `pre-commit` owns file hygiene, commit
   message shape, and the editorial and privacy patterns. `make check` runs the
   same hooks CI runs. Do not hand-polish what a tool enforces.
+- **Avoid duplication and divergence.** Maintain a single source of truth for
+  all code, schemas, and models. Do not introduce parallel types or duplicate
+  logic, and keep implementations faithful to upstream contracts.
+- **Committed files are public-ready.** Committed code, tests, documentation,
+  and commit messages must never reference internal tracking, task IDs, work
+  identifiers, wave or lane names, or scratch area paths. Internal process
+  stays in the gitignored scratch area.
 - **Docs are public-ready by default.** `docs/` is an OKF v0.2 bundle: no
   internal names, hostnames, absolute paths, tokens, or task identifiers.
   Links are relative or rooted at the bundle; no `file://` and nothing

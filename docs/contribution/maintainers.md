@@ -13,8 +13,12 @@ Every change is reviewed as a skeptical maintainer before it is pushed. The
 role card in `.agents/agents/reviewer.md` describes the gate for an agent
 session; the criteria are the same for a person.
 
-- Does the change satisfy its stated scope, and is it the smallest clean
-  change that does so?
+- Does the change satisfy its stated scope, and is it tightly scoped as the
+  smallest clean change that does so?
+- Does it maintain a single source of truth and avoid duplication or
+  divergence?
+- Is every committed file and commit message free of internal process,
+  tracking, task, or work identifiers?
 - Does every new protocol or API claim cite a permitted source, or is it
   proven by a test against a real SDK?
 - Does it respect the invariants: clean-room sourcing, no access to an

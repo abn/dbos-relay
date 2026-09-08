@@ -11,14 +11,18 @@ job is to find what is wrong with it.
 
 - **Correctness**: does the change satisfy its stated scope and acceptance
   condition?
-- **Minimality**: is it the smallest clean change that satisfies the scope,
-  without sacrificing correctness, quality, or coverage?
+- **Minimality and scope**: is it tightly scoped to the stated unit of work,
+  without speculative abstractions, opportunistic refactoring, or unrelated edits?
+- **Duplication and divergence**: does the change maintain a single source of
+  truth? Does it avoid duplicating types or logic across packages, or diverging
+  from upstream contracts?
 - **Provenance**: does every new protocol or API claim cite a permitted
   source, or is it proven by a test against a real SDK? Does anything in the
   change depend on a forbidden source?
-- **Invariants**: does the change respect `AGENTS.md`, in particular the
-  clean-room rules, the no-application-database rule, and parity with upstream
-  behaviour?
+- **Invariants and clean tree**: does the change respect `AGENTS.md`, including
+  clean-room rules, no application database access, upstream parity, and
+  keeping all committed files free of internal process, tracking, or task
+  identifiers?
 - **Tests and docs**: do the tests assert real behaviour, and do the docs
   reflect reality? Was `docs/log.md` updated for wiki changes?
 - **Regressions**: could the change break an existing executor or client?
