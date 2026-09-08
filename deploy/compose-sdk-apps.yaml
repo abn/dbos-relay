@@ -23,6 +23,7 @@ services:
       RELAY_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
       RELAY_LISTEN_ADDR: 0.0.0.0:8090
       RELAY_INTERNAL_SECRET: insecure-test-secret
+      RELAY_API_KEY: ${RELAY_API_KEY}
     volumes:
       - ../bin/relay:/bin/relay:ro,z
       - ./relay.yaml:/etc/relay/relay.yaml:ro,z
@@ -41,10 +42,13 @@ services:
       - ../examples/golang:/app:ro,z
     environment:
       RELAY_URL: ws://relay:8090
-      RELAY_API_KEY: dbos_sec_live_key
+      RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: golang-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
       ROLE: victim
+      HTTP_PORT: 8080
+    ports:
+      - "8080:8080"
     depends_on:
       relay:
         condition: service_started
@@ -62,10 +66,13 @@ services:
       - ../examples/golang:/app:ro,z
     environment:
       RELAY_URL: ws://relay:8090
-      RELAY_API_KEY: dbos_sec_live_key
+      RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: golang-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
       ROLE: survivor
+      HTTP_PORT: 8086
+    ports:
+      - "8086:8086"
     depends_on:
       relay:
         condition: service_started
@@ -74,40 +81,92 @@ services:
     command: ["/app/bin/app"]
     restart: "no"
 
-  app-python:
+  app-python-victim:
     image: python:3.13-slim
     working_dir: /app
     volumes:
-      - ../examples/python:/app:ro,z
+      - ../examples/python:/app:z
     environment:
       RELAY_URL: ws://relay:8090
-      RELAY_API_KEY: dbos_sec_live_key
+      RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: python-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      ROLE: victim
+      HTTP_PORT: 8081
+    ports:
+      - "8081:8081"
     depends_on:
       relay:
         condition: service_started
       postgres:
         condition: service_healthy
-    command: ["python", "/app/main.py"]
+    command: ["sh", "-c", "pip install -q -r requirements.txt && python main.py"]
     restart: "no"
 
-  app-typescript:
+  app-python-survivor:
+    image: python:3.13-slim
+    working_dir: /app
+    volumes:
+      - ../examples/python:/app:z
+    environment:
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: ${RELAY_API_KEY}
+      DBOS_APP_NAME: python-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      ROLE: survivor
+      HTTP_PORT: 8084
+    ports:
+      - "8084:8084"
+    depends_on:
+      relay:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "pip install -q -r requirements.txt && python main.py"]
+    restart: "no"
+
+  app-typescript-victim:
     image: node:22-slim
     working_dir: /app
     volumes:
       - ../examples/typescript:/app:ro,z
     environment:
       RELAY_URL: ws://relay:8090
-      RELAY_API_KEY: dbos_sec_live_key
+      RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: typescript-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      ROLE: victim
+      HTTP_PORT: 8082
+    ports:
+      - "8082:8082"
     depends_on:
       relay:
         condition: service_started
       postgres:
         condition: service_healthy
-    command: ["node", "/app/src/index.js"]
+    command: ["node", "/app/dist/index.js"]
+    restart: "no"
+
+  app-typescript-survivor:
+    image: node:22-slim
+    working_dir: /app
+    volumes:
+      - ../examples/typescript:/app:ro,z
+    environment:
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: ${RELAY_API_KEY}
+      DBOS_APP_NAME: typescript-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      ROLE: survivor
+      HTTP_PORT: 8085
+    ports:
+      - "8085:8085"
+    depends_on:
+      relay:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    command: ["node", "/app/dist/index.js"]
     restart: "no"
 
   app-java:
@@ -117,13 +176,16 @@ services:
       - ../examples/java:/app:ro,z
     environment:
       RELAY_URL: ws://relay:8090
-      RELAY_API_KEY: dbos_sec_live_key
+      RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: java-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      HTTP_PORT: 8083
+    ports:
+      - "8083:8083"
     depends_on:
       relay:
         condition: service_started
       postgres:
         condition: service_healthy
-    command: ["java", "-cp", "/app/bin", "com.example.App"]
+    command: ["java", "-jar", "/app/target/dbos-java-sample-1.0.0.jar"]
     restart: "no"

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,7 @@ func newApplyCommand() *cobra.Command {
 	var (
 		manifestPath string
 		databaseURL  string
+		envOut       string
 	)
 
 	cmd := &cobra.Command{
@@ -49,6 +51,16 @@ func newApplyCommand() *cobra.Command {
 				return fmt.Errorf("applying manifest: %w", err)
 			}
 
+			if envOut != "" && len(plan.GeneratedKeys) > 0 {
+				var lines []string
+				for _, v := range plan.GeneratedKeys {
+					lines = append(lines, fmt.Sprintf("RELAY_API_KEY=%s\n", v))
+				}
+				if err := os.WriteFile(envOut, []byte(strings.Join(lines, "")), 0600); err != nil {
+					return fmt.Errorf("writing env file %s: %w", envOut, err)
+				}
+			}
+
 			cmd.Print(plan.String())
 			cmd.Println(plan.Summary())
 			return nil
@@ -57,6 +69,7 @@ func newApplyCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&manifestPath, "file", "f", "", "Path to relay.yaml configuration file (required)")
 	cmd.Flags().StringVar(&databaseURL, "database-url", "", "PostgreSQL database URL (defaults to RELAY_DATABASE_URL env)")
+	cmd.Flags().StringVar(&envOut, "env-out", "", "Optional path to write generated environment variables (e.g. RELAY_API_KEY)")
 	_ = cmd.MarkFlagRequired("file")
 
 	return cmd

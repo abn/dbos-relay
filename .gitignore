@@ -16,10 +16,16 @@
 /out/
 examples/*/bin/
 examples/java/bin/
+examples/*/target/
+examples/*/dist/
+examples/*/node_modules/
+**/__pycache__/
 
 # Local environment
 .env
 .env.local
+deploy/.env
+dependency-reduced-pom.xml
 /.contrib/
 
 # Editor and OS

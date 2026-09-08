@@ -1,163 +1,109 @@
+import json
 import os
 import sys
-import json
-import base64
-import hashlib
-import socket
-import struct
+import threading
 import time
-from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import psycopg
+from dbos import DBOS, DBOSConfig
 
 app_name = os.environ.get("DBOS_APP_NAME", "python-sample-app")
 relay_url = os.environ.get("RELAY_URL", "http://localhost:8090")
-api_key = os.environ.get("RELAY_API_KEY", "test-key")
-exec_id = f"exec-python-{os.urandom(4).hex()}"
+api_key = os.environ.get("RELAY_API_KEY", "")
+db_url = os.environ.get("DBOS_SYSTEM_DATABASE_URL", "postgres://relay:relay@postgres:5432/relay?sslmode=disable")
+role = os.environ.get("ROLE", "")
 
-# Standard DBOS SDK launch log
-now_iso = datetime.now(timezone.utc).isoformat()
-print(f'time={now_iso} level=INFO msg="DBOS launched" app_version=v1.0.0 executor_id={exec_id} language=python', flush=True)
+def record_step_execution(workflow_id: str, step_name: str) -> None:
+    clean_url = db_url.replace("+psycopg", "")
+    with psycopg.connect(clean_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS test_step_executions (
+                    workflow_id TEXT NOT NULL,
+                    step_name TEXT NOT NULL,
+                    executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+                VALUES (%s, %s, NOW());
+            """, (workflow_id, step_name))
+        conn.commit()
 
-def connect_ws():
-    # Parse relay_url
-    url = relay_url
-    if "://" in url:
-        url = url.split("://", 1)[1]
-    if ":" in url:
-        host, port = url.split(":", 1)
-        port = int(port.split("/")[0])
-    else:
-        host, port = url.split("/")[0], 8090
+# Configure DBOS SDK
+db_sa_url = db_url
+if db_sa_url.startswith("postgres://"):
+    db_sa_url = db_sa_url.replace("postgres://", "postgresql+psycopg://", 1)
+elif db_sa_url.startswith("postgresql://") and not db_sa_url.startswith("postgresql+"):
+    db_sa_url = db_sa_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-    path = f"/websocket/{app_name}/{api_key}"
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((host, port))
+cfg: DBOSConfig = {
+    "name": app_name,
+    "system_database_url": db_sa_url,
+    "conductor_url": relay_url,
+    "conductor_key": api_key,
+}
 
-    sec_key = base64.b64encode(os.urandom(16)).decode("ascii")
-    handshake = (
-        f"GET {path} HTTP/1.1\r\n"
-        f"Host: {host}:{port}\r\n"
-        f"Upgrade: websocket\r\n"
-        f"Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Key: {sec_key}\r\n"
-        f"Sec-WebSocket-Version: 13\r\n\r\n"
-    )
-    s.sendall(handshake.encode("utf-8"))
+DBOS(config=cfg)
 
-    # Read handshake response
-    resp = b""
-    while b"\r\n\r\n" not in resp:
-        chunk = s.recv(1024)
-        if not chunk:
-            break
-        resp += chunk
+@DBOS.step()
+def step1(order_id: str) -> str:
+    record_step_execution(DBOS.workflow_id, "step1")
+    return "step1-completed"
 
-    if b"101 Switching Protocols" not in resp:
-        print(f"Handshake failed: {resp[:100]}", file=sys.stderr)
-        return
+@DBOS.step()
+def step2(order_id: str) -> str:
+    record_step_execution(DBOS.workflow_id, "step2")
+    return "step2-completed"
 
-    def send_frame(payload_bytes, opcode=0x1):
-        length = len(payload_bytes)
-        mask_key = os.urandom(4)
-        header = bytearray([0x80 | opcode])
-        if length < 126:
-            header.append(0x80 | length)
-        elif length < 65536:
-            header.append(0x80 | 126)
-            header.extend(struct.pack("!H", length))
+@DBOS.workflow()
+def order_workflow(order_id: str) -> str:
+    step1(order_id)
+    if role == "victim":
+        # Sleep until killed in chaos cell
+        time.sleep(1800)
+    step2(order_id)
+    return f"order-{order_id}-completed"
+
+class TriggerHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        self._handle()
+
+    def do_GET(self) -> None:
+        self._handle()
+
+    def _handle(self) -> None:
+        if self.path.startswith("/trigger"):
+            handle = DBOS.start_workflow(order_workflow, "python-order")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"workflow_id": handle.workflow_id}).encode("utf-8"))
+        elif self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
         else:
-            header.append(0x80 | 127)
-            header.extend(struct.pack("!Q", length))
-        header.extend(mask_key)
-        masked = bytearray(payload_bytes)
-        for i in range(length):
-            masked[i] ^= mask_key[i % 4]
-        s.sendall(header + masked)
+            self.send_response(404)
+            self.end_headers()
 
-    def recv_frame():
-        header = s.recv(2)
-        if len(header) < 2:
-            return None, None
-        b1, b2 = header[0], header[1]
-        opcode = b1 & 0x0F
-        masked = (b2 & 0x80) != 0
-        length = b2 & 0x7F
-        if length == 126:
-            length = struct.unpack("!H", s.recv(2))[0]
-        elif length == 127:
-            length = struct.unpack("!Q", s.recv(8))[0]
-        mask_key = s.recv(4) if masked else b""
-        payload = b""
-        while len(payload) < length:
-            chunk = s.recv(length - len(payload))
-            if not chunk:
-                break
-            payload += chunk
-        if masked:
-            unmasked = bytearray(payload)
-            for i in range(len(unmasked)):
-                unmasked[i] ^= mask_key[i % 4]
-            payload = bytes(unmasked)
-        return opcode, payload
+    def log_message(self, format: str, *args: object) -> None:
+        pass
 
-    while True:
-        try:
-            opcode, payload = recv_frame()
-            if opcode is None:
-                break
-            if opcode == 0x8: # Close
-                break
-            if opcode == 0x9: # Ping
-                send_frame(payload, opcode=0xA)
-                continue
-            if opcode == 0x1: # Text frame
-                msg = json.loads(payload.decode("utf-8"))
-                mtype = msg.get("type")
-                req_id = msg.get("request_id")
-                if mtype == "executor_info":
-                    reply = {
-                        "type": "executor_info",
-                        "request_id": req_id,
-                        "executor_id": exec_id,
-                        "app_version": "v1.0.0",
-                        "language": "python",
-                        "dbos_version": "0.1.0",
-                        "hostname": "localhost"
-                    }
-                    send_frame(json.dumps(reply).encode("utf-8"))
-                elif mtype == "get_workflow":
-                    reply = {
-                        "type": "get_workflow",
-                        "request_id": req_id,
-                        "output": {
-                            "WorkflowUUID": msg.get("workflow_id", "wf-sample"),
-                            "Status": "SUCCESS",
-                            "WorkflowName": "hello_workflow",
-                            "ApplicationVersion": "v1.0.0",
-                            "Output": json.dumps({"result": "python-output"})
-                        }
-                    }
-                    send_frame(json.dumps(reply).encode("utf-8"))
-                elif mtype == "list_steps":
-                    reply = {
-                        "type": "list_steps",
-                        "request_id": req_id,
-                        "steps": [
-                            {
-                                "function_id": 1,
-                                "function_name": "step1",
-                                "output": json.dumps({"status": "step-done"})
-                            }
-                        ]
-                    }
-                    send_frame(json.dumps(reply).encode("utf-8"))
-        except Exception as e:
-            print(f"Connection loop exception: {e}", file=sys.stderr)
-            break
+def start_http_server() -> None:
+    port = int(os.environ.get("HTTP_PORT", "8081"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), TriggerHandler)
+    server.serve_forever()
 
 if __name__ == "__main__":
+    if role == "survivor":
+        time.sleep(3)
+
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
+
+    DBOS.launch()
+    print(f"DBOS Python sample application launched successfully for app {app_name}", flush=True)
+
     while True:
-        try:
-            connect_ws()
-        except Exception as e:
-            print(f"connect_ws error: {e}", file=sys.stderr, flush=True)
-            time.sleep(1)
+        time.sleep(1)

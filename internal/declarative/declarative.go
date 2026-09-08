@@ -105,7 +105,8 @@ type DiffItem struct {
 
 // Plan holds the set of reconciliation actions.
 type Plan struct {
-	Items []DiffItem
+	Items         []DiffItem
+	GeneratedKeys map[string]string
 }
 
 // Summary returns a short summary of plan actions.
@@ -340,6 +341,7 @@ func Diff(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 // Apply reconciles the database state with the desired configuration.
 func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 	var items []DiffItem
+	generatedKeys := make(map[string]string)
 
 	orgName := cfg.Organisation
 	org, err := s.Queries().GetOrganisationByName(ctx, orgName)
@@ -361,14 +363,38 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 	if org.ID.Valid {
 		keys, err := s.Queries().ListAPIKeys(ctx, org.ID)
 		if err == nil && len(keys) == 0 {
-			rawKey := "dbos_sec_live_key"
-			_, _ = s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+			var rawKey string
+			var record auth.KeyRecord
+			if envKey := os.Getenv("RELAY_API_KEY"); envKey != "" {
+				rawKey = envKey
+				record = auth.KeyRecord{
+					Lookup: auth.Lookup(rawKey),
+					Hash:   auth.Hash(rawKey),
+				}
+			} else {
+				var mintErr error
+				rawKey, record, mintErr = auth.Mint()
+				if mintErr != nil {
+					return nil, fmt.Errorf("minting default api key: %w", mintErr)
+				}
+			}
+			_, err = s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
 				OrganisationID:   org.ID,
 				Name:             "default-conductor-key",
-				Lookup:           auth.Lookup(rawKey),
-				KeyHash:          auth.Hash(rawKey),
+				Lookup:           record.Lookup,
+				KeyHash:          record.Hash,
 				ApplicationNames: []string{},
 				Permissions:      []string{"application.read", "application.write", "websocket.connect"},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("creating default api key: %w", err)
+			}
+			generatedKeys["default-conductor-key"] = rawKey
+			items = append(items, DiffItem{
+				Action:  ActionCreate,
+				Kind:    "APIKey",
+				Name:    "default-conductor-key",
+				Details: fmt.Sprintf("minted key %s", auth.Lookup(rawKey)+"***"),
 			})
 		}
 	}
@@ -485,5 +511,5 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 		})
 	}
 
-	return &Plan{Items: items}, nil
+	return &Plan{Items: items, GeneratedKeys: generatedKeys}, nil
 }

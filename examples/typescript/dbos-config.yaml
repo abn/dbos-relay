@@ -1,0 +1,12 @@
+name: typescript-sample-app
+system_database_url: ${DBOS_SYSTEM_DATABASE_URL}
+database:
+  hostname: postgres
+  port: 5432
+  username: relay
+  password: relay
+  app_db_name: relay
+  app_db_client: pg-node
+telemetry:
+  logs:
+    logLevel: info

@@ -1,14 +1,89 @@
 package com.example;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.WebSocket;
-import java.time.Instant;
-import java.util.UUID;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.CountDownLatch;
+import dev.dbos.transact.DBOS;
+import dev.dbos.transact.config.DBOSConfig;
+import dev.dbos.transact.workflow.Step;
+import dev.dbos.transact.workflow.Workflow;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 
 public class App {
+
+    public interface OrderService {
+        String step1(String orderId);
+        String step2(String orderId);
+        String orderWorkflow(String orderId);
+    }
+
+    public static class OrderServiceImpl implements OrderService {
+        private final String dbUrl;
+        private OrderService proxy;
+
+        public OrderServiceImpl(String dbUrl) {
+            this.dbUrl = dbUrl;
+        }
+
+        public void setProxy(OrderService proxy) {
+            this.proxy = proxy;
+        }
+
+        private void recordStep(String stepName) {
+            String wfId = DBOS.workflowId();
+            if (wfId == null) {
+                wfId = "unknown";
+            }
+            try (Connection conn = DriverManager.getConnection(dbUrl, "relay", "relay")) {
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "CREATE TABLE IF NOT EXISTS test_step_executions (" +
+                        "workflow_id TEXT NOT NULL, " +
+                        "step_name TEXT NOT NULL, " +
+                        "executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" +
+                        ")")) {
+                    stmt.execute();
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "INSERT INTO test_step_executions (workflow_id, step_name, executed_at) VALUES (?, ?, NOW())")) {
+                    stmt.setString(1, wfId);
+                    stmt.setString(2, stepName);
+                    stmt.executeUpdate();
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to record step execution: " + e.getMessage());
+            }
+        }
+
+        @Override
+        @Step
+        public String step1(String orderId) {
+            recordStep("step1");
+            return "step1-completed";
+        }
+
+        @Override
+        @Step
+        public String step2(String orderId) {
+            recordStep("step2");
+            return "step2-completed";
+        }
+
+        @Override
+        @Workflow
+        public String orderWorkflow(String orderId) {
+            proxy.step1(orderId);
+            proxy.step2(orderId);
+            return "order-" + orderId + "-completed";
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         String appName = System.getenv("DBOS_APP_NAME");
         if (appName == null || appName.isEmpty()) {
@@ -20,85 +95,81 @@ public class App {
         }
         String apiKey = System.getenv("RELAY_API_KEY");
         if (apiKey == null) {
-            apiKey = "test-key";
+            apiKey = "";
+        }
+        String dbUrl = System.getenv("DBOS_SYSTEM_DATABASE_URL");
+        if (dbUrl == null || dbUrl.isEmpty()) {
+            dbUrl = "postgres://relay:relay@postgres:5432/relay?sslmode=disable";
         }
 
-        String execID = "exec-java-" + UUID.randomUUID().toString().substring(0, 8);
-        String wsScheme = relayURL.startsWith("wss") ? "wss" : "ws";
-        String hostPart = relayURL.replaceFirst("^(https?|wss?)://", "");
-        String wsUri = wsScheme + "://" + hostPart + "/websocket/" + appName + "/" + apiKey;
+        String jdbcUrl = dbUrl;
+        if (jdbcUrl.startsWith("postgres://")) {
+            jdbcUrl = jdbcUrl.replace("postgres://", "jdbc:postgresql://");
+        } else if (jdbcUrl.startsWith("postgresql://")) {
+            jdbcUrl = jdbcUrl.replace("postgresql://", "jdbc:postgresql://");
+        }
+        jdbcUrl = jdbcUrl.replaceAll("//[^@]+@", "//");
 
-        // Standard SDK launch log format
-        System.out.println("time=" + Instant.now().toString() + " level=INFO msg=\"DBOS launched\" app_version=v1.0.0 executor_id=" + execID + " language=java");
-        System.out.flush();
+        DBOSConfig config = DBOSConfig.defaults(appName)
+                .withDatabaseUrl(jdbcUrl)
+                .withDbUser("relay")
+                .withDbPassword("relay")
+                .withConductorKey(apiKey)
+                .withConductorDomain(relayURL)
+                .withMigrate(true);
 
-        HttpClient client = HttpClient.newHttpClient();
-        CountDownLatch latch = new CountDownLatch(1);
+        DBOS dbos = new DBOS(config);
+        OrderServiceImpl serviceImpl = new OrderServiceImpl(jdbcUrl);
+        OrderService proxy = dbos.registerProxy(OrderService.class, serviceImpl);
+        serviceImpl.setProxy(proxy);
 
-        client.newWebSocketBuilder()
-            .buildAsync(URI.create(wsUri), new WebSocket.Listener() {
-                private final StringBuilder buffer = new StringBuilder();
+        int httpPort = 8083;
+        String portEnv = System.getenv("HTTP_PORT");
+        if (portEnv != null) {
+            try {
+                httpPort = Integer.parseInt(portEnv);
+            } catch (NumberFormatException ignored) {}
+        }
 
-                @Override
-                public void onOpen(WebSocket webSocket) {
-                    webSocket.request(1);
-                }
-
-                @Override
-                public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-                    buffer.append(data);
-                    if (last) {
-                        String msg = buffer.toString();
-                        buffer.setLength(0);
-                        handleMessage(webSocket, msg, execID);
+        HttpServer server = HttpServer.create(new InetSocketAddress(httpPort), 0);
+        server.createContext("/trigger", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                try {
+                    var handle = dbos.startWorkflow(() -> proxy.orderWorkflow("java-order"));
+                    String resp = "{\"workflow_id\":\"" + handle.workflowId() + "\"}";
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    byte[] bytes = resp.getBytes("UTF-8");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
                     }
-                    webSocket.request(1);
-                    return null;
+                } catch (Exception e) {
+                    String err = "{\"error\":\"" + e.getMessage() + "\"}";
+                    byte[] bytes = err.getBytes("UTF-8");
+                    exchange.sendResponseHeaders(500, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
                 }
-
-                @Override
-                public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-                    latch.countDown();
-                    return null;
-                }
-
-                @Override
-                public void onError(WebSocket webSocket, Throwable error) {
-                    System.err.println("WebSocket error: " + error.getMessage());
-                    latch.countDown();
-                }
-            }).join();
-
-        latch.await();
-    }
-
-    private static void handleMessage(WebSocket ws, String msg, String execID) {
-        try {
-            if (msg.contains("\"type\":\"executor_info\"") || msg.contains("\"type\": \"executor_info\"")) {
-                String reqId = extractField(msg, "request_id");
-                String resp = "{\"type\":\"executor_info\",\"request_id\":\"" + reqId + "\",\"executor_id\":\"" + execID + "\",\"app_version\":\"v1.0.0\",\"language\":\"java\",\"dbos_version\":\"0.1.0\",\"hostname\":\"localhost\"}";
-                ws.sendText(resp, true);
-            } else if (msg.contains("\"type\":\"get_workflow\"") || msg.contains("\"type\": \"get_workflow\"")) {
-                String reqId = extractField(msg, "request_id");
-                String wfId = extractField(msg, "workflow_id");
-                String resp = "{\"type\":\"get_workflow\",\"request_id\":\"" + reqId + "\",\"output\":{\"WorkflowUUID\":\"" + wfId + "\",\"Status\":\"SUCCESS\",\"WorkflowName\":\"helloWorkflow\",\"ApplicationVersion\":\"v1.0.0\"}}";
-                ws.sendText(resp, true);
             }
-        } catch (Exception e) {
-            System.err.println("Failed handling message: " + e.getMessage());
-        }
-    }
-
-    private static String extractField(String json, String field) {
-        String pattern = "\"" + field + "\":\"";
-        int idx = json.indexOf(pattern);
-        if (idx != -1) {
-            int start = idx + pattern.length();
-            int end = json.indexOf("\"", start);
-            if (end != -1) {
-                return json.substring(start, end);
+        });
+        server.createContext("/health", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                byte[] bytes = "OK".getBytes("UTF-8");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(bytes);
+                }
             }
-        }
-        return "req-id";
+        });
+        server.setExecutor(null);
+        server.start();
+
+        dbos.launch();
+        System.out.println("DBOS Java sample application launched successfully for app " + appName);
+
+        Thread.currentThread().join();
     }
 }

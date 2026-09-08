@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -97,6 +99,27 @@ func main() {
 
 	dbos.RegisterWorkflow(dbosCtx, helloWorkflow, dbos.WithWorkflowName("helloWorkflow"))
 	dbos.RegisterWorkflow(dbosCtx, orderWorkflow, dbos.WithWorkflowName("orderWorkflow"))
+
+	port := os.Getenv("HTTP_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	http.HandleFunc("/trigger", func(w http.ResponseWriter, r *http.Request) {
+		h, err := dbos.RunWorkflow(dbosCtx, orderWorkflow, "go-order")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"workflow_id": h.GetWorkflowID()})
+	})
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+	go func() {
+		_ = http.ListenAndServe(":"+port, nil)
+	}()
 
 	if err := dbos.Launch(dbosCtx); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to launch DBOS: %v\n", err)

@@ -5,12 +5,15 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "dbos start"
+    "start": "node dist/index.js"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "^0.1.0"
+    "@dbos-inc/dbos-sdk": "^4.27.0",
+    "pg": "^8.13.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
     "typescript": "^5.0.0"
   }
 }

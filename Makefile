@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update verify-live db/up db/down db/url lint/sdk-isolation
+.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update verify-live db/up db/down db/url lint/sdk-isolation lint/examples-isolation
 
 ##@ Bootstrap
 
@@ -18,7 +18,7 @@ setup: ## Install git hooks and generate local tool shims
 ##@ Build & Quality
 
 build: ## Build the binary
-	go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
 
 dashboard/build: ## Build the web dashboard assets
 	node console/build.js
@@ -29,13 +29,19 @@ test: ## Run the test suite
 test/conformance: ## Run the end-to-end conformance test suite
 	go test -v ./tests/conformance/...
 
-vet: lint/sdk-isolation ## Run static analysis
+vet: lint/sdk-isolation lint/examples-isolation ## Run static analysis
 	go vet ./...
 	golangci-lint run
 
 lint/sdk-isolation: ## Verify tests/verifysdk imports no fakes, mocks, or fake clock packages
 	@if grep -rnE 'github\.com/abn/relay/internal/.*(fake|mock|clock)' tests/verifysdk/ 2>/dev/null; then \
 		echo "ERROR: tests/verifysdk must not import fakes, mocks, or clock packages from internal/" >&2; \
+		exit 1; \
+	fi
+
+lint/examples-isolation: ## Verify examples contain no websocket libraries or fake protocol frames
+	@if grep -rnE --exclude-dir=node_modules --exclude-dir=target --exclude-dir=__pycache__ --exclude-dir=.venv '(import\s+websocket|from\s+websockets|require\(["'\'']ws["'\'']\)|import\s+.*\s+from\s+["'\'']ws["'\'']|net/http/WebSocket|"type"\s*:\s*"executor_info")' examples/ 2>/dev/null; then \
+		echo "ERROR: examples/ must not import websocket libraries or hand-craft executor_info wire frames" >&2; \
 		exit 1; \
 	fi
 
@@ -109,8 +115,12 @@ verify-live: ## Run live database verification suite against real PostgreSQL
 	go test -v -count=1 -run TestRouter_LiveDatabase ./internal/router/...
 	go test -v -count=1 ./internal/declarative/...
 
-verify-sdk: ## Run real multi-SDK sample app integration suite under Podman compose
-	podman compose -f deploy/compose-sdk-apps.yaml up -d
-	go test -v -count=1 ./tests/verifysdk/...
+verify-sdk: build ## Run real multi-SDK sample app integration suite under Podman compose
+	@if [ ! -f deploy/.env ] || [ -z "$$(grep RELAY_API_KEY deploy/.env 2>/dev/null)" ]; then \
+		KEY="dbos_sec_$$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"; \
+		echo "RELAY_API_KEY=$$KEY" > deploy/.env; \
+	fi
+	podman compose --env-file deploy/.env -f deploy/compose-sdk-apps.yaml up -d
+	RELAY_API_KEY=$$(grep RELAY_API_KEY deploy/.env | cut -d= -f2) go test -v -count=1 ./tests/verifysdk/...
 	RELAY_TEST_DATABASE_URL="postgres://relay:relay@localhost:5433/relay?sslmode=disable" go test -v -count=1 -run TestLiveDatabase_SDKClientDataPlane ./internal/dataplane/...
 	RELAY_TEST_DATABASE_URL="postgres://relay:relay@localhost:5433/relay?sslmode=disable" go test -v -count=1 -run TestRouter_LiveDatabase ./internal/router/...
