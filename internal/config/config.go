@@ -19,10 +19,22 @@ type Config struct {
 	AdvertiseAddress string
 	InternalSecret   string
 
+	// OIDCIssuer, OIDCAudience, and OIDCClientID configure the identity provider.
+	// When OIDCIssuer is set, authentication is enabled; when unset, Relay runs
+	// in self-hosted no-auth mode.
+	OIDCIssuer   string
+	OIDCAudience string
+	OIDCClientID string
+
 	// ExecutorDeadline bounds every request dispatched to an executor.
 	ExecutorDeadline time.Duration
 
 	LogLevel slog.Level
+}
+
+// AuthEnabled reports whether OIDC authentication is configured.
+func (c *Config) AuthEnabled() bool {
+	return c.OIDCIssuer != ""
 }
 
 const (
@@ -38,6 +50,9 @@ func Load(getenv func(string) string) (*Config, error) {
 		ListenAddr:       or(getenv("RELAY_LISTEN_ADDR"), defaultListenAddr),
 		AdvertiseAddress: or(or(getenv("RELAY_ADVERTISE_ADDRESS"), getenv("DBOS__ADVERTISE_ADDRESS")), "127.0.0.1"),
 		InternalSecret:   or(or(getenv("RELAY_INTERNAL_SECRET"), getenv("DBOS__CLUSTER_SECRET")), "relay-cluster-secret"),
+		OIDCIssuer:       getenv("RELAY_OIDC_ISSUER"),
+		OIDCAudience:     getenv("RELAY_OIDC_AUDIENCE"),
+		OIDCClientID:     getenv("RELAY_OIDC_CLIENT_ID"),
 		ExecutorDeadline: defaultExecutorDeadline,
 		LogLevel:         slog.LevelInfo,
 	}

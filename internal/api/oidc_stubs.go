@@ -11,130 +11,178 @@ func oidcNotAvailableError() gen.ErrorModel {
 	return MakeErrorModel(http.StatusNotFound, "Not Found", "Endpoint requires OAuth and is not available in no-auth mode")
 }
 
-// GetOrg stub returns 404 in no-auth mode.
+// GetOrg returns 404 in no-auth mode or calls handleGetOrg in auth mode.
 func (s *Server) GetOrg(ctx context.Context, request gen.GetOrgRequestObject) (gen.GetOrgResponseObject, error) {
-	return gen.GetOrgdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.GetOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleGetOrg(ctx, request)
 }
 
-// UpdateOrg stub returns 404 in no-auth mode.
+// UpdateOrg returns 404 in no-auth mode or calls handleUpdateOrg in auth mode.
 func (s *Server) UpdateOrg(ctx context.Context, request gen.UpdateOrgRequestObject) (gen.UpdateOrgResponseObject, error) {
-	return gen.UpdateOrgdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.UpdateOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleUpdateOrg(ctx, request)
 }
 
-// JoinOrg stub returns 404 in no-auth mode.
+// JoinOrg returns 404 in no-auth mode or calls handleJoinOrg in auth mode.
 func (s *Server) JoinOrg(ctx context.Context, request gen.JoinOrgRequestObject) (gen.JoinOrgResponseObject, error) {
-	return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleJoinOrg(ctx, request)
 }
 
-// GenerateSecret stub returns 404 in no-auth mode.
+// GenerateSecret returns 404 in no-auth mode or calls handleGenerateSecret in auth mode.
 func (s *Server) GenerateSecret(ctx context.Context, request gen.GenerateSecretRequestObject) (gen.GenerateSecretResponseObject, error) {
-	return gen.GenerateSecretdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.GenerateSecretdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleGenerateSecret(ctx, request)
 }
 
-// ListMembers stub returns 404 in no-auth mode.
+// ListMembers returns 404 in no-auth mode or calls handleListMembers in auth mode.
 func (s *Server) ListMembers(ctx context.Context, request gen.ListMembersRequestObject) (gen.ListMembersResponseObject, error) {
-	return gen.ListMembersdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.ListMembersdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleListMembers(ctx, request)
 }
 
-// RemoveMember stub returns 404 in no-auth mode.
+// RemoveMember returns 404 in no-auth mode or calls handleRemoveMember in auth mode.
 func (s *Server) RemoveMember(ctx context.Context, request gen.RemoveMemberRequestObject) (gen.RemoveMemberResponseObject, error) {
-	return gen.RemoveMemberdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.RemoveMemberdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleRemoveMember(ctx, request)
 }
 
-// GrantRole stub returns 404 in no-auth mode.
+// GrantRole returns 404 in no-auth mode or calls handleGrantRole in auth mode.
 func (s *Server) GrantRole(ctx context.Context, request gen.GrantRoleRequestObject) (gen.GrantRoleResponseObject, error) {
-	return gen.GrantRoledefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.GrantRoledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleGrantRole(ctx, request)
 }
 
-// ListRoles stub returns 404 in no-auth mode.
+// ListRoles returns 404 in no-auth mode or calls handleListRoles in auth mode.
 func (s *Server) ListRoles(ctx context.Context, request gen.ListRolesRequestObject) (gen.ListRolesResponseObject, error) {
-	return gen.ListRolesdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.ListRolesdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleListRoles(ctx, request)
 }
 
-// CreateRole stub returns 404 in no-auth mode.
+// CreateRole returns 404 in no-auth mode or calls handleCreateRole in auth mode.
 func (s *Server) CreateRole(ctx context.Context, request gen.CreateRoleRequestObject) (gen.CreateRoleResponseObject, error) {
-	return gen.CreateRoledefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.CreateRoledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleCreateRole(ctx, request)
 }
 
-// DeleteRole stub returns 404 in no-auth mode.
+// DeleteRole returns 404 in no-auth mode or calls handleDeleteRole in auth mode.
 func (s *Server) DeleteRole(ctx context.Context, request gen.DeleteRoleRequestObject) (gen.DeleteRoleResponseObject, error) {
-	return gen.DeleteRoledefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.DeleteRoledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleDeleteRole(ctx, request)
 }
 
-// ListDomainClaims stub returns 404 in no-auth mode.
+// ListDomainClaims returns 404 in no-auth mode or calls handleListDomainClaims in auth mode.
 func (s *Server) ListDomainClaims(ctx context.Context, request gen.ListDomainClaimsRequestObject) (gen.ListDomainClaimsResponseObject, error) {
-	return gen.ListDomainClaimsdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.ListDomainClaimsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleListDomainClaims(ctx, request)
 }
 
-// RequestDomainClaim stub returns 404 in no-auth mode.
+// RequestDomainClaim returns 404 in no-auth mode or calls handleRequestDomainClaim in auth mode.
 func (s *Server) RequestDomainClaim(ctx context.Context, request gen.RequestDomainClaimRequestObject) (gen.RequestDomainClaimResponseObject, error) {
-	return gen.RequestDomainClaimdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.RequestDomainClaimdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleRequestDomainClaim(ctx, request)
 }
 
-// ReleaseDomainClaim stub returns 404 in no-auth mode.
+// ReleaseDomainClaim returns 404 in no-auth mode or calls handleReleaseDomainClaim in auth mode.
 func (s *Server) ReleaseDomainClaim(ctx context.Context, request gen.ReleaseDomainClaimRequestObject) (gen.ReleaseDomainClaimResponseObject, error) {
-	return gen.ReleaseDomainClaimdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.ReleaseDomainClaimdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleReleaseDomainClaim(ctx, request)
 }
 
-// ListAuditLogs stub returns 404 in no-auth mode.
+// ListAuditLogs returns 404 in no-auth mode or calls handleListAuditLogs in auth mode.
 func (s *Server) ListAuditLogs(ctx context.Context, request gen.ListAuditLogsRequestObject) (gen.ListAuditLogsResponseObject, error) {
-	return gen.ListAuditLogsdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.ListAuditLogsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleListAuditLogs(ctx, request)
 }
 
-// RegisterUser stub returns 404 in no-auth mode.
+// RegisterUser returns 404 in no-auth mode or calls handleRegisterUser in auth mode.
 func (s *Server) RegisterUser(ctx context.Context, request gen.RegisterUserRequestObject) (gen.RegisterUserResponseObject, error) {
-	return gen.RegisterUserdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.RegisterUserdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleRegisterUser(ctx, request)
 }
 
-// GetCurrentUser stub returns 404 in no-auth mode.
+// GetCurrentUser returns 404 in no-auth mode or calls handleGetCurrentUser in auth mode.
 func (s *Server) GetCurrentUser(ctx context.Context, request gen.GetCurrentUserRequestObject) (gen.GetCurrentUserResponseObject, error) {
-	return gen.GetCurrentUserdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       oidcNotAvailableError(),
-	}, nil
+	if !s.authEnabled {
+		return gen.GetCurrentUserdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       oidcNotAvailableError(),
+		}, nil
+	}
+	return s.handleGetCurrentUser(ctx, request)
 }

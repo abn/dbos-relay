@@ -86,6 +86,23 @@ type Application struct {
 	CreatedAt      pgtype.Timestamptz
 }
 
+type AuditLog struct {
+	ID             pgtype.UUID
+	OrganisationID pgtype.UUID
+	UserID         pgtype.UUID
+	Username       string
+	Action         string
+	Details        []byte
+	CreatedAt      pgtype.Timestamptz
+}
+
+type DomainClaim struct {
+	ID             pgtype.UUID
+	OrganisationID pgtype.UUID
+	Domain         string
+	CreatedAt      pgtype.Timestamptz
+}
+
 type Executor struct {
 	ID                 pgtype.UUID
 	ApplicationID      pgtype.UUID
@@ -112,5 +129,31 @@ type Instance struct {
 type Organisation struct {
 	ID        pgtype.UUID
 	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
+type OrganisationMember struct {
+	ID             pgtype.UUID
+	OrganisationID pgtype.UUID
+	UserID         pgtype.UUID
+	RoleName       string
+	CreatedAt      pgtype.Timestamptz
+}
+
+type Role struct {
+	ID             pgtype.UUID
+	OrganisationID pgtype.UUID
+	Name           string
+	Permissions    []string
+	IsGlobal       bool
+	CreatedAt      pgtype.Timestamptz
+}
+
+type User struct {
+	ID        pgtype.UUID
+	Subject   string
+	Username  string
+	Email     string
+	IsAdmin   bool
 	CreatedAt pgtype.Timestamptz
 }

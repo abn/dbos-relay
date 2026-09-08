@@ -88,6 +88,10 @@ func (m *mockStoreReader) ListAPIKeys(ctx context.Context, orgID pgtype.UUID) ([
 	return nil, errors.New("unexpected ListAPIKeys")
 }
 
+func (m *mockStoreReader) GetAPIKeyByLookup(ctx context.Context, lookup string) (storegen.ApiKey, error) {
+	return storegen.ApiKey{}, nil
+}
+
 func (m *mockStoreReader) CreateAPIKey(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error) {
 	if m.createAPIKeyFunc != nil {
 		return m.createAPIKeyFunc(ctx, arg)
@@ -123,6 +127,67 @@ func (m *mockStoreReader) ListAlertingRulesByApplication(ctx context.Context, ap
 
 func (m *mockStoreReader) DeleteAlertingRule(ctx context.Context, arg storegen.DeleteAlertingRuleParams) (int64, error) {
 	return 1, nil
+}
+
+func (m *mockStoreReader) CreateUser(ctx context.Context, arg storegen.CreateUserParams) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (m *mockStoreReader) UpsertUser(ctx context.Context, arg storegen.UpsertUserParams) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (m *mockStoreReader) GetUserBySubject(ctx context.Context, subject string) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (m *mockStoreReader) GetUserByUsername(ctx context.Context, username string) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (m *mockStoreReader) GetUserByID(ctx context.Context, id pgtype.UUID) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (m *mockStoreReader) ListMembersByOrganisation(ctx context.Context, organisationID pgtype.UUID) ([]storegen.ListMembersByOrganisationRow, error) {
+	return nil, nil
+}
+func (m *mockStoreReader) GetMember(ctx context.Context, arg storegen.GetMemberParams) (storegen.GetMemberRow, error) {
+	return storegen.GetMemberRow{}, nil
+}
+func (m *mockStoreReader) UpsertMemberRole(ctx context.Context, arg storegen.UpsertMemberRoleParams) (storegen.OrganisationMember, error) {
+	return storegen.OrganisationMember{}, nil
+}
+func (m *mockStoreReader) RemoveMember(ctx context.Context, arg storegen.RemoveMemberParams) (storegen.OrganisationMember, error) {
+	return storegen.OrganisationMember{}, nil
+}
+func (m *mockStoreReader) GetUserPrimaryOrganisation(ctx context.Context, userID pgtype.UUID) (storegen.GetUserPrimaryOrganisationRow, error) {
+	return storegen.GetUserPrimaryOrganisationRow{}, nil
+}
+func (m *mockStoreReader) ListRoles(ctx context.Context, organisationID pgtype.UUID) ([]storegen.Role, error) {
+	return nil, nil
+}
+func (m *mockStoreReader) GetRole(ctx context.Context, arg storegen.GetRoleParams) (storegen.Role, error) {
+	return storegen.Role{}, nil
+}
+func (m *mockStoreReader) CreateRole(ctx context.Context, arg storegen.CreateRoleParams) (storegen.Role, error) {
+	return storegen.Role{}, nil
+}
+func (m *mockStoreReader) DeleteRole(ctx context.Context, arg storegen.DeleteRoleParams) (storegen.Role, error) {
+	return storegen.Role{}, nil
+}
+func (m *mockStoreReader) ListDomainClaims(ctx context.Context, organisationID pgtype.UUID) ([]storegen.DomainClaim, error) {
+	return nil, nil
+}
+func (m *mockStoreReader) GetDomainClaim(ctx context.Context, domain string) (storegen.DomainClaim, error) {
+	return storegen.DomainClaim{}, nil
+}
+func (m *mockStoreReader) CreateDomainClaim(ctx context.Context, arg storegen.CreateDomainClaimParams) (storegen.DomainClaim, error) {
+	return storegen.DomainClaim{}, nil
+}
+func (m *mockStoreReader) DeleteDomainClaim(ctx context.Context, arg storegen.DeleteDomainClaimParams) (storegen.DomainClaim, error) {
+	return storegen.DomainClaim{}, nil
+}
+func (m *mockStoreReader) CreateAuditLog(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) {
+	return storegen.AuditLog{}, nil
+}
+func (m *mockStoreReader) ListAuditLogs(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error) {
+	return nil, nil
 }
 
 type mockRouter struct {

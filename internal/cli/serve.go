@@ -17,6 +17,7 @@ import (
 
 	"github.com/abn/relay/internal/alerting"
 	"github.com/abn/relay/internal/api"
+	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/dashboard"
 	"github.com/abn/relay/internal/ha"
@@ -89,6 +90,10 @@ func newServeCommand() *cobra.Command {
 			r.SetForwarder(forwarder, haMgr.ID())
 
 			apiServer := api.NewServer(r, s.Queries(), logger)
+			if cfg.AuthEnabled() {
+				val := auth.NewOIDCValidator(cfg.OIDCIssuer, cfg.OIDCAudience, nil)
+				apiServer.WithAuth(true, val)
+			}
 			handler := api.NewHandler(s, apiServer)
 
 			forwardHandler := router.NewForwardHandler(h, []byte(cfg.InternalSecret), 30*time.Second)

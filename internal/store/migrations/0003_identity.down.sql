@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS domain_claims;
+DROP TABLE IF EXISTS organisation_members;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS users;

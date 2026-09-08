@@ -6,6 +6,7 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Implemented the Phase 7 identity and access control layer featuring RSA OIDC JWT token validation with in-memory JWKS caching and fail-closed key set guarantees, RFC 8628 device flow login compatibility, Postgres persistence for users, roles, organisation members, domain claims, and audit logs, automatic user registration and domain-claim organisation matching, conditional route gating returning 404 Problem Details when running in unauthenticated mode, and an integration test suite in `tests/identity/`.
 * **Creation**: Implemented the Phase 6 web dashboard in `console/` and `internal/dashboard`, featuring an OpenAPI-aligned TypeScript data layer, fleet and application overview, workflow search with interactive SVG step execution graph, queue and schedule controls, alerting rule manager, and scoped API key minting.
 * **Update**: Documented web dashboard access in the [quickstart guide](usage/quickstart.md).
 * **Creation**: Implemented the Phase 5 scale and operational architecture featuring high-availability instance clustering with lease adoption, HMAC-SHA256 signed HTTP peer forwarding with loop prevention, an OpenMetrics scrape endpoint at `/v1/metrics`, alerting rule management REST API, background alert evaluation loop dispatching WebSocket notifications to executors, and a multi-node integration test suite.

@@ -178,7 +178,12 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 				})
 			},
 		})
-		gen.HandlerFromMux(strictHandler, mux)
+		gen.HandlerWithOptions(strictHandler, gen.StdHTTPServerOptions{
+			BaseRouter: mux,
+			Middlewares: []gen.MiddlewareFunc{
+				AuthMiddleware(server),
+			},
+		})
 	}
 
 	return mux

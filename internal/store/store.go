@@ -74,6 +74,10 @@ func (s *Store) Migrate(ctx context.Context) error {
 func (s *Store) Truncate(ctx context.Context) error {
 	// Truncate tables in dependency order (reverse of creation)
 	tables := []string{
+		"audit_logs",
+		"domain_claims",
+		"organisation_members",
+		"users",
 		"alerting_rules",
 		"api_keys",
 		"executors",
@@ -90,6 +94,11 @@ func (s *Store) Truncate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to truncate tables: %w", err)
 	}
+
+	if _, err := s.pool.Exec(ctx, "DELETE FROM roles WHERE organisation_id IS NOT NULL"); err != nil {
+		return fmt.Errorf("failed to clean custom roles: %w", err)
+	}
+
 	return nil
 }
 
