@@ -12,6 +12,7 @@ var Version = "dev"
 
 // Run executes the command tree with the given arguments.
 func Run(ctx context.Context, args []string) error {
+	//nolint:contextcheck // Command tree is built statically; context is bound via ExecuteContext.
 	cmd := newRootCommand()
 	cmd.SetArgs(args)
 	return cmd.ExecuteContext(ctx)
@@ -25,6 +26,10 @@ func newRootCommand() *cobra.Command {
 	}
 
 	root.AddCommand(newVersionCommand())
+	root.AddCommand(newServeCommand())
+	root.AddCommand(newMigrateCommand())
+	root.AddCommand(newAPIKeyCommand())
+	root.AddCommand(newOpenAPICommand())
 	return root
 }
 

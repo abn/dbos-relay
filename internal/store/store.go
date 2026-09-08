@@ -46,6 +46,10 @@ func (s *Store) Queries() *gen.Queries {
 	return s.q
 }
 
+func (s *Store) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
+}
+
 func (s *Store) Migrate(ctx context.Context) error {
 	d, err := iofs.New(migrationFS, "migrations")
 	if err != nil {
