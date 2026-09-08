@@ -1,0 +1,7 @@
+{
+  "type": "alert",
+  "request_id": "req-uuid",
+  "name": "system_failure",
+  "message": "High memory usage",
+  "metadata": {"cpu": "90%"}
+}

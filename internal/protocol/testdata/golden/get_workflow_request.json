@@ -1,0 +1,7 @@
+{
+  "type": "get_workflow",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123",
+  "load_input": true,
+  "load_output": true
+}

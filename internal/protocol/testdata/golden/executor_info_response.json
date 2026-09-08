@@ -1,0 +1,9 @@
+{
+  "type": "executor_info",
+  "request_id": "req-uuid",
+  "executor_id": "exec-123",
+  "application_version": "v1.0.0",
+  "hostname": "localhost",
+  "language": "go",
+  "dbos_version": "0.1.0"
+}

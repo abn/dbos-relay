@@ -1,0 +1,5 @@
+{
+  "type": "recovery",
+  "request_id": "req-uuid",
+  "executor_ids": ["exec-123"]
+}

@@ -1,0 +1,5 @@
+{
+  "type": "recovery",
+  "request_id": "req-uuid",
+  "success": true
+}

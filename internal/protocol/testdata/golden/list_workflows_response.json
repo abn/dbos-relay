@@ -1,0 +1,10 @@
+{
+  "type": "list_workflows",
+  "request_id": "req-uuid",
+  "output": [
+    {
+      "WorkflowUUID": "wf-123",
+      "Status": "SUCCESS"
+    }
+  ]
+}

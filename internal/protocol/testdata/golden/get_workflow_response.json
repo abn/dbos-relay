@@ -1,0 +1,8 @@
+{
+  "type": "get_workflow",
+  "request_id": "req-uuid",
+  "output": {
+    "WorkflowUUID": "wf-123",
+    "Status": "PENDING"
+  }
+}
