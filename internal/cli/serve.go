@@ -16,6 +16,7 @@ import (
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/hub"
+	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store"
 )
 
@@ -42,8 +43,6 @@ func newServeCommand() *cobra.Command {
 				return fmt.Errorf("migrating database: %w", err)
 			}
 
-			handler := api.NewHandler(s, s.Queries())
-
 			logger := slog.Default()
 			h := hub.New(s, cfg, logger)
 			defer func() {
@@ -51,6 +50,10 @@ func newServeCommand() *cobra.Command {
 					logger.Error("closing hub", "error", err)
 				}
 			}()
+
+			r := router.New(s.Queries(), h)
+			apiServer := api.NewServer(r, s.Queries(), logger)
+			handler := api.NewHandler(s, apiServer)
 
 			mux := http.NewServeMux()
 			mux.Handle("/", handler)

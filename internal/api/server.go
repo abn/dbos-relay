@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/router"
 	storegen "github.com/abn/relay/internal/store/gen"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -42,3 +43,5 @@ func NewServer(r router.Router, s StoreReader, logger *slog.Logger) *Server {
 		logger: logger,
 	}
 }
+
+var _ gen.StrictServerInterface = (*Server)(nil)

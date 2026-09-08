@@ -206,7 +206,7 @@ func TestSchemasEndpoint(t *testing.T) {
 }
 
 type fakeQuerier struct {
-	api.ExecutorReader
+	api.StoreReader
 }
 
 func (f *fakeQuerier) GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error) {
@@ -237,7 +237,8 @@ func (f *fakeQuerier) ListExecutorsByApplication(ctx context.Context, applicatio
 }
 
 func TestListExecutors(t *testing.T) {
-	h := api.NewHandler(&mockStore{}, &fakeQuerier{})
+	srv := api.NewServer(nil, &fakeQuerier{}, nil)
+	h := api.NewHandler(&mockStore{}, srv)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v2/orgs/test-org/apps/test-app/executors", nil)
