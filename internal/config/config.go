@@ -36,8 +36,8 @@ func Load(getenv func(string) string) (*Config, error) {
 	cfg := &Config{
 		DatabaseURL:      getenv("RELAY_DATABASE_URL"),
 		ListenAddr:       or(getenv("RELAY_LISTEN_ADDR"), defaultListenAddr),
-		AdvertiseAddress: getenv("RELAY_ADVERTISE_ADDRESS"),
-		InternalSecret:   getenv("RELAY_INTERNAL_SECRET"),
+		AdvertiseAddress: or(or(getenv("RELAY_ADVERTISE_ADDRESS"), getenv("DBOS__ADVERTISE_ADDRESS")), "127.0.0.1"),
+		InternalSecret:   or(or(getenv("RELAY_INTERNAL_SECRET"), getenv("DBOS__CLUSTER_SECRET")), "relay-cluster-secret"),
 		ExecutorDeadline: defaultExecutorDeadline,
 		LogLevel:         slog.LevelInfo,
 	}

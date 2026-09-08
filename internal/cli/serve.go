@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/config"
+	"github.com/abn/relay/internal/ha"
 	"github.com/abn/relay/internal/hub"
 	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/router"
@@ -57,13 +60,36 @@ func newServeCommand() *cobra.Command {
 			h.SetLivenessTracker(livenessMgr)
 			defer livenessMgr.Stop()
 
+			port := 8090
+			if _, pStr, err := net.SplitHostPort(cfg.ListenAddr); err == nil {
+				if p, err := strconv.Atoi(pStr); err == nil {
+					port = p
+				}
+			}
+
+			haMgr := ha.NewManager(s.Queries(), ha.ManagerOptions{
+				AdvertiseAddress: cfg.AdvertiseAddress,
+				Port:             port,
+				Logger:           logger,
+			})
+			if err := haMgr.Start(ctx); err != nil {
+				return fmt.Errorf("starting ha manager: %w", err)
+			}
+			defer haMgr.Stop()
+
 			r := router.New(s.Queries(), h)
+			forwarder := router.NewForwarder([]byte(cfg.InternalSecret), nil)
+			r.SetForwarder(forwarder, haMgr.ID())
+
 			apiServer := api.NewServer(r, s.Queries(), logger)
 			handler := api.NewHandler(s, apiServer)
+
+			forwardHandler := router.NewForwardHandler(h, []byte(cfg.InternalSecret), 30*time.Second)
 
 			mux := http.NewServeMux()
 			mux.Handle("/", handler)
 			mux.Handle("/websocket/", h)
+			mux.Handle("/internal/v1/forward/", forwardHandler)
 
 			server := &http.Server{
 				Addr:              cfg.ListenAddr,

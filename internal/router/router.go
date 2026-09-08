@@ -25,6 +25,18 @@ type AppResolver interface {
 	GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error)
 }
 
+// InstanceResolver provides executor ownership and instance addressing queries for peer forwarding.
+type InstanceResolver interface {
+	AppResolver
+	ListConnectedExecutorsByApplication(ctx context.Context, applicationID pgtype.UUID) ([]gen.Executor, error)
+	GetInstance(ctx context.Context, id pgtype.UUID) (gen.Instance, error)
+}
+
+// PeerForwarder dispatches requests to peer instances.
+type PeerForwarder interface {
+	Forward(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error)
+}
+
 type Dispatcher interface {
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
 }
@@ -34,12 +46,20 @@ type Router interface {
 }
 
 type DefaultRouter struct {
-	store AppResolver
-	hub   Dispatcher
+	store           AppResolver
+	hub             Dispatcher
+	forwarder       PeerForwarder
+	localInstanceID pgtype.UUID
 }
 
 func New(store AppResolver, hub Dispatcher) *DefaultRouter {
 	return &DefaultRouter{store: store, hub: hub}
+}
+
+// SetForwarder configures peer forwarding when executors are owned by remote instances.
+func (r *DefaultRouter) SetForwarder(f PeerForwarder, localInstanceID pgtype.UUID) {
+	r.forwarder = f
+	r.localInstanceID = localInstanceID
 }
 
 func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
@@ -63,9 +83,32 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 	res, err := r.hub.Dispatch(ctx, app.ID, msg)
 	if err != nil {
 		errStr := err.Error()
-		if strings.Contains(errStr, "no live executor") ||
+		isNoExecutor := strings.Contains(errStr, "no live executor") ||
 			strings.Contains(errStr, "no executors registered") ||
-			strings.Contains(errStr, "no executors available") {
+			strings.Contains(errStr, "no executors available")
+
+		// If no local executor is available and a peer forwarder is configured, check for peer ownership
+		if isNoExecutor && r.forwarder != nil {
+			if ir, ok := r.store.(InstanceResolver); ok {
+				execs, listErr := ir.ListConnectedExecutorsByApplication(ctx, app.ID)
+				if listErr == nil {
+					for _, exec := range execs {
+						if exec.OwnerInstanceID.Valid && exec.OwnerInstanceID != r.localInstanceID {
+							inst, instErr := ir.GetInstance(ctx, exec.OwnerInstanceID)
+							if instErr == nil && inst.AdvertiseAddress != "" && inst.Port > 0 {
+								targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
+								fRes, fErr := r.forwarder.Forward(ctx, targetURL, msg)
+								if fErr == nil {
+									return fRes, nil
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if isNoExecutor {
 			return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, err)
 		}
 		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(errStr, "timed out") {
