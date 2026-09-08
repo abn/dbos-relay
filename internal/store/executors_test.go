@@ -173,4 +173,88 @@ func TestExecutors(t *testing.T) {
 			t.Errorf("expected status 'connected', got %q", execs[0].Status)
 		}
 	})
+
+	t.Run("SetExecutorDeadAndListDead", func(t *testing.T) {
+		deadExec, err := s.Queries().SetExecutorDead(ctx, gen.SetExecutorDeadParams{
+			ApplicationID: appID,
+			ExecutorID:    executorID,
+		})
+		if err != nil {
+			t.Fatalf("SetExecutorDead failed: %v", err)
+		}
+		if deadExec.Status != "dead" {
+			t.Errorf("expected status 'dead', got %q", deadExec.Status)
+		}
+		if deadExec.OwnerInstanceID.Valid {
+			t.Errorf("expected owner_instance_id to be cleared on dead")
+		}
+
+		deadList, err := s.Queries().ListDeadExecutorsByApplication(ctx, appID)
+		if err != nil {
+			t.Fatalf("ListDeadExecutorsByApplication failed: %v", err)
+		}
+		if len(deadList) != 1 || deadList[0].ExecutorID != executorID {
+			t.Fatalf("expected 1 dead executor with ID %q, got %+v", executorID, deadList)
+		}
+	})
+
+	t.Run("AdoptExpiredExecutors", func(t *testing.T) {
+		// Re-upsert as connected with expired lease
+		expiredLease := pgtype.Timestamptz{Time: time.Now().Add(-1 * time.Minute), Valid: true}
+		_, err := s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+			ApplicationID:      appID,
+			ExecutorID:         executorID,
+			ApplicationVersion: "v1",
+			OwnerInstanceID:    ownerID,
+			LeaseExpiresAt:     expiredLease,
+		})
+		if err != nil {
+			t.Fatalf("UpsertExecutor with expired lease failed: %v", err)
+		}
+
+		newInstanceID := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}, Valid: true}
+		newLease := pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true}
+
+		adopted, err := s.Queries().AdoptExpiredExecutors(ctx, gen.AdoptExpiredExecutorsParams{
+			OwnerInstanceID: newInstanceID,
+			LeaseExpiresAt:  newLease,
+		})
+		if err != nil {
+			t.Fatalf("AdoptExpiredExecutors failed: %v", err)
+		}
+		if len(adopted) == 0 {
+			t.Fatalf("expected at least 1 adopted executor")
+		}
+		found := false
+		for _, e := range adopted {
+			if e.ExecutorID == executorID {
+				found = true
+				if e.OwnerInstanceID != newInstanceID {
+					t.Errorf("expected owner %v, got %v", newInstanceID, e.OwnerInstanceID)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Errorf("did not find %q in adopted list", executorID)
+		}
+	})
+
+	t.Run("DeleteExecutor", func(t *testing.T) {
+		err := s.Queries().DeleteExecutor(ctx, gen.DeleteExecutorParams{
+			ApplicationID: appID,
+			ExecutorID:    executorID,
+		})
+		if err != nil {
+			t.Fatalf("DeleteExecutor failed: %v", err)
+		}
+
+		_, err = s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+			ApplicationID: appID,
+			ExecutorID:    executorID,
+		})
+		if err == nil {
+			t.Fatalf("expected error querying deleted executor, got nil")
+		}
+	})
 }

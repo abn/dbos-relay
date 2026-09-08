@@ -11,6 +11,67 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adoptExpiredExecutors = `-- name: AdoptExpiredExecutors :many
+UPDATE executors
+SET owner_instance_id = $1,
+    lease_expires_at = $2
+WHERE status = 'connected' AND (lease_expires_at IS NULL OR lease_expires_at < now())
+RETURNING id, application_id, executor_id, application_version, hostname, metadata, status, owner_instance_id, lease_expires_at, connected_at, last_seen_at, disconnected_at
+`
+
+type AdoptExpiredExecutorsParams struct {
+	OwnerInstanceID pgtype.UUID
+	LeaseExpiresAt  pgtype.Timestamptz
+}
+
+func (q *Queries) AdoptExpiredExecutors(ctx context.Context, arg AdoptExpiredExecutorsParams) ([]Executor, error) {
+	rows, err := q.db.Query(ctx, adoptExpiredExecutors, arg.OwnerInstanceID, arg.LeaseExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Executor
+	for rows.Next() {
+		var i Executor
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.ExecutorID,
+			&i.ApplicationVersion,
+			&i.Hostname,
+			&i.Metadata,
+			&i.Status,
+			&i.OwnerInstanceID,
+			&i.LeaseExpiresAt,
+			&i.ConnectedAt,
+			&i.LastSeenAt,
+			&i.DisconnectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteExecutor = `-- name: DeleteExecutor :exec
+DELETE FROM executors
+WHERE application_id = $1 AND executor_id = $2
+`
+
+type DeleteExecutorParams struct {
+	ApplicationID pgtype.UUID
+	ExecutorID    string
+}
+
+func (q *Queries) DeleteExecutor(ctx context.Context, arg DeleteExecutorParams) error {
+	_, err := q.db.Exec(ctx, deleteExecutor, arg.ApplicationID, arg.ExecutorID)
+	return err
+}
+
 const disconnectExecutor = `-- name: DisconnectExecutor :one
 UPDATE executors
 SET status = 'disconnected',
@@ -115,6 +176,45 @@ func (q *Queries) ListConnectedExecutorsByApplication(ctx context.Context, appli
 	return items, nil
 }
 
+const listDeadExecutorsByApplication = `-- name: ListDeadExecutorsByApplication :many
+SELECT id, application_id, executor_id, application_version, hostname, metadata, status, owner_instance_id, lease_expires_at, connected_at, last_seen_at, disconnected_at FROM executors
+WHERE application_id = $1 AND status = 'dead'
+ORDER BY disconnected_at ASC
+`
+
+func (q *Queries) ListDeadExecutorsByApplication(ctx context.Context, applicationID pgtype.UUID) ([]Executor, error) {
+	rows, err := q.db.Query(ctx, listDeadExecutorsByApplication, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Executor
+	for rows.Next() {
+		var i Executor
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.ExecutorID,
+			&i.ApplicationVersion,
+			&i.Hostname,
+			&i.Metadata,
+			&i.Status,
+			&i.OwnerInstanceID,
+			&i.LeaseExpiresAt,
+			&i.ConnectedAt,
+			&i.LastSeenAt,
+			&i.DisconnectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExecutorsByApplication = `-- name: ListExecutorsByApplication :many
 SELECT id, application_id, executor_id, application_version, hostname, metadata, status, owner_instance_id, lease_expires_at, connected_at, last_seen_at, disconnected_at FROM executors
 WHERE application_id = $1
@@ -166,6 +266,40 @@ func (q *Queries) ReapExpiredExecutors(ctx context.Context, disconnectedAt pgtyp
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setExecutorDead = `-- name: SetExecutorDead :one
+UPDATE executors
+SET status = 'dead',
+    owner_instance_id = NULL,
+    lease_expires_at = NULL
+WHERE application_id = $1 AND executor_id = $2
+RETURNING id, application_id, executor_id, application_version, hostname, metadata, status, owner_instance_id, lease_expires_at, connected_at, last_seen_at, disconnected_at
+`
+
+type SetExecutorDeadParams struct {
+	ApplicationID pgtype.UUID
+	ExecutorID    string
+}
+
+func (q *Queries) SetExecutorDead(ctx context.Context, arg SetExecutorDeadParams) (Executor, error) {
+	row := q.db.QueryRow(ctx, setExecutorDead, arg.ApplicationID, arg.ExecutorID)
+	var i Executor
+	err := row.Scan(
+		&i.ID,
+		&i.ApplicationID,
+		&i.ExecutorID,
+		&i.ApplicationVersion,
+		&i.Hostname,
+		&i.Metadata,
+		&i.Status,
+		&i.OwnerInstanceID,
+		&i.LeaseExpiresAt,
+		&i.ConnectedAt,
+		&i.LastSeenAt,
+		&i.DisconnectedAt,
+	)
+	return i, err
 }
 
 const touchExecutorLastSeen = `-- name: TouchExecutorLastSeen :exec

@@ -58,3 +58,27 @@ WHERE application_id = $1 AND executor_id = $2;
 UPDATE executors
 SET status = 'dead'
 WHERE status = 'disconnected' AND disconnected_at < $1;
+
+-- name: SetExecutorDead :one
+UPDATE executors
+SET status = 'dead',
+    owner_instance_id = NULL,
+    lease_expires_at = NULL
+WHERE application_id = $1 AND executor_id = $2
+RETURNING *;
+
+-- name: DeleteExecutor :exec
+DELETE FROM executors
+WHERE application_id = $1 AND executor_id = $2;
+
+-- name: ListDeadExecutorsByApplication :many
+SELECT * FROM executors
+WHERE application_id = $1 AND status = 'dead'
+ORDER BY disconnected_at ASC;
+
+-- name: AdoptExpiredExecutors :many
+UPDATE executors
+SET owner_instance_id = $1,
+    lease_expires_at = $2
+WHERE status = 'connected' AND (lease_expires_at IS NULL OR lease_expires_at < now())
+RETURNING *;
