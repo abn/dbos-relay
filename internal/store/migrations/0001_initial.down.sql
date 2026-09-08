@@ -1,0 +1,9 @@
+DROP TABLE api_keys;
+DROP INDEX executors_owner_idx;
+DROP INDEX executors_status_disconnected_idx;
+DROP INDEX executors_status_lease_idx;
+DROP TABLE executors;
+DROP TYPE executor_status;
+DROP TABLE instances;
+DROP TABLE applications;
+DROP TABLE organisations;

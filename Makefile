@@ -33,7 +33,7 @@ gen: ## Regenerate sqlc and OpenAPI output
 
 drift: gen ## Fail if generated output differs from the committed version
 	@if [ -d internal/store/gen ] || [ -d internal/api/gen ]; then \
-	  git diff --exit-code --quiet $(GENERATED) || \
+	  git diff --exit-code --quiet $$(ls -d $(GENERATED) 2>/dev/null) || \
 	  { echo "drift: generated output is stale, run make gen"; exit 1; }; \
 	fi
 	@echo "drift: ok"
@@ -73,3 +73,14 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} \
 	  /^[a-zA-Z0-9_\/-]+:.*##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } \
 	  /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+
+##@ Database
+
+db/up: ## Start the local PostgreSQL service
+	docker compose -f deploy/compose.yaml up -d
+
+db/down: ## Stop and remove the local PostgreSQL service
+	docker compose -f deploy/compose.yaml down -v
+
+db/url: ## Print the local test database URL
+	@echo "postgres://relay:relay@localhost:5433/relay?sslmode=disable"

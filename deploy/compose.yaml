@@ -1,0 +1,8 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: relay
+      POSTGRES_PASSWORD: relay
+    ports:
+      - "5433:5432"
