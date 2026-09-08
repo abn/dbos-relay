@@ -31,10 +31,16 @@ type Dispatcher interface {
 
 // Evaluator evaluates alerting conditions across applications and dispatches alerts.
 type Evaluator struct {
-	store      Store
-	dispatcher Dispatcher
-	logger     *slog.Logger
-	wg         sync.WaitGroup
+	store           Store
+	dispatcher      Dispatcher
+	channelDispatch ChannelDispatcher
+	logger          *slog.Logger
+	wg              sync.WaitGroup
+}
+
+// SetChannelDispatcher configures an outbound notification channel dispatcher.
+func (e *Evaluator) SetChannelDispatcher(cd ChannelDispatcher) {
+	e.channelDispatch = cd
 }
 
 // NewEvaluator creates a new alerting rule Evaluator.
@@ -125,6 +131,11 @@ func (e *Evaluator) shouldThrottle(rule gen.AlertingRule) bool {
 	return time.Since(rule.LastFiredAt.Time) < minDuration
 }
 
+// RecoveryStore queries recovery dispatches for flapping evaluation.
+type RecoveryStore interface {
+	ListRecentRecoveryDispatches(ctx context.Context, arg gen.ListRecentRecoveryDispatchesParams) ([]gen.RecoveryDispatch, error)
+}
+
 func (e *Evaluator) evaluateRule(ctx context.Context, app gen.Application, rule gen.AlertingRule) (bool, map[string]string, error) {
 	switch rule.RuleType {
 	case "UnresponsiveApplication":
@@ -195,6 +206,63 @@ func (e *Evaluator) evaluateRule(ctx context.Context, app gen.Application, rule 
 		}
 		return false, meta, nil
 
+	case "RecoveryFlapping":
+		var metaMap map[string]any
+		if len(rule.RuleMetadata) > 0 {
+			_ = json.Unmarshal(rule.RuleMetadata, &metaMap)
+		}
+		threshold := 3
+		if t, ok := metaMap["threshold"].(float64); ok && t > 0 {
+			threshold = int(t)
+		}
+		if rStore, ok := e.store.(RecoveryStore); ok {
+			oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
+			dispatches, err := rStore.ListRecentRecoveryDispatches(ctx, gen.ListRecentRecoveryDispatchesParams{
+				ApplicationID: app.ID,
+				DispatchedAt:  pgtype.Timestamptz{Time: oneHourAgo, Valid: true},
+				Limit:         100,
+			})
+			if err == nil {
+				counts := make(map[string]int)
+				for _, d := range dispatches {
+					counts[d.DeadExecutorID]++
+					if counts[d.DeadExecutorID] >= threshold {
+						return true, map[string]string{
+							"flapping_executor_id": d.DeadExecutorID,
+							"recovery_count":       fmt.Sprintf("%d", counts[d.DeadExecutorID]),
+							"threshold":            fmt.Sprintf("%d", threshold),
+						}, nil
+					}
+				}
+			}
+		}
+		return false, nil, nil
+
+	case "StrandedVersion":
+		execs, err := e.store.ListExecutorsByApplication(ctx, app.ID)
+		if err != nil {
+			return false, nil, err
+		}
+		liveVersions := make(map[string]bool)
+		for _, ex := range execs {
+			if ex.Status == "connected" && ex.ApplicationVersion != "" {
+				liveVersions[ex.ApplicationVersion] = true
+			}
+		}
+		var metaMap map[string]any
+		if len(rule.RuleMetadata) > 0 {
+			_ = json.Unmarshal(rule.RuleMetadata, &metaMap)
+		}
+		if v, ok := metaMap["stranded_version"].(string); ok && v != "" {
+			if !liveVersions[v] {
+				return true, map[string]string{
+					"stranded_version": v,
+					"live_executors":   "0",
+				}, nil
+			}
+		}
+		return false, nil, nil
+
 	default:
 		return false, nil, fmt.Errorf("unknown rule type: %s", rule.RuleType)
 	}
@@ -225,6 +293,40 @@ func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta m
 			"ruleType", rule.RuleType,
 			"receivingAppID", rule.ReceivingApplicationID,
 		)
+	}
+
+	// Dispatch to external channels if configured in metadata
+	if e.channelDispatch != nil && len(rule.RuleMetadata) > 0 {
+		var metaMap map[string]any
+		if err := json.Unmarshal(rule.RuleMetadata, &metaMap); err == nil {
+			if destsRaw, ok := metaMap["destinations"].([]any); ok {
+				notif := AlertNotification{
+					RuleID:   rule.ID.String(),
+					RuleType: rule.RuleType,
+					AppName:  rule.ApplicationID.String(),
+					Message:  fmt.Sprintf("%s alert triggered", rule.RuleType),
+					Metadata: meta,
+					FiredAt:  time.Now().UTC(),
+				}
+				for _, dRaw := range destsRaw {
+					if dMap, ok := dRaw.(map[string]any); ok {
+						dest := ChannelDestination{
+							Type: ChannelType(fmt.Sprint(dMap["type"])),
+							URL:  fmt.Sprint(dMap["url"]),
+						}
+						if sec, ok := dMap["secret"].(string); ok {
+							dest.Secret = sec
+						}
+						if rk, ok := dMap["routing_key"].(string); ok {
+							dest.RoutingKey = rk
+						}
+						if err := e.channelDispatch.Dispatch(ctx, dest, notif); err != nil {
+							e.logger.Warn("failed to dispatch to external channel", "type", dest.Type, "error", err)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if err := e.store.TouchAlertRuleLastFired(ctx, rule.ID); err != nil {

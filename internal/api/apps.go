@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -572,7 +573,17 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 	ruleType := "WorkflowFailure"
 	var minInterval *int32
 	if request.Body != nil {
-		ruleType = string(request.Body.RuleType)
+		rt := string(request.Body.RuleType)
+		switch strings.ToLower(strings.ReplaceAll(rt, "_", "")) {
+		case "workflowfailure":
+			ruleType = "WorkflowFailure"
+		case "slowqueue":
+			ruleType = "SlowQueue"
+		case "unresponsiveapplication":
+			ruleType = "UnresponsiveApplication"
+		default:
+			ruleType = rt
+		}
 		minInterval = request.Body.MinIntervalSecs
 	}
 
