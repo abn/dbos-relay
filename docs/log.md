@@ -6,6 +6,11 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Opened the [usage](usage/index.md) section with
+  [Quickstart](usage/quickstart.md) for running Relay locally with Postgres.
+* **Update**: Added development targets to the [contributor guide](contribution/guide.md)
+  and noted completion of discovery items D1-D8 and Phase 1 foundation packages.
+* **Update**: Linked the usage section from the root [index](index.md).
 * **Creation**: Opened the [discovery](discovery/index.md) section and its
   [provenance ledger](discovery/provenance.md) recording permitted public
   sources for clean-room derivation.

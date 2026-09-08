@@ -23,6 +23,11 @@ the implementation does.
 * [Clean-room rules](contribution/clean-room.md) - the sourcing rules that
   bind every contributor
 
+## Usage
+
+* [Usage overview](usage/index.md) - how to run and operate Relay
+* [Quickstart](usage/quickstart.md) - run Relay locally with Postgres
+
 ## Discovery
 
 * [Discovery overview](discovery/index.md) - phase 0 discovery findings

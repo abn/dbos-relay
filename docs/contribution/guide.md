@@ -24,6 +24,15 @@ make check
 The bootstrap script installs the git hooks and writes the local assistant
 shims. It is idempotent, so re-run it whenever hooks or tooling change.
 
+## Development targets
+
+- `make build`: compiles `bin/relay`
+- `make test`: runs the unit and integration tests
+- `make vet`: runs static analysis and golangci-lint
+- `make drift`: verifies sqlc and OpenAPI code generation is up to date
+- `make check`: runs pre-commit hooks, linters, tests, and drift check
+- `make db/up`, `make db/down`: manages the local test database
+
 ## The workflow
 
 1. **State the scope in one sentence** before starting: the unit of work, the
@@ -53,10 +62,8 @@ shims. It is idempotent, so re-run it whenever hooks or tooling change.
 
 ## Discovery before code
 
-The project is in its discovery phase. Server code waits until the stack
-decision, the executor protocol specification, the vendored REST contract, the
-permission model, the client behavioural notes, and the interface reuse
-assessment are written and reviewed. If a later phase exposes a gap in the
+Discovery items D1-D8 and Phase 1 foundation packages are complete, and Phase 2
+protocol implementation is next. If a later phase exposes a gap in the
 protocol specification, the specification is fixed first and the code follows.
 
 ## Related
