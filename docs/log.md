@@ -6,6 +6,9 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Refactor**: Consolidated OpenAPI specification access and YAML conversion
+  in `api/spec`, eliminated redundant schema decoding across packages, and
+  sanitized internal verification identifiers across discovery documents.
 * **Creation**: Opened the [usage](usage/index.md) section with
   [Quickstart](usage/quickstart.md) for running Relay locally with Postgres.
 * **Update**: Added development targets to the [contributor guide](contribution/guide.md)
@@ -49,7 +52,7 @@ implementation milestones; those belong in the commit history.
   behaviour, and says so. Pages are rewritten against the code as the code
   lands.
 
-## 2026-09-08, milestone Discovery and Foundation
+## 2026-09-08, Discovery and Foundation Core
 
 Added discovery reference documents and initial foundation packages:
 * Added [REST surface](discovery/D3-rest-surface.md): 64 operations inventoried,

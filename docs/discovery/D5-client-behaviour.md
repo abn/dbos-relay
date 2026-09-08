@@ -20,7 +20,7 @@ All findings in this document are derived from the following permitted source:
 * Pinned Commit: `9d14ed3f0ccddb84cd3390e0bddbcfb9ea9a32a6`
 * Date Confirmed: 2026-09-08
 
-## 1. License analysis (Closes verification item V9)
+## 1. License analysis
 
 Inspection of `LICENSE` and `go.mod` in the repository root confirms:
 * **License Type**: MIT License (`MIT`).
@@ -31,8 +31,7 @@ Inspection of `LICENSE` and `go.mod` in the repository root confirms:
   publish, distribute, sublicense, and sell copies, subject only to retaining the
   copyright notice and disclaimer.
 * **Compatibility Verdict**: Fully compatible with Relay's clean-room derivation
-  rules. The client source is permissively licensed and verified. This closes
-  verification item V9.
+  rules. The client source is permissively licensed and verified.
 
 ## 2. Profile and URL resolution mechanics
 
@@ -72,7 +71,7 @@ Resolution behaves as follows (`internal/config/resolve.go`, `internal/cli/commo
    * `-o` / `--output <format>` (`table` default, `json`, and for specific commands
      `ids`). Not stored in config or environment.
 
-## 3. No-auth mode behaviour (Closes verification item V14)
+## 3. No-auth mode behaviour
 
 A self-hosted deployment running without authentication (`auth: none`) operates
 under specific client and server conventions.
@@ -133,8 +132,6 @@ If Relay returned HTTP 403 for an OAuth-gated endpoint in no-auth mode,
 limitation (exit 1). Instead, Relay must leave OAuth-gated routes **unregistered**
 on the HTTP router when running in no-auth mode, causing requests to return
 HTTP 404 (exit 4).
-
-This closes verification item V14.
 
 ## 4. Device authorization flow (Phase 7 reference)
 

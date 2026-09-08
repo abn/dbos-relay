@@ -13,8 +13,6 @@ specifications are derived under clean-room rules from the permitted DBOS
 Transact SDKs, the `dbosctl` command-line client, and the Conductor OpenAPI
 specification.
 
-This document closes verification item V13.
-
 ## Provenance and clean-room citations
 
 All specifications in this document are derived from permitted sources:
@@ -60,12 +58,11 @@ All specifications in this document are derived from permitted sources:
   * Default role strings: `transact/src/test/java/dev/dbos/transact/database/SystemDatabaseTest.java` (lines 721-722, 831-832)
   * Queue role validation: `transact/src/test/java/dev/dbos/transact/queue/DynamicQueuesTest.java` (lines 756-757)
 
-## 1. Verification item closure: V13
+## 1. Specification summary
 
-Verification item V13 requires confirming the permission list, default roles,
-key scoping, and key prefix from public documentation and client source.
+Summary of permissions, default roles, application scoping, and key format
+confirmed from public documentation and client source:
 
-Findings:
 1. **Permission list**: `application.read`, `application.write`, and
    `websocket.connect` form the grantable permission catalog exposed by
    `GET /v2/orgs/{orgName}/permissions`.
@@ -75,8 +72,6 @@ Findings:
    one or more application names via `appNames` (`appIds` in responses), and
    optionally constrained to a specific permission subset.
 4. **Key prefix**: Plaintext API keys begin with the prefix `dbos_`.
-
-V13 is closed.
 
 ## 2. Permission catalog
 

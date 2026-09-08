@@ -13,8 +13,6 @@ steps, and queues. This document evaluates whether Relay should consume the
 external `@dbos-argus/ui` package from the `dbos-argus` project or build first-party
 dashboard components directly against Relay's vendored OpenAPI specifications.
 
-This evaluation closes verification item V15.
-
 ## Provenance and clean-room citation
 
 All findings in this document are derived from the following permitted sources:
@@ -60,7 +58,7 @@ The package exports four Svelte components from `packages/ui/src/lib/index.ts`:
    * Props: `QueueTableProps` containing `queues: QueueRow[]`.
    * Implementation: A 27-line unstyled HTML table rendering queue name and counts (pending, running, failed).
 
-### Framework version constraints (Closes verification item V15)
+### Framework version constraints
 
 * **`@dbos-argus/ui`**: Pins Svelte `^5.0.0` as a peer dependency. It has no dependencies on SvelteKit or graph visualization packages.
 * **`dbos-argus` application (`apps/console`)**: The actual web console application in the same monorepo pins:

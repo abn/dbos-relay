@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/abn/relay/api/spec"
 )
@@ -19,32 +18,30 @@ func newOpenAPICommand() *cobra.Command {
 		Use:   "openapi",
 		Short: "Print the OpenAPI specification",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var filename string
+			if asYAML {
+				yamlData, err := spec.OpenAPIYAML()
+				if err != nil {
+					return fmt.Errorf("getting openapi yaml: %w", err)
+				}
+				_, err = cmd.OutOrStdout().Write(yamlData)
+				return err
+			}
+
+			var (
+				data []byte
+				err  error
+			)
 			switch version {
 			case "3.1", "":
-				filename = "openapi.json"
+				data, err = spec.OpenAPISpec()
 			case "3.0":
-				filename = "openapi-3.0.json"
+				data, err = spec.OpenAPI30Spec()
 			default:
 				return fmt.Errorf("unsupported openapi version %q (supported: 3.0, 3.1)", version)
 			}
 
-			data, err := spec.FS.ReadFile(filename)
 			if err != nil {
 				return fmt.Errorf("reading openapi spec: %w", err)
-			}
-
-			if asYAML {
-				var parsed any
-				if err := yaml.Unmarshal(data, &parsed); err != nil {
-					return fmt.Errorf("parsing openapi spec to yaml: %w", err)
-				}
-				yamlData, err := yaml.Marshal(parsed)
-				if err != nil {
-					return fmt.Errorf("marshaling openapi spec to yaml: %w", err)
-				}
-				_, err = cmd.OutOrStdout().Write(yamlData)
-				return err
 			}
 
 			_, err = cmd.OutOrStdout().Write(data)

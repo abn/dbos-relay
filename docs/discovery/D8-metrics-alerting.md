@@ -12,8 +12,6 @@ This specification details the OpenMetrics scrape surface, the Conductor REST me
 contract, the alerting rule data model, the WebSocket alert delivery protocol, and the
 high-availability peer forwarding conventions.
 
-This document closes verification items V16 and V17.
-
 ## Provenance and clean-room citations
 
 All specifications in this document are derived from permitted public sources:
@@ -62,7 +60,7 @@ Conductor exposes application metrics via a single Prometheus-compatible HTTP en
   * **Point-in-time**: Instantaneous snapshot value at scrape time. These series do not emit an explicit window timestamp.
   * **Windowed**: Aggregate values (such as maximum latency or queue wait) computed across events completed within the window. Aggregations across multiple label groups must use `max()`.
 
-### Metric catalogue (Closes verification item V16)
+### Metric catalogue
 
 The table below catalogues every metric family, its measurement flavor, labels, description, and source origin (computed by control plane versus reported by executor).
 
@@ -274,7 +272,7 @@ When an alert condition is met and the minimum interval (`minIntervalSecs`) has 
 
 If the application has registered an alert handler (`@DBOS.alert_handler`, `dbos.SetAlertHandler`, `DBOS.setAlertHandler`), the handler executes. If no handler is registered, the SDK automatically logs the alert as a warning.
 
-## High availability peer forwarding conventions (Closes verification item V17)
+## High availability peer forwarding conventions
 
 In high-availability (HA) multi-node deployments, Relay nodes run behind a load balancer and share a common Postgres store.
 

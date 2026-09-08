@@ -23,7 +23,7 @@ The REST surface is defined by two OpenAPI documents vendored under `api/spec/`:
 
 Both documents were fetched on 2026-09-08 from `https://cloud.dbos.dev/conductor/v2/`.
 Both were served publicly over HTTPS with HTTP 200 OK without requiring authentication
-or click-through licensing. This closes verification item V8. Detailed provenance
+or click-through licensing. Detailed provenance
 and checksums are tracked in `api/spec/PROVENANCE.md` and the
 [provenance ledger](provenance.md).
 
@@ -109,7 +109,7 @@ own Postgres database.
 ## Schema and parameter constraints
 
 The OpenAPI document defines strict validation patterns and formats across
-common identifiers and error models. This confirms verification item V10.
+common identifiers and error models.
 
 ### Identifier constraints
 
@@ -181,7 +181,7 @@ The specification includes 16 operations tagged with `x-dbos-requires-oauth: tru
 In self-hosted no-auth mode (Tier 1 through Tier 6), these routes are not
 registered on the HTTP router. Calls to these paths produce HTTP 404 Not Found
 rather than 403 Forbidden, conforming to upstream client expectations when
-running without an identity provider (closing V14).
+running without an identity provider.
 
 ## Schemas Relay does not populate
 

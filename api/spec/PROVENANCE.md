@@ -14,4 +14,4 @@ Provenance record for the vendored Conductor OpenAPI contract documents.
 - **Fetch date**: 2026-09-08
 - **Authentication**: None required. Both endpoints responded with HTTP 200 OK to unauthenticated GET requests.
 - **Terms and licensing**: Publicly accessible without click-through agreement, login wall, or proprietary license restriction.
-- **Clean-room verification**: Confirms permitted public source status per `docs/contribution/clean-room.md` and closes verification item V8 in `.agents/brain/tasks/verification.md`.
+- **Clean-room verification**: Confirms permitted public source status per [the clean-room rules](../../docs/contribution/clean-room.md).

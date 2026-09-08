@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/abn/relay/api/spec"
 	"github.com/abn/relay/internal/problem"
 )
@@ -29,23 +27,19 @@ var (
 
 func init() {
 	var err error
-	openapiJSON, err = spec.FS.ReadFile("openapi.json")
+	openapiJSON, err = spec.OpenAPISpec()
 	if err != nil {
-		panic(fmt.Sprintf("reading embedded openapi.json: %v", err))
+		panic(fmt.Sprintf("reading openapi spec: %v", err))
 	}
 
-	openapi30JSON, err = spec.FS.ReadFile("openapi-3.0.json")
+	openapi30JSON, err = spec.OpenAPI30Spec()
 	if err != nil {
-		panic(fmt.Sprintf("reading embedded openapi-3.0.json: %v", err))
+		panic(fmt.Sprintf("reading openapi 3.0 spec: %v", err))
 	}
 
-	var parsed any
-	if err := yaml.Unmarshal(openapiJSON, &parsed); err != nil {
-		panic(fmt.Sprintf("parsing openapi.json to yaml: %v", err))
-	}
-	openapiYAML, err = yaml.Marshal(parsed)
+	openapiYAML, err = spec.OpenAPIYAML()
 	if err != nil {
-		panic(fmt.Sprintf("marshaling openapi.yaml: %v", err))
+		panic(fmt.Sprintf("reading openapi yaml: %v", err))
 	}
 
 	var doc struct {

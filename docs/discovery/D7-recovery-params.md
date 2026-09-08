@@ -13,8 +13,7 @@ transitions, per-application configuration overrides, unit conventions, and
 architectural constraints governing the recovery engine.
 
 All parameters and behaviours in this document are derived from permitted public
-sources under clean-room rules. This document closes verification items V11 and
-V12.
+sources under clean-room rules.
 
 ## Provenance and clean-room citations
 
@@ -78,7 +77,7 @@ Every specification in this document is cited from permitted sources:
 ## Default timing parameters
 
 The table below catalogues all default timing parameters governing executor
-connections and recovery. This closes verification item V11.
+connections and recovery.
 
 | Parameter | Default Value | Measured In | Initiator / Owner | Permitted Source |
 | --- | --- | --- | --- | --- |
@@ -188,8 +187,7 @@ defines three lifecycle statuses: `HEALTHY`, `DISCONNECTED`, and `DEAD`.
 
 Application-level overrides are defined by the `Application` and
 `PatchAppInputBody` schemas in `api/spec/openapi.json` and manipulated via
-`PATCH /v2/orgs/{orgName}/apps/{appName}` (`updateApp`). This closes
-verification item V12.
+`PATCH /v2/orgs/{orgName}/apps/{appName}` (`updateApp`).
 
 | Property | OpenAPI Schema Type | Unit | Default | Description |
 | --- | --- | --- | --- | --- |
