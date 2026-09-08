@@ -1,0 +1,39 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/abn/relay/internal/api/gen"
+	"github.com/abn/relay/internal/router"
+)
+
+// MakeErrorModel constructs a standard RFC 9457 ErrorModel.
+func MakeErrorModel(status int, title, detail string) gen.ErrorModel {
+	status64 := int64(status)
+	typ := "about:blank"
+	return gen.ErrorModel{
+		Type:   &typ,
+		Title:  &title,
+		Status: &status64,
+		Detail: &detail,
+	}
+}
+
+// RouterErrorToModel maps errors returned by router.Router to HTTP status code and ErrorModel.
+func RouterErrorToModel(err error) (int, gen.ErrorModel) {
+	switch {
+	case errors.Is(err, router.ErrOrgNotFound):
+		return http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error())
+	case errors.Is(err, router.ErrAppNotFound):
+		return http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Application not found", err.Error())
+	case errors.Is(err, router.ErrNoLiveExecutor):
+		return http.StatusServiceUnavailable, MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", err.Error())
+	case errors.Is(err, router.ErrExecutorTimeout):
+		return http.StatusGatewayTimeout, MakeErrorModel(http.StatusGatewayTimeout, "Gateway Timeout", err.Error())
+	case errors.Is(err, router.ErrExecutorError):
+		return http.StatusBadRequest, MakeErrorModel(http.StatusBadRequest, "Executor Error", err.Error())
+	default:
+		return http.StatusInternalServerError, MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error())
+	}
+}
