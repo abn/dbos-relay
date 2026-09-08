@@ -140,6 +140,15 @@ type OrganisationMember struct {
 	CreatedAt      pgtype.Timestamptz
 }
 
+type RecoveryDispatch struct {
+	ID               pgtype.UUID
+	ApplicationID    pgtype.UUID
+	DeadExecutorID   string
+	TargetExecutorID string
+	DispatchedAt     pgtype.Timestamptz
+	Success          bool
+}
+
 type Role struct {
 	ID             pgtype.UUID
 	OrganisationID pgtype.UUID

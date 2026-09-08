@@ -9,7 +9,7 @@ CREATE TABLE applications (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     organisation_id  uuid NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
     name             text NOT NULL
-                     CHECK (name ~ '^[a-z0-9\-_]{3,256}$'),
+                     CHECK (name ~ '^[a-z0-9\-_]{3,255}$'),
     settings         jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at       timestamptz NOT NULL DEFAULT now(),
     UNIQUE (organisation_id, name)

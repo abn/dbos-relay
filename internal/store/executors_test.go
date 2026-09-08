@@ -18,9 +18,30 @@ func TestExecutors(t *testing.T) {
 
 	ctx := context.Background()
 
-	appID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
+	org, err := s.Queries().CreateOrganisation(ctx, "exec_org")
+	if err != nil {
+		t.Fatalf("CreateOrganisation failed: %v", err)
+	}
+
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           "exec-app",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("CreateApplication failed: %v", err)
+	}
+	appID := app.ID
 	executorID := "exec-1"
 	ownerID := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, Valid: true}
+	_, err = s.Queries().UpsertInstance(ctx, gen.UpsertInstanceParams{
+		ID:               ownerID,
+		AdvertiseAddress: "127.0.0.1",
+		Port:             8080,
+	})
+	if err != nil {
+		t.Fatalf("UpsertInstance failed: %v", err)
+	}
 
 	t.Run("UpsertExecutor", func(t *testing.T) {
 		leaseExpiresAt := pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true}
@@ -205,6 +226,7 @@ func TestExecutors(t *testing.T) {
 			ApplicationID:      appID,
 			ExecutorID:         executorID,
 			ApplicationVersion: "v1",
+			Metadata:           []byte(`{}`),
 			OwnerInstanceID:    ownerID,
 			LeaseExpiresAt:     expiredLease,
 		})
@@ -213,6 +235,14 @@ func TestExecutors(t *testing.T) {
 		}
 
 		newInstanceID := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}, Valid: true}
+		_, err = s.Queries().UpsertInstance(ctx, gen.UpsertInstanceParams{
+			ID:               newInstanceID,
+			AdvertiseAddress: "127.0.0.1",
+			Port:             8081,
+		})
+		if err != nil {
+			t.Fatalf("UpsertInstance failed: %v", err)
+		}
 		newLease := pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true}
 
 		adopted, err := s.Queries().AdoptExpiredExecutors(ctx, gen.AdoptExpiredExecutorsParams{

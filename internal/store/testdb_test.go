@@ -33,3 +33,21 @@ func testStore(t *testing.T) *Store {
 
 	return s
 }
+
+func TestLiveDatabase_Reachable(t *testing.T) {
+	url := os.Getenv("RELAY_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("RELAY_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	s, err := Open(ctx, url)
+	if err != nil {
+		t.Fatalf("failed to connect to live database at %s: %v", url, err)
+	}
+	defer s.Close()
+
+	if err := s.Ping(ctx); err != nil {
+		t.Fatalf("failed to ping live database at %s: %v", url, err)
+	}
+}

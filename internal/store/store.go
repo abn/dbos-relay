@@ -56,7 +56,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 		return fmt.Errorf("failed to create migration source: %w", err)
 	}
 
-	m, err := migrate.NewWithSourceInstance("iofs", d, s.url)
+	migrateURL := s.url
+	if strings.HasPrefix(migrateURL, "postgres://") {
+		migrateURL = "pgx5://" + strings.TrimPrefix(migrateURL, "postgres://")
+	} else if strings.HasPrefix(migrateURL, "postgresql://") {
+		migrateURL = "pgx5://" + strings.TrimPrefix(migrateURL, "postgresql://")
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", d, migrateURL)
 	if err != nil {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
@@ -97,6 +104,18 @@ func (s *Store) Truncate(ctx context.Context) error {
 
 	if _, err := s.pool.Exec(ctx, "DELETE FROM roles WHERE organisation_id IS NOT NULL"); err != nil {
 		return fmt.Errorf("failed to clean custom roles: %w", err)
+	}
+
+	reseed := `
+		INSERT INTO roles (organisation_id, name, permissions, is_global)
+		VALUES
+			(NULL, 'admin', ARRAY['application.read', 'application.write', 'websocket.connect'], true),
+			(NULL, 'operator', ARRAY['application.read', 'application.write', 'websocket.connect'], true),
+			(NULL, 'viewer', ARRAY['application.read'], true)
+		ON CONFLICT DO NOTHING;
+	`
+	if _, err := s.pool.Exec(ctx, reseed); err != nil {
+		return fmt.Errorf("failed to re-seed global roles: %w", err)
 	}
 
 	return nil

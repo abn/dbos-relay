@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -43,6 +44,11 @@ type ExecutorDeleter interface {
 	DeleteExecutor(ctx context.Context, arg gen.DeleteExecutorParams) error
 }
 
+// RecoveryRecorder records workflow recovery dispatch outcomes for flapping tracking.
+type RecoveryRecorder interface {
+	RecordRecoveryDispatch(ctx context.Context, arg gen.RecordRecoveryDispatchParams) (gen.RecoveryDispatch, error)
+}
+
 // DispatcherOptions configures recovery dispatch behavior.
 type DispatcherOptions struct {
 	AllowVersionMismatch bool
@@ -54,7 +60,13 @@ type RecoveryDispatcher struct {
 	peers     PeerFinder
 	transport RecoveryTransport
 	deleter   ExecutorDeleter
+	recorder  RecoveryRecorder
 	opts      DispatcherOptions
+}
+
+// SetRecorder configures the recovery dispatch recorder.
+func (d *RecoveryDispatcher) SetRecorder(r RecoveryRecorder) {
+	d.recorder = r
 }
 
 // NewRecoveryDispatcher creates a new RecoveryDispatcher.
@@ -182,6 +194,16 @@ func (d *RecoveryDispatcher) RecoverDeadExecutor(ctx context.Context, appID pgty
 				)
 				return fmt.Errorf("deleting dead executor record: %w", err)
 			}
+		}
+
+		if d.recorder != nil {
+			_, _ = d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+				ApplicationID:    appID,
+				DeadExecutorID:   deadExecutorID,
+				TargetExecutorID: candidate.ExecutorID,
+				DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+				Success:          true,
+			})
 		}
 
 		return nil

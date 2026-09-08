@@ -1,9 +1,10 @@
 package store
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -11,6 +12,17 @@ import (
 
 	"github.com/abn/relay/internal/store/gen"
 )
+
+func jsonEqual(a, b []byte) bool {
+	var ma, mb any
+	if err := json.Unmarshal(a, &ma); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(b, &mb); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(ma, mb)
+}
 
 func TestApplications(t *testing.T) {
 	s := testStore(t)
@@ -40,7 +52,7 @@ func TestApplications(t *testing.T) {
 		if created.Name != "service-alpha" {
 			t.Errorf("expected name 'service-alpha', got %q", created.Name)
 		}
-		if !bytes.Equal(created.Settings, settings) {
+		if !jsonEqual(created.Settings, settings) {
 			t.Errorf("expected settings %s, got %s", settings, created.Settings)
 		}
 		if !created.CreatedAt.Valid {
@@ -60,7 +72,7 @@ func TestApplications(t *testing.T) {
 		if fetched.Name != created.Name {
 			t.Errorf("expected name %q, got %q", created.Name, fetched.Name)
 		}
-		if !bytes.Equal(fetched.Settings, settings) {
+		if !jsonEqual(fetched.Settings, settings) {
 			t.Errorf("expected settings %s, got %s", settings, fetched.Settings)
 		}
 
@@ -156,7 +168,7 @@ func TestApplications(t *testing.T) {
 		if app.Name != "upsert-app" {
 			t.Errorf("expected name 'upsert-app', got %q", app.Name)
 		}
-		if !bytes.Equal(app.Settings, initialSettings) {
+		if !jsonEqual(app.Settings, initialSettings) {
 			t.Errorf("expected settings %s, got %s", initialSettings, app.Settings)
 		}
 
@@ -173,7 +185,7 @@ func TestApplications(t *testing.T) {
 		if appUpdated.ID != app.ID {
 			t.Errorf("expected same application ID %v, got %v", app.ID, appUpdated.ID)
 		}
-		if !bytes.Equal(appUpdated.Settings, updatedSettings) {
+		if !jsonEqual(appUpdated.Settings, updatedSettings) {
 			t.Errorf("expected updated settings %s, got %s", updatedSettings, appUpdated.Settings)
 		}
 
@@ -184,7 +196,7 @@ func TestApplications(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetApplicationByName failed: %v", err)
 		}
-		if !bytes.Equal(fetched.Settings, updatedSettings) {
+		if !jsonEqual(fetched.Settings, updatedSettings) {
 			t.Errorf("expected persisted settings %s, got %s", updatedSettings, fetched.Settings)
 		}
 	})
@@ -211,7 +223,7 @@ func TestApplications(t *testing.T) {
 		if updated.ID != app.ID {
 			t.Errorf("expected ID %v, got %v", app.ID, updated.ID)
 		}
-		if !bytes.Equal(updated.Settings, newSettings) {
+		if !jsonEqual(updated.Settings, newSettings) {
 			t.Errorf("expected settings %s, got %s", newSettings, updated.Settings)
 		}
 
@@ -222,7 +234,7 @@ func TestApplications(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetApplicationByName failed: %v", err)
 		}
-		if !bytes.Equal(fetched.Settings, newSettings) {
+		if !jsonEqual(fetched.Settings, newSettings) {
 			t.Errorf("expected settings %s, got %s", newSettings, fetched.Settings)
 		}
 
