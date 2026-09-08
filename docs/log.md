@@ -6,6 +6,19 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Added [Declarative operations](usage/declarative.md) documenting
+  `relay.yaml` manifest format, `relay diff`, and `relay apply`.
+* **Creation**: Added [Data plane](architecture/dataplane.md) documenting
+  optional application database access through the Go SDK client, fallback
+  routing, and safety invariants.
+* **Update**: Updated database access invariant in `AGENTS.md` to permit optional
+  data-plane reads and mutations through the official SDK client library.
+* **Creation**: Added [ADR 0004](adr/0004-data-plane-via-sdk-client.md) recording
+  optional data-plane access via the SDK client.
+* **Creation**: Added [ADR 0005](adr/0005-rejected-executor-sidecar.md),
+  [ADR 0006](adr/0006-rejected-tsnet-connectivity-tunnel.md), and
+  [ADR 0007](adr/0007-rejected-native-postgres-extension.md) recording rejected
+  explorations for executor sidecars, network tunnels, and native Postgres extensions.
 * **Creation**: Implemented the automated DBOS Conductor conformance test suite in `internal/conformance`, providing in-process and blackbox test runners across 8 specification batteries, the `relay test-conformance` CLI command, the `make test/conformance` target, and documentation in [conformance testing](usage/conformance.md).
 * **Creation**: Implemented the Phase 7 identity and access control layer featuring RSA OIDC JWT token validation with in-memory JWKS caching and fail-closed key set guarantees, RFC 8628 device flow login compatibility, Postgres persistence for users, roles, organisation members, domain claims, and audit logs, automatic user registration and domain-claim organisation matching, conditional route gating returning 404 Problem Details when running in unauthenticated mode, and an integration test suite in `tests/identity/`.
 * **Creation**: Implemented the Phase 6 web dashboard in `console/` and `internal/dashboard`, featuring an OpenAPI-aligned TypeScript data layer, fleet and application overview, workflow search with interactive SVG step execution graph, queue and schedule controls, alerting rule manager, and scoped API key minting.

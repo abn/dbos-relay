@@ -3,8 +3,10 @@ package chaos_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +20,7 @@ import (
 	"github.com/abn/relay/internal/hub"
 	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/protocol"
+	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
 )
 
@@ -362,4 +365,178 @@ func (m *mockTransportChaos) SendRecovery(ctx context.Context, appID pgtype.UUID
 		},
 		Success: true,
 	}, nil
+}
+
+func TestChaos_LiveDatabase_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
+	dbURL := os.Getenv("RELAY_TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("RELAY_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	s, err := store.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("failed to migrate store: %v", err)
+	}
+	defer func() {
+		_ = s.Truncate(context.Background())
+	}()
+
+	orgName := fmt.Sprintf("chaos_%d", time.Now().UnixNano()%1000000)
+	org, err := s.Queries().CreateOrganisation(ctx, orgName)
+	if err != nil {
+		t.Fatalf("failed to create org: %v", err)
+	}
+
+	appName := "test-app"
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           appName,
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("failed to create app: %v", err)
+	}
+
+	rawKey, keyRec, err := auth.Mint()
+	if err != nil {
+		t.Fatalf("failed to mint key: %v", err)
+	}
+
+	_, err = s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "chaos-key",
+		Lookup:           keyRec.Lookup,
+		KeyHash:          keyRec.Hash,
+		ApplicationNames: []string{appName},
+		Permissions:      []string{"application.read", "application.write", "websocket.connect"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create api key: %v", err)
+	}
+
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	cfg := &config.Config{
+		DatabaseURL:      dbURL,
+		ExecutorDeadline: 5 * time.Second,
+	}
+
+	h := hub.New(s, cfg, nil)
+	defer func() { _ = h.Close() }()
+
+	dispatcher := liveness.NewRecoveryDispatcher(h, h, s.Queries(), liveness.DispatcherOptions{})
+	manager := liveness.NewManager(clock, s.Queries(), dispatcher, nil)
+	h.SetLivenessTracker(manager)
+	defer manager.Stop()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/websocket/", func(w http.ResponseWriter, r *http.Request) {
+		pathParts := r.URL.Path[len("/websocket/"):]
+		parts := strings.SplitN(pathParts, "/", 2)
+		if len(parts) != 2 {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		_, conductorKey := parts[0], parts[1]
+		rec, err := s.Queries().GetAPIKeyByLookup(r.Context(), auth.Lookup(conductorKey))
+		if err != nil || !auth.Verify(conductorKey, rec.KeyHash) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	// 1. Connect Executor 1 (victim)
+	exec1 := fakeexecutor.New(fakeexecutor.Options{
+		URL:                wsURL,
+		AppName:            appName,
+		ConductorKey:       rawKey,
+		ExecutorID:         "exec-victim-1",
+		ApplicationVersion: "v1.0.0",
+	})
+	if err := exec1.Connect(ctx); err != nil {
+		t.Fatalf("failed to connect exec1: %v", err)
+	}
+	go func() { _ = exec1.Run(ctx) }()
+
+	// 2. Connect Executor 2 (healthy survivor)
+	exec2 := fakeexecutor.New(fakeexecutor.Options{
+		URL:                wsURL,
+		AppName:            appName,
+		ConductorKey:       rawKey,
+		ExecutorID:         "exec-survivor-2",
+		ApplicationVersion: "v1.0.0",
+	})
+	if err := exec2.Connect(ctx); err != nil {
+		t.Fatalf("failed to connect exec2: %v", err)
+	}
+
+	recoveryReceived := make(chan []string, 1)
+	exec2.SetHandler(protocol.MessageTypeRecovery, func(m protocol.Message) (protocol.Message, error) {
+		req, ok := m.(*protocol.RecoveryRequest)
+		if !ok {
+			return nil, errors.New("expected RecoveryRequest")
+		}
+		recoveryReceived <- req.ExecutorIDs
+		return &protocol.RecoveryResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeRecovery,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+	})
+	go func() { _ = exec2.Run(ctx) }()
+
+	time.Sleep(50 * time.Millisecond)
+
+	peers, err := h.FindHealthyPeers(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("FindHealthyPeers failed: %v", err)
+	}
+	if len(peers) != 2 {
+		t.Fatalf("expected 2 connected peers, got %d", len(peers))
+	}
+
+	// 3. Chaos: Kill Executor 1 abruptly
+	_ = exec1.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	// 4. Advance virtual clock past grace period
+	clock.Advance(61 * time.Second)
+
+	// 5. Oracle verification: Survivor receives recovery request
+	select {
+	case deadIDs := <-recoveryReceived:
+		if len(deadIDs) != 1 || deadIDs[0] != "exec-victim-1" {
+			t.Fatalf("expected recovery for 'exec-victim-1', got %v", deadIDs)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("oracle timed out waiting for workflow recovery dispatch to survivor")
+	}
+
+	// 6. Verify in real PostgreSQL store that recovery was executed
+	time.Sleep(50 * time.Millisecond)
+	execs, err := s.Queries().ListExecutorsByApplication(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("failed to list executors from DB: %v", err)
+	}
+	for _, e := range execs {
+		if e.ExecutorID == "exec-victim-1" && e.Status == "connected" {
+			t.Fatalf("expected exec-victim-1 to not be connected, got %s", e.Status)
+		}
+	}
 }

@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update
+.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update verify-live db/up db/down db/url
 
 ##@ Bootstrap
 
@@ -83,10 +83,21 @@ help: ## Show this help
 ##@ Database
 
 db/up: ## Start the local PostgreSQL service
-	docker compose -f deploy/compose.yaml up -d
+	podman compose -f deploy/compose.yaml up -d
 
 db/down: ## Stop and remove the local PostgreSQL service
-	docker compose -f deploy/compose.yaml down -v
+	podman compose -f deploy/compose.yaml down -v
 
 db/url: ## Print the local test database URL
 	@echo "postgres://relay:relay@localhost:5433/relay?sslmode=disable"
+
+verify-live: ## Run live database verification suite against real PostgreSQL
+	@if [ -z "$$RELAY_TEST_DATABASE_URL" ]; then \
+		echo "verify-live: RELAY_TEST_DATABASE_URL is not set (required, no mock fallback)" >&2; \
+		exit 1; \
+	fi
+	go test -v -count=1 -run TestLiveDatabase_Reachable ./internal/store/...
+	go test -v -count=1 -run TestChaos_LiveDatabase ./tests/chaos/...
+	go test -v -count=1 -run TestConformance_EndToEndSuite ./tests/conformance/...
+	go test -v -count=1 -run TestRouter_LiveDatabase ./internal/router/...
+	go test -v -count=1 ./internal/declarative/...

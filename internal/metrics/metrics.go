@@ -72,11 +72,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if len(metricsFilter) > 0 && !contains(metricsFilter, name) {
 			return
 		}
+		sb.WriteString(fmt.Sprintf("# HELP %s %s\n", name, help))
+		sb.WriteString(fmt.Sprintf("# TYPE %s gauge\n", name))
 		if len(entries) == 0 {
 			return
 		}
-		sb.WriteString(fmt.Sprintf("# HELP %s %s\n", name, help))
-		sb.WriteString(fmt.Sprintf("# TYPE %s gauge\n", name))
 
 		keys := make([]string, 0, len(entries))
 		for k := range entries {

@@ -34,15 +34,12 @@ func TestConformance_EndToEndSuite(t *testing.T) {
 		// Run in-process with a real test database
 		dbURL := os.Getenv("RELAY_TEST_DATABASE_URL")
 		if dbURL == "" {
-			dbURL = os.Getenv("RELAY_DATABASE_URL")
-		}
-		if dbURL == "" {
-			dbURL = "postgres://relay:relay@localhost:5433/relay?sslmode=disable"
+			t.Skip("skipping in-process e2e conformance: RELAY_TEST_DATABASE_URL is not set")
 		}
 
 		s, err := store.Open(ctx, dbURL)
 		if err != nil {
-			t.Skipf("skipping in-process e2e conformance: database unavailable at %s: %v", dbURL, err)
+			t.Fatalf("in-process e2e conformance: database unavailable at %s: %v", dbURL, err)
 		}
 		defer s.Close()
 
