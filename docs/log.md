@@ -53,3 +53,9 @@ Added discovery reference documents and initial foundation packages:
   [Wire to REST mapping](protocol/wire-to-rest.md): protocol messages, liveness,
   and recovery guarantees.
 * Seeded [provenance ledger](discovery/provenance.md) with confirmed public sources.
+* Added [Dashboard reuse](discovery/D6-dashboard-reuse.md): UI component assessment
+  and No-Go decision on `@dbos-argus/ui`.
+* Added [Recovery timing](discovery/D7-recovery-params.md): heartbeat intervals,
+  executor grace periods, and per-app configuration overrides.
+* Added [Metrics and alerting](discovery/D8-metrics-alerting.md): OpenMetrics
+  catalogue, alerting schemas, and HA peer forwarding conventions.

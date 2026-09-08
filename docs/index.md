@@ -31,6 +31,9 @@ the implementation does.
 * [REST surface](discovery/D3-rest-surface.md) - HTTP API operations and inventory
 * [Authorization](discovery/D4-authz.md) - permission model and key format
 * [Client behaviour](discovery/D5-client-behaviour.md) - dbosctl conformance notes
+* [Dashboard reuse](discovery/D6-dashboard-reuse.md) - UI assessment and go/no-go decision
+* [Recovery timing](discovery/D7-recovery-params.md) - heartbeat, grace periods, and overrides
+* [Metrics and alerting](discovery/D8-metrics-alerting.md) - OpenMetrics catalogue and alert rules
 
 ## Protocol
 
