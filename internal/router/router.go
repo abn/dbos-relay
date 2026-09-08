@@ -37,6 +37,42 @@ type PeerForwarder interface {
 	Forward(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error)
 }
 
+// DataPlaneManager coordinates data-plane operations against application databases.
+type DataPlaneManager interface {
+	HasDataPlane(appID pgtype.UUID) bool
+	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+}
+
+type contextKey struct{}
+
+var servedFromKey = contextKey{}
+
+// ServedFromTracker tracks the source that answered a routed request.
+type ServedFromTracker struct {
+	Source string
+}
+
+// ContextWithServedFromTracker attaches a tracker to the request context.
+func ContextWithServedFromTracker(ctx context.Context) (context.Context, *ServedFromTracker) {
+	tracker := &ServedFromTracker{Source: "executor"}
+	return context.WithValue(ctx, servedFromKey, tracker), tracker
+}
+
+// SetServedFrom updates the served_from source in context.
+func SetServedFrom(ctx context.Context, source string) {
+	if tracker, ok := ctx.Value(servedFromKey).(*ServedFromTracker); ok {
+		tracker.Source = source
+	}
+}
+
+// GetServedFrom retrieves the served_from source from context.
+func GetServedFrom(ctx context.Context) string {
+	if tracker, ok := ctx.Value(servedFromKey).(*ServedFromTracker); ok {
+		return tracker.Source
+	}
+	return "executor"
+}
+
 type Dispatcher interface {
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
 }
@@ -49,6 +85,7 @@ type DefaultRouter struct {
 	store           AppResolver
 	hub             Dispatcher
 	forwarder       PeerForwarder
+	dataplane       DataPlaneManager
 	localInstanceID pgtype.UUID
 }
 
@@ -60,6 +97,11 @@ func New(store AppResolver, hub Dispatcher) *DefaultRouter {
 func (r *DefaultRouter) SetForwarder(f PeerForwarder, localInstanceID pgtype.UUID) {
 	r.forwarder = f
 	r.localInstanceID = localInstanceID
+}
+
+// SetDataPlane configures data-plane fallback and aggregation dispatch.
+func (r *DefaultRouter) SetDataPlane(dp DataPlaneManager) {
+	r.dataplane = dp
 }
 
 func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
@@ -78,6 +120,15 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
+	}
+
+	// For fleet-wide aggregate queries, prefer data-plane if configured to protect worker executors
+	if isFleetAggregate(msg.GetMessageType()) && r.dataplane != nil && r.dataplane.HasDataPlane(app.ID) {
+		dpRes, dpErr := r.dataplane.Dispatch(ctx, app.ID, msg)
+		if dpErr == nil {
+			SetServedFrom(ctx, "database")
+			return dpRes, nil
+		}
 	}
 
 	res, err := r.hub.Dispatch(ctx, app.ID, msg)
@@ -99,6 +150,7 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 								targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
 								fRes, fErr := r.forwarder.Forward(ctx, targetURL, msg)
 								if fErr == nil {
+									SetServedFrom(ctx, "executor")
 									return fRes, nil
 								}
 							}
@@ -106,6 +158,16 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 					}
 				}
 			}
+		}
+
+		// If no executor is available locally or via peer forwarder, fall back to data-plane if configured
+		if isNoExecutor && r.dataplane != nil && r.dataplane.HasDataPlane(app.ID) {
+			dpRes, dpErr := r.dataplane.Dispatch(ctx, app.ID, msg)
+			if dpErr == nil {
+				SetServedFrom(ctx, "database")
+				return dpRes, nil
+			}
+			return nil, fmt.Errorf("data-plane fallback failed: %w", dpErr)
 		}
 
 		if isNoExecutor {
@@ -117,5 +179,10 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 		return nil, err
 	}
 
+	SetServedFrom(ctx, "executor")
 	return res, nil
+}
+
+func isFleetAggregate(msgType protocol.MessageType) bool {
+	return msgType == protocol.MessageTypeGetWorkflowAggregates || msgType == protocol.MessageTypeGetStepAggregates
 }

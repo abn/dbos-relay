@@ -549,11 +549,12 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 
 	// Check 4.3: Restart (Fork) Workflow
 	checks = append(checks, executeCheck("4.3 Restart (Fork) Workflow Mutation", func() error {
-		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/wf-conf-1/restart", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/wf-conf-1/fork", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"start_step": 0}`))
 		if err != nil {
 			return err
 		}
+		req.Header.Set("Content-Type", "application/json")
 		if r.cfg.ConductorKey != "" {
 			req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
 		}
