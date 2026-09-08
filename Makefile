@@ -29,7 +29,7 @@ vet: ## Run static analysis
 
 gen: ## Regenerate sqlc and OpenAPI output
 	@if [ -f sqlc.yaml ]; then go tool sqlc generate; fi
-	@if [ -f api/codegen.yaml ]; then go tool oapi-codegen -config api/codegen.yaml api/spec/openapi.json; fi
+	@if [ -f api/codegen.yaml ]; then go tool oapi-codegen -config api/codegen.yaml api/spec/openapi-3.0.json; fi
 
 drift: gen ## Fail if generated output differs from the committed version
 	@if [ -d internal/store/gen ] || [ -d internal/api/gen ]; then \
