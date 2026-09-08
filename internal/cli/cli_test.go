@@ -11,7 +11,7 @@ import (
 
 func TestCommandTreeSubcommandsExist(t *testing.T) {
 	cmd := newRootCommand()
-	expected := []string{"version", "serve", "migrate", "apikey", "openapi"}
+	expected := []string{"version", "serve", "migrate", "apikey", "openapi", "test-conformance"}
 	for _, name := range expected {
 		sub, _, err := cmd.Find([]string{name})
 		if err != nil || sub == nil || sub.Name() != name {

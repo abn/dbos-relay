@@ -26,6 +26,9 @@ dashboard/build: ## Build the web dashboard assets
 test: ## Run the test suite
 	go test ./...
 
+test/conformance: ## Run the end-to-end conformance test suite
+	go test -v ./tests/conformance/...
+
 vet: ## Run static analysis
 	go vet ./...
 	golangci-lint run

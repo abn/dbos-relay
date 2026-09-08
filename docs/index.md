@@ -27,6 +27,7 @@ the implementation does.
 
 * [Usage overview](usage/index.md) - how to run and operate Relay
 * [Quickstart](usage/quickstart.md) - run Relay locally with Postgres
+* [Conformance testing](usage/conformance.md) - run the automated Conductor conformance test suite
 
 ## Discovery
 

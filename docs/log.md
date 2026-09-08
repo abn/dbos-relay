@@ -6,6 +6,7 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Implemented the automated DBOS Conductor conformance test suite in `internal/conformance`, providing in-process and blackbox test runners across 8 specification batteries, the `relay test-conformance` CLI command, the `make test/conformance` target, and documentation in [conformance testing](usage/conformance.md).
 * **Creation**: Implemented the Phase 7 identity and access control layer featuring RSA OIDC JWT token validation with in-memory JWKS caching and fail-closed key set guarantees, RFC 8628 device flow login compatibility, Postgres persistence for users, roles, organisation members, domain claims, and audit logs, automatic user registration and domain-claim organisation matching, conditional route gating returning 404 Problem Details when running in unauthenticated mode, and an integration test suite in `tests/identity/`.
 * **Creation**: Implemented the Phase 6 web dashboard in `console/` and `internal/dashboard`, featuring an OpenAPI-aligned TypeScript data layer, fleet and application overview, workflow search with interactive SVG step execution graph, queue and schedule controls, alerting rule manager, and scoped API key minting.
 * **Update**: Documented web dashboard access in the [quickstart guide](usage/quickstart.md).
