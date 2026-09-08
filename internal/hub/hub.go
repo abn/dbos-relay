@@ -13,32 +13,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/config"
+	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/protocol"
-	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
 )
 
+// LivenessTracker receives executor connection and disconnection events.
+type LivenessTracker interface {
+	OnConnect(ctx context.Context, appID pgtype.UUID, executorID, version string) error
+	OnDisconnect(ctx context.Context, appID pgtype.UUID, executorID string)
+}
+
+// HubStore specifies the query methods required by the Hub.
+type HubStore interface {
+	AuthStore
+	UpsertExecutor(ctx context.Context, arg gen.UpsertExecutorParams) (gen.Executor, error)
+	DisconnectExecutor(ctx context.Context, arg gen.DisconnectExecutorParams) (gen.Executor, error)
+}
+
 type Hub struct {
-	store    *store.Store
+	store    HubStore
 	registry *Registry
 	config   *config.Config
 	logger   *slog.Logger
+	liveness LivenessTracker
 	wg       sync.WaitGroup
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
-func New(store *store.Store, cfg *config.Config, logger *slog.Logger) *Hub {
+func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 	ctx, cancel := context.WithCancel(context.Background())
+	var hs HubStore
+	if s, ok := store.(HubStore); ok {
+		hs = s
+	} else if sp, ok := store.(interface{ Queries() *gen.Queries }); ok && sp != nil {
+		hs = sp.Queries()
+	}
 	return &Hub{
-		store:    store,
-		registry: NewRegistry(store.Queries()),
+		store:    hs,
+		registry: NewRegistry(hs),
 		config:   cfg,
 		logger:   logger,
 		ctx:      ctx,
 		cancel:   cancel,
 	}
 }
+
+// SetLivenessTracker sets the liveness manager to receive executor lifecycle events.
+func (h *Hub) SetLivenessTracker(l LivenessTracker) {
+	h.liveness = l
+}
+
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Simple path routing /websocket/{appName}/{conductorKey}
@@ -53,7 +79,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	appID, err := Authenticate(r.Context(), h.store.Queries(), appName, conductorKey)
+	appID, err := Authenticate(r.Context(), h.store, appName, conductorKey)
 	if err != nil {
 		HandleAuthError(w, r, err)
 		return
@@ -104,7 +130,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist executor
-	_, err = h.store.Queries().UpsertExecutor(r.Context(), gen.UpsertExecutorParams{
+	_, err = h.store.UpsertExecutor(r.Context(), gen.UpsertExecutorParams{
 		ApplicationID:      appID,
 		ExecutorID:         executorID,
 		ApplicationVersion: appVersion,
@@ -122,11 +148,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var execConn *ExecutorConn
 	unregister := func() {
 		h.registry.Unregister(h.ctx, appID, executorID)
+		if h.liveness != nil {
+			h.liveness.OnDisconnect(h.ctx, appID, executorID)
+		}
 	}
 
 	execConn = NewExecutorConn(conn, appID, executorID, appName, appVersion, hostname, metadata, mux, unregister)
 
 	h.registry.Register(execConn)
+	if h.liveness != nil {
+		_ = h.liveness.OnConnect(r.Context(), appID, executorID, appVersion)
+	}
 
 	h.wg.Add(2)
 	go func() {
@@ -140,6 +172,57 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer h.wg.Done()
 		execConn.HeartbeatPump(h.ctx)
 	}()
+}
+
+// FindHealthyPeers returns all currently connected peers for an application.
+func (h *Hub) FindHealthyPeers(ctx context.Context, appID pgtype.UUID) ([]liveness.Peer, error) {
+	conns := h.registry.ListConnected(appID)
+	peers := make([]liveness.Peer, 0, len(conns))
+	for _, c := range conns {
+		peers = append(peers, liveness.Peer{
+			AppID:              c.appID,
+			ExecutorID:         c.executorID,
+			ApplicationVersion: c.applicationVersion,
+		})
+	}
+	return peers, nil
+}
+
+// SendRecovery sends a recovery request to a specific executor and awaits acknowledgment.
+func (h *Hub) SendRecovery(ctx context.Context, appID pgtype.UUID, targetExecutorID string, req *protocol.RecoveryRequest) (*protocol.RecoveryResponse, error) {
+	conn, err := h.registry.GetExecutorConn(appID, targetExecutorID)
+	if err != nil {
+		return nil, err
+	}
+
+	reqID := req.GetRequestID()
+	if reqID == "" {
+		return nil, errors.New("recovery request must have an ID")
+	}
+
+	ch, unregister := conn.mux.Register(reqID)
+	defer unregister()
+
+	if err := conn.WriteMessage(ctx, req); err != nil {
+		return nil, fmt.Errorf("send recovery failed: %w", err)
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)
+	defer cancel()
+
+	select {
+	case <-timeoutCtx.Done():
+		return nil, errors.New("recovery request timed out")
+	case res, ok := <-ch:
+		if !ok {
+			return nil, errors.New("connection closed while awaiting recovery response")
+		}
+		recRes, ok := res.(*protocol.RecoveryResponse)
+		if !ok {
+			return nil, fmt.Errorf("unexpected response message type: %v", res.GetMessageType())
+		}
+		return recRes, nil
+	}
 }
 
 // Dispatch sends a request to an executor and waits for the response.

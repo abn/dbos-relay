@@ -4,6 +4,9 @@ INSERT INTO applications (organisation_id, name, settings) VALUES ($1, $2, $3) R
 -- name: GetApplicationByName :one
 SELECT * FROM applications WHERE organisation_id = $1 AND name = $2;
 
+-- name: GetApplicationByID :one
+SELECT * FROM applications WHERE id = $1;
+
 -- name: ListApplicationsByOrganisation :many
 SELECT * FROM applications
 WHERE organisation_id = $1

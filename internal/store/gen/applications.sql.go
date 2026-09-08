@@ -58,6 +58,23 @@ func (q *Queries) DeleteApplication(ctx context.Context, arg DeleteApplicationPa
 	return i, err
 }
 
+const getApplicationByID = `-- name: GetApplicationByID :one
+SELECT id, organisation_id, name, settings, created_at FROM applications WHERE id = $1
+`
+
+func (q *Queries) GetApplicationByID(ctx context.Context, id pgtype.UUID) (Application, error) {
+	row := q.db.QueryRow(ctx, getApplicationByID, id)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.Name,
+		&i.Settings,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getApplicationByName = `-- name: GetApplicationByName :one
 SELECT id, organisation_id, name, settings, created_at FROM applications WHERE organisation_id = $1 AND name = $2
 `

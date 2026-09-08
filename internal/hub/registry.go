@@ -10,15 +10,20 @@ import (
 	"github.com/abn/relay/internal/store/gen"
 )
 
+// RegistryDisconnector disconnects an executor in the database.
+type RegistryDisconnector interface {
+	DisconnectExecutor(ctx context.Context, arg gen.DisconnectExecutorParams) (gen.Executor, error)
+}
+
 // Registry manages connected executors.
 type Registry struct {
 	mu    sync.RWMutex
 	byApp map[pgtype.UUID]map[string]*ExecutorConn
-	q     *gen.Queries
+	q     RegistryDisconnector
 }
 
 // NewRegistry creates a new Registry.
-func NewRegistry(q *gen.Queries) *Registry {
+func NewRegistry(q RegistryDisconnector) *Registry {
 	return &Registry{
 		byApp: make(map[pgtype.UUID]map[string]*ExecutorConn),
 		q:     q,
@@ -98,4 +103,20 @@ func (r *Registry) ListConnected(appID pgtype.UUID) []*ExecutorConn {
 		conns = append(conns, conn)
 	}
 	return conns
+}
+
+// GetExecutorConn returns the active connection for a specific executor ID.
+func (r *Registry) GetExecutorConn(appID pgtype.UUID, executorID string) (*ExecutorConn, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	appMap, ok := r.byApp[appID]
+	if !ok {
+		return nil, errors.New("no executors available for application")
+	}
+	conn, ok := appMap[executorID]
+	if !ok {
+		return nil, errors.New("executor not connected")
+	}
+	return conn, nil
 }

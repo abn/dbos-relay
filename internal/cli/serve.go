@@ -16,6 +16,7 @@ import (
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/hub"
+	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store"
 )
@@ -50,6 +51,11 @@ func newServeCommand() *cobra.Command {
 					logger.Error("closing hub", "error", err)
 				}
 			}()
+
+			dispatcher := liveness.NewRecoveryDispatcher(h, h, s.Queries(), liveness.DispatcherOptions{Logger: logger})
+			livenessMgr := liveness.NewManager(liveness.NewRealClock(), s.Queries(), dispatcher, logger)
+			h.SetLivenessTracker(livenessMgr)
+			defer livenessMgr.Stop()
 
 			r := router.New(s.Queries(), h)
 			apiServer := api.NewServer(r, s.Queries(), logger)

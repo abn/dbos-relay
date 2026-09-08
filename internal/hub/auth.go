@@ -14,8 +14,15 @@ import (
 	"github.com/abn/relay/internal/store/gen"
 )
 
+// AuthStore specifies the queries required for conductor authentication.
+type AuthStore interface {
+	GetAPIKeyByLookup(ctx context.Context, lookup string) (gen.ApiKey, error)
+	GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error)
+	CreateApplication(ctx context.Context, arg gen.CreateApplicationParams) (gen.Application, error)
+}
+
 // Authenticate verifies the conductor key and returns the application ID.
-func Authenticate(ctx context.Context, q *gen.Queries, appName, conductorKey string) (pgtype.UUID, error) {
+func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string) (pgtype.UUID, error) {
 	if appName == "" || conductorKey == "" {
 		return pgtype.UUID{}, errors.New("missing app name or conductor key")
 	}
