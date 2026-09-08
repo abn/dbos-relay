@@ -1,6 +1,14 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup build test lint fmt clean check docs/check hooks/require hooks/update
+export PATH := $(shell go env GOPATH)/bin:$(PATH)
+
+BIN := relay
+PKG := ./cmd/$(BIN)
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
+GENERATED := internal/store/gen internal/api/gen
+
+.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update
 
 ##@ Bootstrap
 
@@ -9,11 +17,26 @@ setup: ## Install git hooks and generate local tool shims
 
 ##@ Build & Quality
 
-build: ## Build the project (no build stage until the stack is chosen)
-	@printf 'build: nothing to build yet, the stack decision is pending\n'
+build: ## Build the binary
+	go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
 
-test: ## Run the test suite (no tests until product code exists)
-	@printf 'test: no test suite yet\n'
+test: ## Run the test suite
+	go test ./...
+
+vet: ## Run static analysis
+	go vet ./...
+	golangci-lint run
+
+gen: ## Regenerate sqlc and OpenAPI output
+	@if [ -f sqlc.yaml ]; then go tool sqlc generate; fi
+	@if [ -f api/spec/openapi.json ]; then go tool oapi-codegen -config api/codegen.yaml api/spec/openapi.json; fi
+
+drift: gen ## Fail if generated output differs from the committed version
+	@if [ -d internal/store/gen ] || [ -d internal/api/gen ]; then \
+	  git diff --exit-code --quiet $(GENERATED) || \
+	  { echo "drift: generated output is stale, run make gen"; exit 1; }; \
+	fi
+	@echo "drift: ok"
 
 lint: hooks/require ## Run every hook against all files, including the docs bundle check
 	pre-commit run --all-files
@@ -28,7 +51,7 @@ fmt: hooks/require ## Apply formatting fixes
 docs/check: ## Validate the docs bundle against OKF v0.2
 	./.agents/scripts/check-okf.py
 
-check: lint test ## Full quality gate
+check: lint vet test drift ## Full quality gate
 	@printf 'check: ok\n'
 
 clean: ## Remove build artefacts

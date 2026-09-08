@@ -1,0 +1,53 @@
+name: test-suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run test suite
+        run: make test
+
+      - name: Build binary
+        run: make build
+
+  cross-compile:
+    name: Cross Compile (${{ matrix.os }}/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: make build
