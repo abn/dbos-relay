@@ -44,6 +44,58 @@ Configuration parameters:
 * `statement_timeout_secs`: Enforced statement timeout bounding queries.
 * `max_connections`: Maximum pool size allocated for this application's data plane client.
 
+## Wire and data-plane parity
+
+Administrative operations behave identically whether dispatched over WebSocket to a connected
+executor or applied directly through the SDK client data plane.
+
+### Cancellation semantics
+
+WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update:
+
+```sql
+UPDATE dbos.workflow_status
+SET status = 'CANCELLED'
+WHERE workflow_uuid = $1
+  AND status NOT IN ('SUCCESS', 'ERROR', 'CANCELLED');
+```
+
+Neither protocol path attempts to asynchronously interrupt running operating system threads,
+goroutines, or asyncio tasks in an active executor. All three official SDKs (Go, Python, TypeScript)
+detect cancellation at step boundaries:
+
+1. The executor executes workflow step functions locally.
+2. At each step completion boundary, the executor calls `UpdateWorkflowOutcome` against the system database.
+3. Because the status column is no longer `PENDING`, the conditional update matches zero rows.
+4. The executor detects `rowsAffected == 0`, immediately ceases further step execution, and marks its local workflow execution context as cancelled.
+
+Consequently, cancellations executed via data-plane fallback observe the identical execution boundary
+and safety guarantees as live WebSocket cancellations.
+
+### Resume semantics
+
+WebSocket resume requests and data-plane resume calls transition workflows back into the queue table:
+
+```sql
+UPDATE dbos.workflow_status
+SET status = 'ENQUEUED',
+    queue_name = '_dbos_internal_queue',
+    recovery_attempts = 0,
+    started_at_epoch_ms = NULL,
+    completed_at = NULL
+WHERE workflow_uuid = $1
+  AND status IN ('CANCELLED', 'ERROR');
+```
+
+Any live executor polling `_dbos_internal_queue` via `DequeueWorkflows` picks up the resumed workflow
+and executes remaining steps.
+
+### Served-from auditing
+
+Every response served through the data plane is tagged in response headers and metrics with
+`served_from: database` (compared to `served_from: executor` for WebSocket dispatches). This covers
+both read queries and administrative mutations (cancel, resume, restart).
+
 ## Operational metrics and alerting
 
 Relay records the source that fulfilled each request in the `relay_requests_served_total` metric

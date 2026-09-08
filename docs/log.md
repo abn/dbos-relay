@@ -6,6 +6,7 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Update**: Documented wire and data-plane parity for cancellation and resume operations, step-boundary outcome check semantics across SDKs, and served-from auditing in [Data plane](architecture/dataplane.md).
 * **Creation**: Added [Declarative operations](usage/declarative.md) documenting
   `relay.yaml` manifest format, `relay diff`, and `relay apply`.
 * **Creation**: Added [Data plane](architecture/dataplane.md) documenting
