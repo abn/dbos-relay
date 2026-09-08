@@ -6,6 +6,7 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Implemented the Phase 2 protocol codec, connection hub, and executor endpoints with sample applications in Python and TypeScript.
 * **Refactor**: Consolidated OpenAPI specification access and YAML conversion
   in `api/spec`, eliminated redundant schema decoding across packages, and
   sanitized internal verification identifiers across discovery documents.

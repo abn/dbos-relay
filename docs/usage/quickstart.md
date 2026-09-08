@@ -71,3 +71,20 @@ Open interactive documentation:
 ```bash
 curl -fsS http://localhost:8090/docs
 ```
+
+## 6. Connecting an executor
+
+A DBOS Transact application connects to Relay by configuring the `RELAY_URL` and `RELAY_API_KEY` environment variables.
+
+```bash
+export RELAY_URL="http://localhost:8090"
+export RELAY_API_KEY="dbos_..."
+```
+
+## 7. Listing executors
+
+Once an application connects, you can query the active executors for that application:
+
+```bash
+curl -fsS http://localhost:8090/v2/orgs/{org}/apps/{app}/executors
+```

@@ -1,0 +1,16 @@
+{
+  "name": "sample-app",
+  "version": "1.0.0",
+  "description": "Minimal DBOS Transact TypeScript workflow application",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "dbos start"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
