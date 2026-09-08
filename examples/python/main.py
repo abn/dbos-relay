@@ -24,6 +24,8 @@ def record_step_execution(workflow_id: str, step_name: str) -> None:
                     step_name TEXT NOT NULL,
                     executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 );
+            """)
+            cur.execute("""
                 INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
                 VALUES (%s, %s, NOW());
             """, (workflow_id, step_name))
@@ -58,7 +60,7 @@ def step2(order_id: str) -> str:
 @DBOS.workflow()
 def order_workflow(order_id: str) -> str:
     step1(order_id)
-    if role == "victim":
+    if role == "primary":
         # Sleep until killed in chaos cell
         time.sleep(1800)
     step2(order_id)
@@ -74,6 +76,19 @@ class TriggerHandler(BaseHTTPRequestHandler):
     def _handle(self) -> None:
         if self.path.startswith("/trigger"):
             handle = DBOS.start_workflow(order_workflow, "python-order")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"workflow_id": handle.workflow_id}).encode("utf-8"))
+        elif self.path.startswith("/fork"):
+            from urllib.parse import parse_qs, urlparse
+            qs = parse_qs(urlparse(self.path).query)
+            orig_id = qs.get("original_workflow_id", [""])[0]
+            if not orig_id:
+                self.send_response(400)
+                self.end_headers()
+                return
+            handle = DBOS.fork_workflow(orig_id, 0)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -96,7 +111,7 @@ def start_http_server() -> None:
     server.serve_forever()
 
 if __name__ == "__main__":
-    if role == "survivor":
+    if role == "secondary":
         time.sleep(3)
 
     http_thread = threading.Thread(target=start_http_server, daemon=True)

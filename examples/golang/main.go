@@ -58,8 +58,8 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 		return "", err
 	}
 
-	// If victim role, sleep indefinitely until SIGKILL'd
-	if os.Getenv("ROLE") == "victim" {
+	// If primary role, sleep indefinitely until SIGKILL'd
+	if os.Getenv("ROLE") == "primary" || os.Getenv("ROLE") == "victim" {
 		time.Sleep(30 * time.Minute)
 	}
 
@@ -82,7 +82,7 @@ func main() {
 	}
 	dbURL := os.Getenv("DBOS_SYSTEM_DATABASE_URL")
 
-	if os.Getenv("ROLE") == "survivor" {
+	if os.Getenv("ROLE") == "secondary" || os.Getenv("ROLE") == "survivor" {
 		time.Sleep(3 * time.Second)
 	}
 
@@ -106,6 +106,22 @@ func main() {
 	}
 	http.HandleFunc("/trigger", func(w http.ResponseWriter, r *http.Request) {
 		h, err := dbos.RunWorkflow(dbosCtx, orderWorkflow, "go-order")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"workflow_id": h.GetWorkflowID()})
+	})
+	http.HandleFunc("/fork", func(w http.ResponseWriter, r *http.Request) {
+		origID := r.URL.Query().Get("original_workflow_id")
+		if origID == "" {
+			http.Error(w, "missing original_workflow_id", http.StatusBadRequest)
+			return
+		}
+		h, err := dbos.ForkWorkflow[string](dbosCtx, dbos.ForkWorkflowInput{
+			OriginalWorkflowID: origID,
+		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
