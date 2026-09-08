@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/protocol"
+	storegen "github.com/abn/relay/internal/store/gen"
 )
 
 // CancelWorkflow cancels a running workflow.
@@ -256,6 +259,52 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 		newWorkflowID = request.Body.NewWorkflowId
 		queueName = request.Body.QueueName
 		queuePartitionKey = request.Body.QueuePartitionKey
+	}
+
+	// Guard against stranding forks when no explicit application_version override is provided
+	if (appVersion == nil || *appVersion == "") && s.store != nil {
+		getMsg := &protocol.GetWorkflowRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeGetWorkflow,
+				RequestID: uuid.NewString(),
+			},
+			WorkflowID: request.WorkflowId,
+		}
+		getRes, err := s.router.Dispatch(ctx, orgName, request.AppName, getMsg)
+		if err == nil {
+			if wfRes, ok := getRes.(*protocol.GetWorkflowResponse); ok && wfRes.Output != nil && wfRes.Output.ApplicationVersion != nil {
+				targetVersion := *wfRes.Output.ApplicationVersion
+				if targetVersion != "" {
+					org, oErr := s.store.GetOrganisationByName(ctx, orgName)
+					if oErr == nil {
+						app, aErr := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+							OrganisationID: org.ID,
+							Name:           request.AppName,
+						})
+						if aErr == nil {
+							execs, eErr := s.store.ListExecutorsByApplication(ctx, app.ID)
+							if eErr == nil {
+								hasLiveVersion := false
+								now := time.Now()
+								for _, e := range execs {
+									if e.LeaseExpiresAt.Valid && e.LeaseExpiresAt.Time.After(now) && e.ApplicationVersion == targetVersion {
+										hasLiveVersion = true
+										break
+									}
+								}
+								if !hasLiveVersion {
+									msg := fmt.Sprintf("no live executor runs target application version %q; specify an application_version override to fork", targetVersion)
+									return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{
+										StatusCode: http.StatusConflict,
+										Body:       MakeErrorModel(http.StatusConflict, "Stranded Fork Conflict", msg),
+									}, nil
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	msg := &protocol.ForkWorkflowRequest{

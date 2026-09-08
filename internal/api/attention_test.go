@@ -201,6 +201,23 @@ func TestGetNeedsAttention(t *testing.T) {
 				}, nil
 			}
 
+			// If query for ENQUEUED
+			if len(req.Body.Status) > 0 && req.Body.Status[0] == "ENQUEUED" {
+				forkedFrom := "wf-parent-1"
+				statusEnqueued := "ENQUEUED"
+				return &protocol.ListWorkflowsResponse{
+					Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows},
+					Output: []protocol.ListWorkflowsResponseBody{
+						{
+							WorkflowUUID:       "wf-stranded-fork-1",
+							Status:             &statusEnqueued,
+							ForkedFrom:         &forkedFrom,
+							ApplicationVersion: &versionOld,
+						},
+					},
+				}, nil
+			}
+
 			return &protocol.ListWorkflowsResponse{
 				Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows},
 			}, nil
@@ -223,13 +240,16 @@ func TestGetNeedsAttention(t *testing.T) {
 	if len(report.StuckWorkflows) != 1 {
 		t.Errorf("expected 1 stuck workflow, got %d", len(report.StuckWorkflows))
 	}
+	if len(report.StrandedForks) != 1 {
+		t.Errorf("expected 1 stranded fork, got %d", len(report.StrandedForks))
+	}
 	if len(report.FlappingExecutors) != 1 {
 		t.Errorf("expected 1 flapping executor, got %d", len(report.FlappingExecutors))
 	}
 	if report.FlappingExecutors[0].RecoveryCount != 2 {
 		t.Errorf("expected flapping recovery count 2, got %d", report.FlappingExecutors[0].RecoveryCount)
 	}
-	if report.TotalNeedsAttention != 4 {
-		t.Errorf("expected total 4 needs-attention items, got %d", report.TotalNeedsAttention)
+	if report.TotalNeedsAttention != 5 {
+		t.Errorf("expected total 5 needs-attention items, got %d", report.TotalNeedsAttention)
 	}
 }

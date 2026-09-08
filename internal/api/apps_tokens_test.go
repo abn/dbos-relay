@@ -969,6 +969,101 @@ func TestWorkflowMutations(t *testing.T) {
 		}
 	})
 
+	t.Run("ForkWorkflow stranded fork protection returns 409 when no live executor matches", func(t *testing.T) {
+		appID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
+		orgID := pgtype.UUID{Bytes: [16]byte{4, 5, 6}, Valid: true}
+		targetVersion := "v1.0-legacy"
+		statusSuccess := "SUCCESS"
+
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: "default"}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, Name: "checkout"}, nil
+			},
+			listExecutorsByAppFunc: func(ctx context.Context, app pgtype.UUID) ([]storegen.Executor, error) {
+				return []storegen.Executor{
+					{
+						ExecutorID:         "exec-live-1",
+						ApplicationVersion: "v2.0",
+						LeaseExpiresAt:     pgtype.Timestamptz{Time: time.Now().Add(10 * time.Minute), Valid: true},
+					},
+				}, nil
+			},
+		}
+
+		r := &mockRouter{
+			dispatchFunc: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				if getReq, ok := msg.(*protocol.GetWorkflowRequest); ok {
+					if getReq.WorkflowID == "wf-target-legacy" {
+						return &protocol.GetWorkflowResponse{
+							Envelope: protocol.Envelope{Type: protocol.MessageTypeGetWorkflow},
+							Output: &protocol.ListWorkflowsResponseBody{
+								WorkflowUUID:       "wf-target-legacy",
+								Status:             &statusSuccess,
+								ApplicationVersion: &targetVersion,
+							},
+						}, nil
+					}
+				}
+				return nil, nil
+			},
+		}
+
+		srv := api.NewServer(r, store, nil)
+
+		// 1. Without application_version override -> 409 Conflict
+		resp, err := srv.ForkWorkflow(ctx, gen.ForkWorkflowRequestObject{
+			OrgName:    "default",
+			AppName:    "checkout",
+			WorkflowId: "wf-target-legacy",
+			Body:       &gen.ForkWorkflowJSONRequestBody{},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		conflictResp, ok := resp.(gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected 409 Conflict Problem response, got %T", resp)
+		}
+		if conflictResp.StatusCode != http.StatusConflict {
+			t.Errorf("expected status 409, got %d", conflictResp.StatusCode)
+		}
+
+		// 2. With application_version override to live version "v2.0" -> 201 Created
+		r.dispatchFunc = func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+			if forkReq, ok := msg.(*protocol.ForkWorkflowRequest); ok {
+				newID := "forked-override-1"
+				if forkReq.Body.ApplicationVersion != nil && *forkReq.Body.ApplicationVersion == "v2.0" {
+					return &protocol.ForkWorkflowResponse{
+						NewWorkflowID: &newID,
+					}, nil
+				}
+			}
+			return nil, nil
+		}
+		overrideVersion := "v2.0"
+		resp2, err := srv.ForkWorkflow(ctx, gen.ForkWorkflowRequestObject{
+			OrgName:    "default",
+			AppName:    "checkout",
+			WorkflowId: "wf-target-legacy",
+			Body: &gen.ForkWorkflowJSONRequestBody{
+				AppVersion: &overrideVersion,
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		forkResp, ok := resp2.(gen.ForkWorkflow201JSONResponse)
+		if !ok {
+			t.Fatalf("expected 201 Created, got %T", resp2)
+		}
+		if forkResp.Body.WorkflowId != "forked-override-1" {
+			t.Errorf("expected workflow ID 'forked-override-1', got %q", forkResp.Body.WorkflowId)
+		}
+	})
+
 	t.Run("BulkForkWorkflowsFromFailure", func(t *testing.T) {
 		forked := []string{"forked-1", "forked-2"}
 		r := &mockRouter{

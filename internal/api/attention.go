@@ -23,11 +23,12 @@ type FlappingExecutor struct {
 
 // NeedsAttentionReport aggregates workflows and executors requiring operator intervention.
 type NeedsAttentionReport struct {
-	FailedWorkflows    []gen.Workflow     `json:"failed_workflows"`
-	StuckWorkflows     []gen.Workflow     `json:"stuck_workflows"`
-	OrphanedWorkflows  []gen.Workflow     `json:"orphaned_workflows"`
-	FlappingExecutors  []FlappingExecutor `json:"flapping_executors"`
-	TotalNeedsAttention int               `json:"total_needs_attention"`
+	FailedWorkflows     []gen.Workflow     `json:"failed_workflows"`
+	StuckWorkflows      []gen.Workflow     `json:"stuck_workflows"`
+	OrphanedWorkflows   []gen.Workflow     `json:"orphaned_workflows"`
+	StrandedForks       []gen.Workflow     `json:"stranded_forks"`
+	FlappingExecutors   []FlappingExecutor `json:"flapping_executors"`
+	TotalNeedsAttention int                `json:"total_needs_attention"`
 }
 
 // RecoveryStore provides recovery history queries for flapping detection.
@@ -67,6 +68,7 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 		FailedWorkflows:   []gen.Workflow{},
 		StuckWorkflows:    []gen.Workflow{},
 		OrphanedWorkflows: []gen.Workflow{},
+		StrandedForks:     []gen.Workflow{},
 		FlappingExecutors: []FlappingExecutor{},
 	}
 
@@ -134,7 +136,32 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 		}
 	}
 
-	// 4. Query Flapping Executors (dispatched for recovery > 1 time in past hour)
+	// 4. Query Enqueued Workflows to detect Stranded Forks
+	enqueuedReq := &protocol.ListWorkflowsRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeListWorkflows,
+			RequestID: uuid.NewString(),
+		},
+		Body: protocol.ListWorkflowsRequestBody{
+			Status:   protocol.StringOrList{"ENQUEUED"},
+			Limit:    &limit,
+			SortDesc: true,
+		},
+	}
+	if res, err := s.router.Dispatch(ctx, orgName, appName, enqueuedReq); err == nil {
+		if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
+			for _, item := range wfRes.Output {
+				isFork := (item.ForkedFrom != nil && *item.ForkedFrom != "") || (item.WasForkedFrom != nil && *item.WasForkedFrom)
+				if isFork && item.ApplicationVersion != nil && *item.ApplicationVersion != "" {
+					if !activeVersions[*item.ApplicationVersion] && len(activeVersions) > 0 {
+						report.StrandedForks = append(report.StrandedForks, mapWorkflow(item))
+					}
+				}
+			}
+		}
+	}
+
+	// 5. Query Flapping Executors (dispatched for recovery > 1 time in past hour)
 	if rStore, ok := s.store.(RecoveryStore); ok {
 		oneHourAgo := now.Add(-1 * time.Hour)
 		dispatches, err := rStore.ListRecentRecoveryDispatches(ctx, storegen.ListRecentRecoveryDispatchesParams{
@@ -163,6 +190,6 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 		}
 	}
 
-	report.TotalNeedsAttention = len(report.FailedWorkflows) + len(report.StuckWorkflows) + len(report.OrphanedWorkflows) + len(report.FlappingExecutors)
+	report.TotalNeedsAttention = len(report.FailedWorkflows) + len(report.StuckWorkflows) + len(report.OrphanedWorkflows) + len(report.StrandedForks) + len(report.FlappingExecutors)
 	return report, http.StatusOK, gen.ErrorModel{}
 }
