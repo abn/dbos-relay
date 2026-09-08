@@ -6,6 +6,7 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Added multi-SDK verification test suite in `tests/verifysdk` and real Podman compose cluster in `deploy/compose-sdk-apps.yaml` running genuine Go, Python, TypeScript, and Java runtimes under Podman, proving socket presence, conformance probes, data-plane reading, parity, real timer chaos recovery, offline cancel/resume, and live fork dequeuing.
 * **Correction**: Corrected resume SQL status predicate to `status NOT IN ('SUCCESS', 'ERROR')` in [Data plane](architecture/dataplane.md), aligned with Go, Python, and TypeScript implementations, and documented durable sleep and message receive cancellation semantics across SDKs.
 * **Correction**: Corrected Problem Details specification citation to RFC 9457 in [Client behaviour](discovery/D5-client-behaviour.md).
 * **Update**: Documented wire and data-plane parity for cancellation and resume operations, step-boundary outcome check semantics across SDKs, and served-from auditing in [Data plane](architecture/dataplane.md).

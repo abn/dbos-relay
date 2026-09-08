@@ -13,58 +13,117 @@ services:
       timeout: 2s
       retries: 10
 
+  relay:
+    image: alpine:latest
+    security_opt:
+      - "seccomp=unconfined"
+    command: ["/bin/relay", "serve"]
+    environment:
+      RELAY_CONFIG: /etc/relay/relay.yaml
+      RELAY_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      RELAY_LISTEN_ADDR: 0.0.0.0:8090
+      RELAY_INTERNAL_SECRET: insecure-test-secret
+    volumes:
+      - ../bin/relay:/bin/relay:ro,z
+      - ./relay.yaml:/etc/relay/relay.yaml:ro,z
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-golang-victim:
+    image: alpine:latest
+    security_opt:
+      - "seccomp=unconfined"
+    working_dir: /app
+    volumes:
+      - ../examples/golang:/app:ro,z
+    environment:
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: dbos_sec_live_key
+      DBOS_APP_NAME: golang-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      ROLE: victim
+    depends_on:
+      relay:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    command: ["/app/bin/app"]
+    restart: "no"
+
+  app-golang-survivor:
+    image: alpine:latest
+    security_opt:
+      - "seccomp=unconfined"
+    working_dir: /app
+    volumes:
+      - ../examples/golang:/app:ro,z
+    environment:
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: dbos_sec_live_key
+      DBOS_APP_NAME: golang-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      ROLE: survivor
+    depends_on:
+      relay:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    command: ["/app/bin/app"]
+    restart: "no"
+
   app-python:
     image: python:3.11-slim
     working_dir: /app
     volumes:
-      - ../examples/python:/app:ro
+      - ../examples/python:/app:ro,z
     environment:
-      RELAY_URL: http://relay:8090
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: dbos_sec_live_key
       DBOS_APP_NAME: python-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
     depends_on:
+      relay:
+        condition: service_started
       postgres:
         condition: service_healthy
-    command: ["python", "-c", "import sys; print('Python sample app container ready')"]
+    command: ["python", "/app/main.py"]
+    restart: "no"
 
   app-typescript:
     image: node:20-slim
     working_dir: /app
     volumes:
-      - ../examples/typescript:/app:ro
+      - ../examples/typescript:/app:ro,z
     environment:
-      RELAY_URL: http://relay:8090
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: dbos_sec_live_key
       DBOS_APP_NAME: typescript-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
     depends_on:
+      relay:
+        condition: service_started
       postgres:
         condition: service_healthy
-    command: ["node", "-e", "console.log('TypeScript sample app container ready')"]
-
-  app-golang:
-    image: golang:1.24-alpine
-    working_dir: /app
-    volumes:
-      - ../examples/golang:/app:ro
-    environment:
-      RELAY_URL: http://relay:8090
-      DBOS_APP_NAME: golang-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["echo", "Go sample app container ready"]
+    command: ["node", "--experimental-websocket", "/app/src/index.js"]
+    restart: "no"
 
   app-java:
     image: eclipse-temurin:17-jre-alpine
     working_dir: /app
     volumes:
-      - ../examples/java:/app:ro
+      - ../examples/java:/app:ro,z
     environment:
-      RELAY_URL: http://relay:8090
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: dbos_sec_live_key
       DBOS_APP_NAME: java-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
     depends_on:
+      relay:
+        condition: service_started
       postgres:
         condition: service_healthy
-    command: ["echo", "Java sample app container ready"]
+    command: ["java", "-cp", "/app/bin", "com.example.App"]
+    restart: "no"

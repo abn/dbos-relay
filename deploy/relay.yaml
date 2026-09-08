@@ -1,0 +1,34 @@
+version: "1"
+
+organisation: "production"
+
+applications:
+  - name: "golang-sample-app"
+    description: "Go sample workflow service"
+    executor_timeout_secs: 10
+  - name: "python-sample-app"
+    description: "Python sample workflow service"
+    executor_timeout_secs: 10
+  - name: "typescript-sample-app"
+    description: "TypeScript sample workflow service"
+    executor_timeout_secs: 10
+  - name: "java-sample-app"
+    description: "Java sample workflow service"
+    executor_timeout_secs: 10
+
+data_plane:
+  golang-sample-app:
+    connection_url: "postgres://relay:relay@postgres:5432/relay?sslmode=disable"
+    mode: "read-write"
+    statement_timeout_secs: 10
+    max_connections: 5
+  python-sample-app:
+    connection_url: "postgres://relay:relay@postgres:5432/relay?sslmode=disable"
+    mode: "read-write"
+    statement_timeout_secs: 10
+    max_connections: 5
+  typescript-sample-app:
+    connection_url: "postgres://relay:relay@postgres:5432/relay?sslmode=disable"
+    mode: "read-write"
+    statement_timeout_secs: 10
+    max_connections: 5
