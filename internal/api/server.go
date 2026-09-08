@@ -23,6 +23,10 @@ type StoreReader interface {
 	CreateAPIKey(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
 	RevokeAPIKey(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
 	UpsertOrganisation(ctx context.Context, name string) (storegen.Organisation, error)
+	CreateAlertingRule(ctx context.Context, arg storegen.CreateAlertingRuleParams) (storegen.AlertingRule, error)
+	GetAlertingRule(ctx context.Context, arg storegen.GetAlertingRuleParams) (storegen.AlertingRule, error)
+	ListAlertingRulesByApplication(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
+	DeleteAlertingRule(ctx context.Context, arg storegen.DeleteAlertingRuleParams) (int64, error)
 }
 
 // Server implements gen.StrictServerInterface.

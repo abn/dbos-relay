@@ -109,6 +109,22 @@ func (m *mockStoreReader) UpsertOrganisation(ctx context.Context, name string) (
 	return storegen.Organisation{}, errors.New("unexpected UpsertOrganisation")
 }
 
+func (m *mockStoreReader) CreateAlertingRule(ctx context.Context, arg storegen.CreateAlertingRuleParams) (storegen.AlertingRule, error) {
+	return storegen.AlertingRule{}, nil
+}
+
+func (m *mockStoreReader) GetAlertingRule(ctx context.Context, arg storegen.GetAlertingRuleParams) (storegen.AlertingRule, error) {
+	return storegen.AlertingRule{}, nil
+}
+
+func (m *mockStoreReader) ListAlertingRulesByApplication(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error) {
+	return nil, nil
+}
+
+func (m *mockStoreReader) DeleteAlertingRule(ctx context.Context, arg storegen.DeleteAlertingRuleParams) (int64, error) {
+	return 1, nil
+}
+
 type mockRouter struct {
 	dispatchFunc func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error)
 }

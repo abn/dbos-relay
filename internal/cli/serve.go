@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/abn/relay/internal/alerting"
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/ha"
@@ -60,6 +61,10 @@ func newServeCommand() *cobra.Command {
 			livenessMgr := liveness.NewManager(liveness.NewRealClock(), s.Queries(), dispatcher, logger)
 			h.SetLivenessTracker(livenessMgr)
 			defer livenessMgr.Stop()
+
+			alertEvaluator := alerting.NewEvaluator(s.Queries(), h, logger)
+			stopAlerts := alertEvaluator.Start(ctx, 15*time.Second)
+			defer stopAlerts()
 
 			port := 8090
 			if _, pStr, err := net.SplitHostPort(cfg.ListenAddr); err == nil {

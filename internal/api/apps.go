@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -489,15 +491,173 @@ func (s *Server) DeleteAutoscalingPolicy(ctx context.Context, request gen.Delete
 
 // ListAlertingRules lists alerting rules.
 func (s *Server) ListAlertingRules(ctx context.Context, request gen.ListAlertingRulesRequestObject) (gen.ListAlertingRulesResponseObject, error) {
-	return gen.ListAlertingRules200JSONResponse([]gen.AlertingRule{}), nil
+	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
+	if err != nil {
+		return gen.ListAlertingRulesdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", request.OrgName)),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.ListAlertingRulesdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", request.AppName)),
+		}, nil
+	}
+
+	dbRules, err := s.store.ListAlertingRulesByApplication(ctx, app.ID)
+	if err != nil {
+		return gen.ListAlertingRulesdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	out := make([]gen.AlertingRule, 0, len(dbRules))
+	for _, r := range dbRules {
+		out = append(out, mapStoreAlertRuleToAPI(r))
+	}
+	return gen.ListAlertingRules200JSONResponse(out), nil
 }
 
 // CreateAlertingRule creates an alerting rule.
 func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlertingRuleRequestObject) (gen.CreateAlertingRuleResponseObject, error) {
-	return gen.CreateAlertingRule201JSONResponse(gen.AlertingRule{}), nil
+	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
+	if err != nil {
+		return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", request.OrgName)),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", request.AppName)),
+		}, nil
+	}
+
+	recvAppID := app.ID
+	if request.Body != nil && request.Body.ReceivingAppName != nil && *request.Body.ReceivingAppName != "" {
+		recvApp, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+			OrganisationID: org.ID,
+			Name:           *request.Body.ReceivingAppName,
+		})
+		if err != nil {
+			return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("receiving application %q not found", *request.Body.ReceivingAppName)),
+			}, nil
+		}
+		recvAppID = recvApp.ID
+	}
+
+	var metaBytes []byte
+	if request.Body != nil && request.Body.RuleMetadata != nil {
+		metaBytes, _ = json.Marshal(request.Body.RuleMetadata)
+	}
+	if len(metaBytes) == 0 {
+		metaBytes = []byte(`{}`)
+	}
+
+	ruleType := "WorkflowFailure"
+	var minInterval *int32
+	if request.Body != nil {
+		ruleType = string(request.Body.RuleType)
+		minInterval = request.Body.MinIntervalSecs
+	}
+
+	dbRule, err := s.store.CreateAlertingRule(ctx, storegen.CreateAlertingRuleParams{
+		ApplicationID:          app.ID,
+		ReceivingApplicationID: recvAppID,
+		RuleType:               ruleType,
+		RuleMetadata:           metaBytes,
+		MinIntervalSecs:        minInterval,
+	})
+	if err != nil {
+		return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	return gen.CreateAlertingRule201JSONResponse(mapStoreAlertRuleToAPI(dbRule)), nil
 }
 
 // DeleteAlertingRule deletes an alerting rule.
 func (s *Server) DeleteAlertingRule(ctx context.Context, request gen.DeleteAlertingRuleRequestObject) (gen.DeleteAlertingRuleResponseObject, error) {
+	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
+	if err != nil {
+		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", request.OrgName)),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", request.AppName)),
+		}, nil
+	}
+
+	var ruleID pgtype.UUID
+	if err := ruleID.Scan(request.RuleId); err != nil {
+		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "invalid rule id format"),
+		}, nil
+	}
+
+	rows, err := s.store.DeleteAlertingRule(ctx, storegen.DeleteAlertingRuleParams{
+		ID:            ruleID,
+		ApplicationID: app.ID,
+	})
+	if err != nil {
+		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+	if rows == 0 {
+		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("rule %q not found", request.RuleId)),
+		}, nil
+	}
+
 	return gen.DeleteAlertingRule204Response{}, nil
+}
+
+func mapStoreAlertRuleToAPI(r storegen.AlertingRule) gen.AlertingRule {
+	var meta any
+	if len(r.RuleMetadata) > 0 {
+		_ = json.Unmarshal(r.RuleMetadata, &meta)
+	}
+	var lastFired *time.Time
+	if r.LastFiredAt.Valid {
+		lastFired = &r.LastFiredAt.Time
+	}
+	return gen.AlertingRule{
+		Id:              formatUUID(r.ID),
+		AppId:           formatUUID(r.ApplicationID),
+		ReceivingAppId:  formatUUID(r.ReceivingApplicationID),
+		RuleType:        gen.AlertingRuleRuleType(r.RuleType),
+		RuleMetadata:    meta,
+		MinIntervalSecs: r.MinIntervalSecs,
+		LastFiredAt:     lastFired,
+	}
 }
