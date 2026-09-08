@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update verify-live db/up db/down db/url
+.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update verify-live db/up db/down db/url lint/sdk-isolation
 
 ##@ Bootstrap
 
@@ -29,9 +29,15 @@ test: ## Run the test suite
 test/conformance: ## Run the end-to-end conformance test suite
 	go test -v ./tests/conformance/...
 
-vet: ## Run static analysis
+vet: lint/sdk-isolation ## Run static analysis
 	go vet ./...
 	golangci-lint run
+
+lint/sdk-isolation: ## Verify tests/verifysdk imports no fakes, mocks, or fake clock packages
+	@if grep -rnE 'github\.com/abn/relay/internal/.*(fake|mock|clock)' tests/verifysdk/ 2>/dev/null; then \
+		echo "ERROR: tests/verifysdk must not import fakes, mocks, or clock packages from internal/" >&2; \
+		exit 1; \
+	fi
 
 gen: ## Regenerate sqlc and OpenAPI output
 	@if [ -f sqlc.yaml ]; then go tool sqlc generate; fi

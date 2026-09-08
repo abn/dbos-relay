@@ -23,7 +23,9 @@ in the wiki under `docs/`.
   summary is how a source list goes stale.
 - **Cite or test.** Every protocol or API claim written into code or docs
   names its permitted source, or has a test that proves it against a real SDK.
-  An uncited claim is a guess and is labelled as one.
+  An uncited claim is a guess and is labelled as one. A test that stands in
+  for a real external process must say so in its name and output, and a report
+  must never present a fake as the real thing.
 - **Ask when provenance is unclear.** If a fact is only obtainable from a
   forbidden source, stop and surface the gap. Design a fallback rather than
   guessing.
