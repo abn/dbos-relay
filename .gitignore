@@ -18,6 +18,7 @@
 # Local environment
 .env
 .env.local
+/.contrib/
 
 # Editor and OS
 *.swp
