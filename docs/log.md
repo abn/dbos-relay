@@ -39,3 +39,17 @@ implementation milestones; those belong in the commit history.
 * **Note**: Every architecture page describes an intended design, not shipped
   behaviour, and says so. Pages are rewritten against the code as the code
   lands.
+
+## 2026-09-08, milestone Discovery and Foundation
+
+Added discovery reference documents and initial foundation packages:
+* Added [REST surface](discovery/D3-rest-surface.md): 64 operations inventoried,
+  OIDC-gated routes identified, and OpenAPI specs vendored in `api/spec/`.
+* Added [Authorization](discovery/D4-authz.md): permission catalog, role
+  model, and API key format.
+* Added [Client behaviour](discovery/D5-client-behaviour.md): command reference
+  and conformance checklist for `dbosctl`.
+* Added [Executor WebSocket protocol](protocol/executor-ws.md) and
+  [Wire to REST mapping](protocol/wire-to-rest.md): protocol messages, liveness,
+  and recovery guarantees.
+* Seeded [provenance ledger](discovery/provenance.md) with confirmed public sources.

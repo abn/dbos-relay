@@ -28,11 +28,16 @@ the implementation does.
 * [Discovery overview](discovery/index.md) - phase 0 discovery findings
 * [Provenance ledger](discovery/provenance.md) - permitted sources for every
   claim
+* [REST surface](discovery/D3-rest-surface.md) - HTTP API operations and inventory
+* [Authorization](discovery/D4-authz.md) - permission model and key format
+* [Client behaviour](discovery/D5-client-behaviour.md) - dbosctl conformance notes
 
 ## Protocol
 
 * [Protocol overview](protocol/index.md) - executor WebSocket protocol
   specification
+* [Executor WebSocket protocol](protocol/executor-ws.md) - wire messages and liveness
+* [Wire to REST mapping](protocol/wire-to-rest.md) - mapping wire records to OpenAPI schemas
 
 ## Design
 
