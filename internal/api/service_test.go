@@ -11,19 +11,25 @@ import (
 
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/problem"
+	"github.com/abn/relay/internal/store/gen"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type mockPinger struct {
-	err error
+type mockStore struct {
+	err     error
 }
 
-func (m *mockPinger) Ping(_ context.Context) error {
+func (m *mockStore) Ping(_ context.Context) error {
 	return m.err
+}
+
+func (m *mockStore) Queries() *gen.Queries {
+	return nil
 }
 
 func TestHealthzReportsDatabaseState(t *testing.T) {
 	t.Run("healthy database", func(t *testing.T) {
-		h := api.NewHandler(&mockPinger{err: nil})
+		h := api.NewHandler(&mockStore{err: nil}, nil)
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
@@ -41,7 +47,7 @@ func TestHealthzReportsDatabaseState(t *testing.T) {
 	})
 
 	t.Run("unreachable database", func(t *testing.T) {
-		h := api.NewHandler(&mockPinger{err: errors.New("connection refused")})
+		h := api.NewHandler(&mockStore{err: errors.New("connection refused")}, nil)
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
@@ -71,7 +77,7 @@ func TestHealthzReportsDatabaseState(t *testing.T) {
 }
 
 func TestSpecIsServedAtEveryDocumentedPath(t *testing.T) {
-	h := api.NewHandler(&mockPinger{})
+	h := api.NewHandler(&mockStore{}, nil)
 
 	paths := []string{"/openapi.json", "/openapi.yaml", "/openapi-3.0.json"}
 	for _, path := range paths {
@@ -116,7 +122,7 @@ func TestSpecIsServedAtEveryDocumentedPath(t *testing.T) {
 }
 
 func TestSpecPathsNeedNoCredentials(t *testing.T) {
-	h := api.NewHandler(&mockPinger{})
+	h := api.NewHandler(&mockStore{}, nil)
 
 	paths := []string{"/openapi.json", "/healthz"}
 	for _, path := range paths {
@@ -138,7 +144,7 @@ func TestSpecPathsNeedNoCredentials(t *testing.T) {
 }
 
 func TestDocsEndpoint(t *testing.T) {
-	h := api.NewHandler(&mockPinger{})
+	h := api.NewHandler(&mockStore{}, nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
 
@@ -160,7 +166,7 @@ func TestDocsEndpoint(t *testing.T) {
 }
 
 func TestSchemasEndpoint(t *testing.T) {
-	h := api.NewHandler(&mockPinger{})
+	h := api.NewHandler(&mockStore{}, nil)
 
 	t.Run("specific schema", func(t *testing.T) {
 		rec := httptest.NewRecorder()
@@ -197,4 +203,65 @@ func TestSchemasEndpoint(t *testing.T) {
 			t.Errorf("redirect location = %q, want openapi components fragment", loc)
 		}
 	})
+}
+
+type fakeQuerier struct {
+	api.ExecutorReader
+}
+
+func (f *fakeQuerier) GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error) {
+	if name == "test-org" {
+		return gen.Organisation{ID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, Name: "test-org"}, nil
+	}
+	return gen.Organisation{}, errors.New("not found")
+}
+
+func (f *fakeQuerier) GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
+	if arg.Name == "test-app" {
+		return gen.Application{ID: pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, Name: "test-app"}, nil
+	}
+	return gen.Application{}, errors.New("not found")
+}
+
+func (f *fakeQuerier) ListExecutorsByApplication(ctx context.Context, applicationID pgtype.UUID) ([]gen.Executor, error) {
+	return []gen.Executor{
+		{
+			ExecutorID:         "exec-1",
+			ApplicationID:      applicationID,
+			ApplicationVersion: "v1",
+			Status:             gen.ExecutorStatusConnected,
+			Hostname:           "host1",
+			Metadata:           []byte(`{"language":"go","dbosVersion":"1.0","hostId":"host-uuid"}`),
+		},
+	}, nil
+}
+
+func TestListExecutors(t *testing.T) {
+	h := api.NewHandler(&mockStore{}, &fakeQuerier{})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v2/orgs/test-org/apps/test-app/executors", nil)
+
+	h.ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+
+	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
+		t.Errorf("Content-Type = %q, want %q", got, want)
+	}
+
+	var resp []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal json: %v", err)
+	}
+
+	if len(resp) != 1 {
+		t.Fatalf("got %d executors, want 1", len(resp))
+	}
+
+	if resp[0]["executorId"] != "exec-1" {
+		t.Errorf("got executorId %v, want exec-1", resp[0]["executorId"])
+	}
 }

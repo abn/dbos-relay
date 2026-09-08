@@ -8,10 +8,20 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/abn/relay/api/spec"
 	"github.com/abn/relay/internal/problem"
+	"github.com/abn/relay/internal/store/gen"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// ExecutorReader provides database queries for the executor endpoint.
+type ExecutorReader interface {
+	GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error)
+	GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error)
+	ListExecutorsByApplication(ctx context.Context, applicationID pgtype.UUID) ([]gen.Executor, error)
+}
 
 // Pinger verifies database connectivity.
 type Pinger interface {
@@ -76,8 +86,16 @@ const docsHTML = `<!DOCTYPE html>
 </html>
 `
 
+func formatUUID(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	b := u.Bytes
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
 // NewHandler constructs an http.Handler with all unauthenticated base routes.
-func NewHandler(db Pinger) http.Handler {
+func NewHandler(db Pinger, q ExecutorReader) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +156,119 @@ func NewHandler(db Pinger) http.Handler {
 			}
 		}
 		http.Redirect(w, r, "/openapi.json#/components/schemas", http.StatusSeeOther)
+	})
+
+	mux.HandleFunc("GET /v2/orgs/{orgName}/apps/{appName}/executors", func(w http.ResponseWriter, r *http.Request) {
+		orgName := r.PathValue("orgName")
+		appName := r.PathValue("appName")
+
+		org, err := q.GetOrganisationByName(r.Context(), orgName)
+		if err != nil {
+			problem.Write(w, &problem.Problem{
+				Status: http.StatusNotFound,
+				Type:   "about:blank",
+				Title:  "Organisation not found",
+				Detail: "The requested organisation was not found",
+			})
+			return
+		}
+
+		app, err := q.GetApplicationByName(r.Context(), gen.GetApplicationByNameParams{
+			OrganisationID: org.ID,
+			Name:           appName,
+		})
+		if err != nil {
+			problem.Write(w, &problem.Problem{
+				Status: http.StatusNotFound,
+				Type:   "about:blank",
+				Title:  "Application not found",
+				Detail: "The requested application was not found",
+			})
+			return
+		}
+
+		execs, err := q.ListExecutorsByApplication(r.Context(), app.ID)
+		if err != nil {
+			problem.Write(w, &problem.Problem{
+				Status: http.StatusInternalServerError,
+				Type:   "about:blank",
+				Title:  "Internal Server Error",
+				Detail: "Failed to list executors",
+			})
+			return
+		}
+
+		type ExecutorResponse struct {
+			ExecutorID       string                 `json:"executorId"`
+			AppID            string                 `json:"appId"`
+			AppVersion       string                 `json:"appVersion"`
+			Status           string                 `json:"status"`
+			HostID           *string                `json:"hostId"`
+			Hostname         *string                `json:"hostname"`
+			CreatedAt        string                 `json:"createdAt"`
+			UpdatedAt        string                 `json:"updatedAt"`
+			Language         *string                `json:"language"`
+			DbosVersion      *string                `json:"dbosVersion"`
+			ExecutorMetadata map[string]interface{} `json:"executorMetadata"`
+		}
+
+		resp := make([]ExecutorResponse, 0, len(execs))
+		for _, e := range execs {
+			var md map[string]interface{}
+			if len(e.Metadata) > 0 {
+				_ = json.Unmarshal(e.Metadata, &md)
+			}
+
+			var language, dbosVersion, hostId *string
+			if md != nil {
+				if v, ok := md["language"].(string); ok {
+					language = &v
+					delete(md, "language")
+				}
+				if v, ok := md["dbosVersion"].(string); ok {
+					dbosVersion = &v
+					delete(md, "dbosVersion")
+				}
+				if v, ok := md["hostId"].(string); ok {
+					hostId = &v
+					delete(md, "hostId")
+				}
+			}
+
+			var statusStr string
+			switch e.Status {
+			case gen.ExecutorStatusConnected:
+				statusStr = "HEALTHY"
+			case gen.ExecutorStatusDisconnected:
+				statusStr = "DISCONNECTED"
+			case gen.ExecutorStatusDead:
+				statusStr = "DEAD"
+			}
+
+			var hostname *string
+			if e.Hostname != "" {
+				h := e.Hostname
+				hostname = &h
+			}
+
+			resp = append(resp, ExecutorResponse{
+				ExecutorID:       e.ExecutorID,
+				AppID:            formatUUID(e.ApplicationID),
+				AppVersion:       e.ApplicationVersion,
+				Status:           statusStr,
+				HostID:           hostId,
+				Hostname:         hostname,
+				CreatedAt:        e.ConnectedAt.Time.Format(time.RFC3339),
+				UpdatedAt:        e.LastSeenAt.Time.Format(time.RFC3339),
+				Language:         language,
+				DbosVersion:      dbosVersion,
+				ExecutorMetadata: md,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	return mux

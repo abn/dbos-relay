@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/abn/relay/internal/api"
 	"github.com/abn/relay/internal/config"
+	"github.com/abn/relay/internal/hub"
 	"github.com/abn/relay/internal/store"
 )
 
@@ -40,10 +42,23 @@ func newServeCommand() *cobra.Command {
 				return fmt.Errorf("migrating database: %w", err)
 			}
 
-			handler := api.NewHandler(s)
+			handler := api.NewHandler(s, s.Queries())
+
+			logger := slog.Default()
+			h := hub.New(s, cfg, logger)
+			defer func() {
+				if err := h.Close(); err != nil {
+					logger.Error("closing hub", "error", err)
+				}
+			}()
+
+			mux := http.NewServeMux()
+			mux.Handle("/", handler)
+			mux.Handle("/websocket/", h)
+
 			server := &http.Server{
 				Addr:              cfg.ListenAddr,
-				Handler:           handler,
+				Handler:           mux,
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 
