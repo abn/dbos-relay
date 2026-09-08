@@ -1,0 +1,114 @@
+package cli
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/abn/relay/internal/declarative"
+	"github.com/abn/relay/internal/store"
+)
+
+func newApplyCommand() *cobra.Command {
+	var (
+		manifestPath string
+		databaseURL  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "apply",
+		Short: "Apply a declarative configuration manifest to Relay",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if manifestPath == "" {
+				return errors.New("manifest file is required (set -f or --file)")
+			}
+
+			cfg, err := declarative.LoadFile(manifestPath)
+			if err != nil {
+				return fmt.Errorf("loading manifest: %w", err)
+			}
+
+			url := databaseURL
+			if url == "" {
+				url = os.Getenv("RELAY_DATABASE_URL")
+			}
+			if url == "" {
+				return errors.New("database URL is required (set --database-url or RELAY_DATABASE_URL)")
+			}
+
+			s, err := store.Open(cmd.Context(), url)
+			if err != nil {
+				return fmt.Errorf("connecting to database: %w", err)
+			}
+			defer s.Close()
+
+			plan, err := declarative.Apply(cmd.Context(), s, cfg)
+			if err != nil {
+				return fmt.Errorf("applying manifest: %w", err)
+			}
+
+			cmd.Print(plan.String())
+			cmd.Println(plan.Summary())
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&manifestPath, "file", "f", "", "Path to relay.yaml configuration file (required)")
+	cmd.Flags().StringVar(&databaseURL, "database-url", "", "PostgreSQL database URL (defaults to RELAY_DATABASE_URL env)")
+	_ = cmd.MarkFlagRequired("file")
+
+	return cmd
+}
+
+func newDiffCommand() *cobra.Command {
+	var (
+		manifestPath string
+		databaseURL  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "diff",
+		Short: "Show differences between declarative manifest and Relay database state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if manifestPath == "" {
+				return errors.New("manifest file is required (set -f or --file)")
+			}
+
+			cfg, err := declarative.LoadFile(manifestPath)
+			if err != nil {
+				return fmt.Errorf("loading manifest: %w", err)
+			}
+
+			url := databaseURL
+			if url == "" {
+				url = os.Getenv("RELAY_DATABASE_URL")
+			}
+			if url == "" {
+				return errors.New("database URL is required (set --database-url or RELAY_DATABASE_URL)")
+			}
+
+			s, err := store.Open(cmd.Context(), url)
+			if err != nil {
+				return fmt.Errorf("connecting to database: %w", err)
+			}
+			defer s.Close()
+
+			plan, err := declarative.Diff(cmd.Context(), s, cfg)
+			if err != nil {
+				return fmt.Errorf("computing diff: %w", err)
+			}
+
+			cmd.Print(plan.String())
+			cmd.Println(plan.Summary())
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&manifestPath, "file", "f", "", "Path to relay.yaml configuration file (required)")
+	cmd.Flags().StringVar(&databaseURL, "database-url", "", "PostgreSQL database URL (defaults to RELAY_DATABASE_URL env)")
+	_ = cmd.MarkFlagRequired("file")
+
+	return cmd
+}

@@ -1,0 +1,58 @@
+version: "1"
+
+organisation: "production"
+
+applications:
+  - name: "order-service"
+    description: "E-commerce order intake and fulfillment workflow service"
+    stuck_sla_secs: 900
+  - name: "payment-gateway"
+    description: "Payment processing and refund workflows"
+  - name: "notification-service"
+    description: "Customer email, SMS, and push notification handler"
+
+alert_rules:
+  # Trigger alert if order-service has zero connected executors
+  - app: "order-service"
+    rule_type: "UnresponsiveApplication"
+    receiving_app: "notification-service"
+    min_interval_secs: 60
+    metadata:
+      destinations:
+        - type: "slack"
+          url: "https://hooks.slack.com/services/EXAMPLE/SLACK/WEBHOOK"
+        - type: "pagerduty"
+          routing_key: "pd-service-key-order-prod"
+
+  # Alert if an executor repeatedly disconnects and triggers recovery dispatches
+  - app: "order-service"
+    rule_type: "RecoveryFlapping"
+    min_interval_secs: 300
+    metadata:
+      threshold: 3
+      destinations:
+        - type: "slack"
+          url: "https://hooks.slack.com/services/EXAMPLE/SLACK/WEBHOOK"
+
+  # Alert if an application version has workflows running but zero live executors
+  - app: "order-service"
+    rule_type: "StrandedVersion"
+    min_interval_secs: 300
+    metadata:
+      stranded_version: "v1.2.0"
+      destinations:
+        - type: "webhook"
+          url: "https://ops.example.internal/api/v1/alerts"
+          secret: "hmac-signing-secret"
+
+data_plane:
+  # Optional direct database connection via Go SDK client
+  # Sensitive credentials are read from the environment or secret files, never committed plain
+  order-service:
+    connection_url: "${ORDER_SERVICE_DB_URL}"
+    # Alternatively:
+    # connection_string_from:
+    #   env: "ORDER_SERVICE_DB_URL"
+    mode: "read"
+    statement_timeout_secs: 10
+    max_connections: 5

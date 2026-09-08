@@ -29,6 +29,8 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newServeCommand())
 	root.AddCommand(newMigrateCommand())
 	root.AddCommand(newAPIKeyCommand())
+	root.AddCommand(newApplyCommand())
+	root.AddCommand(newDiffCommand())
 	root.AddCommand(newOpenAPICommand())
 	root.AddCommand(newConformanceCommand())
 	return root

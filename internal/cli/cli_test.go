@@ -11,7 +11,7 @@ import (
 
 func TestCommandTreeSubcommandsExist(t *testing.T) {
 	cmd := newRootCommand()
-	expected := []string{"version", "serve", "migrate", "apikey", "openapi", "test-conformance"}
+	expected := []string{"version", "serve", "migrate", "apikey", "apply", "diff", "openapi", "test-conformance"}
 	for _, name := range expected {
 		sub, _, err := cmd.Find([]string{name})
 		if err != nil || sub == nil || sub.Name() != name {
@@ -176,5 +176,37 @@ func TestOpenAPICommandInvalidVersion(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported openapi version") {
 		t.Fatalf("expected unsupported version error, got: %v", err)
+	}
+}
+
+func TestApplyRequiresFile(t *testing.T) {
+	cmd := newRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"apply"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected apply to fail when -f is omitted, got nil")
+	}
+	if !strings.Contains(err.Error(), "required flag") && !strings.Contains(err.Error(), "file") {
+		t.Fatalf("expected flag error, got: %v", err)
+	}
+}
+
+func TestDiffRequiresFile(t *testing.T) {
+	cmd := newRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"diff"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected diff to fail when -f is omitted, got nil")
+	}
+	if !strings.Contains(err.Error(), "required flag") && !strings.Contains(err.Error(), "file") {
+		t.Fatalf("expected flag error, got: %v", err)
 	}
 }

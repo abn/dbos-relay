@@ -20,12 +20,15 @@ import (
 	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/dashboard"
+	"github.com/abn/relay/internal/dataplane"
+	"github.com/abn/relay/internal/declarative"
 	"github.com/abn/relay/internal/ha"
 	"github.com/abn/relay/internal/hub"
 	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/metrics"
 	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store"
+	"github.com/abn/relay/internal/store/gen"
 )
 
 func newServeCommand() *cobra.Command {
@@ -65,6 +68,7 @@ func newServeCommand() *cobra.Command {
 			defer livenessMgr.Stop()
 
 			alertEvaluator := alerting.NewEvaluator(s.Queries(), h, logger)
+			alertEvaluator.SetChannelDispatcher(alerting.NewHTTPChannelDispatcher(nil))
 			stopAlerts := alertEvaluator.Start(ctx, 15*time.Second)
 			defer stopAlerts()
 
@@ -86,6 +90,34 @@ func newServeCommand() *cobra.Command {
 			defer haMgr.Stop()
 
 			r := router.New(s.Queries(), h)
+			dpManager := dataplane.NewManager(nil)
+			if configPath := os.Getenv("RELAY_CONFIG"); configPath != "" {
+				if decCfg, err := declarative.LoadFile(configPath); err == nil {
+					allApps, _ := s.Queries().ListAllApplications(ctx)
+					appMap := make(map[string]gen.Application)
+					for _, a := range allApps {
+						appMap[a.Name] = a
+					}
+					for appName, dp := range decCfg.DataPlanes {
+						app, ok := appMap[appName]
+						if !ok {
+							continue
+						}
+						timeout := time.Duration(dp.StatementTimeoutSecs) * time.Second
+						_ = dpManager.RegisterApp(dataplane.AppConfig{
+							ApplicationID:    app.ID,
+							DatabaseURL:      dp.ConnectionURL,
+							Mode:             dataplane.Mode(dp.Mode),
+							StatementTimeout: timeout,
+							MaxConnections:   dp.MaxConnections,
+						})
+					}
+				} else {
+					logger.Warn("failed to load declarative config for data plane", "path", configPath, "error", err)
+				}
+			}
+			r.SetDataPlane(dpManager)
+
 			forwarder := router.NewForwarder([]byte(cfg.InternalSecret), nil)
 			r.SetForwarder(forwarder, haMgr.ID())
 
