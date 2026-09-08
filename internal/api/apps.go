@@ -1,0 +1,503 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/abn/relay/internal/api/gen"
+	storegen "github.com/abn/relay/internal/store/gen"
+)
+
+type appSettings struct {
+	PrivateMode         bool    `json:"privateMode,omitempty"`
+	ExecutorTimeoutSecs int64   `json:"executorTimeoutSecs,omitempty"`
+	GcRowsThreshold     *int64  `json:"gcRowsThreshold,omitempty"`
+	GcTimeThresholdMs   *int64  `json:"gcTimeThresholdMs,omitempty"`
+	GlobalTimeoutMs     *int64  `json:"globalTimeoutMs,omitempty"`
+	LatestVersion       *string `json:"latestVersion,omitempty"`
+}
+
+func normalizeOrg(orgName string) string {
+	if orgName == "" {
+		return "local"
+	}
+	return orgName
+}
+
+func mapApplication(app storegen.Application, orgID pgtype.UUID) gen.Application {
+	var s appSettings
+	if len(app.Settings) > 0 {
+		_ = json.Unmarshal(app.Settings, &s)
+	}
+	timeoutSecs := s.ExecutorTimeoutSecs
+	if timeoutSecs == 0 {
+		timeoutSecs = 60
+	}
+	return gen.Application{
+		Id:                  formatUUID(app.ID),
+		Name:                app.Name,
+		OrgId:               formatUUID(orgID),
+		Status:              gen.AVAILABLE,
+		DbosCloud:           false,
+		PrivateMode:         s.PrivateMode,
+		ExecutorTimeoutSecs: timeoutSecs,
+		GcRowsThreshold:     s.GcRowsThreshold,
+		GcTimeThresholdMs:   s.GcTimeThresholdMs,
+		GlobalTimeoutMs:     s.GlobalTimeoutMs,
+	}
+}
+
+func mapExecutor(e storegen.Executor) gen.Executor {
+	var md map[string]interface{}
+	if len(e.Metadata) > 0 {
+		_ = json.Unmarshal(e.Metadata, &md)
+	}
+
+	var language, dbosVersion, hostId *string
+	if md != nil {
+		if v, ok := md["language"].(string); ok {
+			language = &v
+			delete(md, "language")
+		}
+		if v, ok := md["dbosVersion"].(string); ok {
+			dbosVersion = &v
+			delete(md, "dbosVersion")
+		}
+		if v, ok := md["hostId"].(string); ok {
+			hostId = &v
+			delete(md, "hostId")
+		}
+	}
+
+	var status gen.ExecutorStatus
+	switch e.Status {
+	case storegen.ExecutorStatusConnected:
+		status = gen.HEALTHY
+	case storegen.ExecutorStatusDisconnected:
+		status = gen.DISCONNECTED
+	case storegen.ExecutorStatusDead:
+		status = gen.DEAD
+	default:
+		status = gen.DEAD
+	}
+
+	var hostname *string
+	if e.Hostname != "" {
+		h := e.Hostname
+		hostname = &h
+	}
+
+	var mdPtr *map[string]interface{}
+	if md != nil {
+		mdPtr = &md
+	}
+
+	return gen.Executor{
+		AppId:            formatUUID(e.ApplicationID),
+		AppVersion:       e.ApplicationVersion,
+		CreatedAt:        e.ConnectedAt.Time,
+		UpdatedAt:        e.LastSeenAt.Time,
+		DbosVersion:      dbosVersion,
+		ExecutorId:       e.ExecutorID,
+		ExecutorMetadata: mdPtr,
+		HostId:           hostId,
+		Hostname:         hostname,
+		Language:         language,
+		Status:           status,
+	}
+}
+
+// ListApps returns all applications registered for an organisation.
+func (s *Server) ListApps(ctx context.Context, request gen.ListAppsRequestObject) (gen.ListAppsResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.ListAppsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	apps, err := s.store.ListApplicationsByOrganisation(ctx, org.ID)
+	if err != nil {
+		return gen.ListAppsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	res := make([]gen.Application, 0, len(apps))
+	for _, a := range apps {
+		res = append(res, mapApplication(a, org.ID))
+	}
+
+	return gen.ListApps200JSONResponse(res), nil
+}
+
+// GetApp returns details for a single application.
+func (s *Server) GetApp(ctx context.Context, request gen.GetAppRequestObject) (gen.GetAppResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.GetAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.GetAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+		}, nil
+	}
+
+	return gen.GetApp200JSONResponse(mapApplication(app, org.ID)), nil
+}
+
+// RegisterApp registers a new application or updates an existing one.
+func (s *Server) RegisterApp(ctx context.Context, request gen.RegisterAppRequestObject) (gen.RegisterAppResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.UpsertOrganisation(ctx, orgName)
+	if err != nil {
+		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	settings := appSettings{}
+	if request.Body != nil && request.Body.PrivateMode != nil {
+		settings.PrivateMode = *request.Body.PrivateMode
+	}
+
+	settingsBytes, err := json.Marshal(settings)
+	if err != nil {
+		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	_, err = s.store.UpsertApplication(ctx, storegen.UpsertApplicationParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+		Settings:       settingsBytes,
+	})
+	if err != nil {
+		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	return gen.RegisterApp204Response{}, nil
+}
+
+// UpdateApp updates application settings.
+func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObject) (gen.UpdateAppResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+		}, nil
+	}
+
+	var settings appSettings
+	if len(app.Settings) > 0 {
+		_ = json.Unmarshal(app.Settings, &settings)
+	}
+
+	if request.Body != nil {
+		if request.Body.PrivateMode != nil {
+			settings.PrivateMode = *request.Body.PrivateMode
+		}
+		if request.Body.ExecutorTimeoutSecs != nil {
+			settings.ExecutorTimeoutSecs = *request.Body.ExecutorTimeoutSecs
+		}
+		if request.Body.GcRowsThreshold != nil {
+			settings.GcRowsThreshold = request.Body.GcRowsThreshold
+		}
+		if request.Body.GcTimeThresholdMs != nil {
+			settings.GcTimeThresholdMs = request.Body.GcTimeThresholdMs
+		}
+		if request.Body.GlobalTimeoutMs != nil {
+			settings.GlobalTimeoutMs = request.Body.GlobalTimeoutMs
+		}
+	}
+
+	settingsBytes, err := json.Marshal(settings)
+	if err != nil {
+		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	_, err = s.store.UpdateApplicationSettings(ctx, storegen.UpdateApplicationSettingsParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+		Settings:       settingsBytes,
+	})
+	if err != nil {
+		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	return gen.UpdateApp204Response{}, nil
+}
+
+// DeleteApp deletes an application.
+func (s *Server) DeleteApp(ctx context.Context, request gen.DeleteAppRequestObject) (gen.DeleteAppResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	_, err = s.store.DeleteApplication(ctx, storegen.DeleteApplicationParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+		}, nil
+	}
+
+	return gen.DeleteApp204Response{}, nil
+}
+
+// ListAppVersions lists distinct versions for an application.
+func (s *Server) ListAppVersions(ctx context.Context, request gen.ListAppVersionsRequestObject) (gen.ListAppVersionsResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+		}, nil
+	}
+
+	execs, err := s.store.ListExecutorsByApplication(ctx, app.ID)
+	if err != nil {
+		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	seen := make(map[string]bool)
+	versions := make([]gen.ApplicationVersion, 0)
+	for _, e := range execs {
+		if e.ApplicationVersion != "" && !seen[e.ApplicationVersion] {
+			seen[e.ApplicationVersion] = true
+			t := e.ConnectedAt.Time
+			versions = append(versions, gen.ApplicationVersion{
+				VersionId:        e.ApplicationVersion,
+				VersionName:      e.ApplicationVersion,
+				CreatedAt:        t,
+				VersionTimestamp: t,
+			})
+		}
+	}
+
+	var settings appSettings
+	if len(app.Settings) > 0 {
+		_ = json.Unmarshal(app.Settings, &settings)
+	}
+
+	if settings.LatestVersion != nil && *settings.LatestVersion != "" && !seen[*settings.LatestVersion] {
+		seen[*settings.LatestVersion] = true
+		t := app.CreatedAt.Time
+		versions = append(versions, gen.ApplicationVersion{
+			VersionId:        *settings.LatestVersion,
+			VersionName:      *settings.LatestVersion,
+			CreatedAt:        t,
+			VersionTimestamp: t,
+		})
+	}
+
+	return gen.ListAppVersions200JSONResponse(versions), nil
+}
+
+// SetLatestAppVersion sets the active/latest application version.
+func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestAppVersionRequestObject) (gen.SetLatestAppVersionResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+		}, nil
+	}
+
+	if request.Body == nil {
+		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
+		}, nil
+	}
+
+	var settings appSettings
+	if len(app.Settings) > 0 {
+		_ = json.Unmarshal(app.Settings, &settings)
+	}
+
+	settings.LatestVersion = &request.Body.VersionName
+	settingsBytes, err := json.Marshal(settings)
+	if err != nil {
+		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	_, err = s.store.UpdateApplicationSettings(ctx, storegen.UpdateApplicationSettingsParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+		Settings:       settingsBytes,
+	})
+	if err != nil {
+		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	return gen.SetLatestAppVersion204Response{}, nil
+}
+
+// ListExecutors lists live and recent executors for an application.
+func (s *Server) ListExecutors(ctx context.Context, request gen.ListExecutorsRequestObject) (gen.ListExecutorsResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+		}, nil
+	}
+
+	execs, err := s.store.ListExecutorsByApplication(ctx, app.ID)
+	if err != nil {
+		return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	resp := make([]gen.Executor, 0, len(execs))
+	for _, e := range execs {
+		resp = append(resp, mapExecutor(e))
+	}
+
+	return gen.ListExecutors200JSONResponse(resp), nil
+}
+
+// GetAutoscale returns autoscaling recommendations.
+func (s *Server) GetAutoscale(ctx context.Context, request gen.GetAutoscaleRequestObject) (gen.GetAutoscaleResponseObject, error) {
+	return gen.GetAutoscale200JSONResponse([]gen.QueueAutoscale{}), nil
+}
+
+// GetAutoscaleVersion returns autoscaling recommendations for a specific version.
+func (s *Server) GetAutoscaleVersion(ctx context.Context, request gen.GetAutoscaleVersionRequestObject) (gen.GetAutoscaleVersionResponseObject, error) {
+	return gen.GetAutoscaleVersion200JSONResponse(gen.QueueAutoscale{}), nil
+}
+
+// GetAutoscalingPolicy returns autoscaling policy.
+func (s *Server) GetAutoscalingPolicy(ctx context.Context, request gen.GetAutoscalingPolicyRequestObject) (gen.GetAutoscalingPolicyResponseObject, error) {
+	return gen.GetAutoscalingPolicy200JSONResponse(gen.PolicyOutputBody{}), nil
+}
+
+// SetAutoscalingPolicy sets autoscaling policy.
+func (s *Server) SetAutoscalingPolicy(ctx context.Context, request gen.SetAutoscalingPolicyRequestObject) (gen.SetAutoscalingPolicyResponseObject, error) {
+	return gen.SetAutoscalingPolicy200JSONResponse(gen.PolicyOutputBody{}), nil
+}
+
+// DeleteAutoscalingPolicy deletes autoscaling policy.
+func (s *Server) DeleteAutoscalingPolicy(ctx context.Context, request gen.DeleteAutoscalingPolicyRequestObject) (gen.DeleteAutoscalingPolicyResponseObject, error) {
+	return gen.DeleteAutoscalingPolicy204Response{}, nil
+}
+
+// ListAlertingRules lists alerting rules.
+func (s *Server) ListAlertingRules(ctx context.Context, request gen.ListAlertingRulesRequestObject) (gen.ListAlertingRulesResponseObject, error) {
+	return gen.ListAlertingRules200JSONResponse([]gen.AlertingRule{}), nil
+}
+
+// CreateAlertingRule creates an alerting rule.
+func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlertingRuleRequestObject) (gen.CreateAlertingRuleResponseObject, error) {
+	return gen.CreateAlertingRule201JSONResponse(gen.AlertingRule{}), nil
+}
+
+// DeleteAlertingRule deletes an alerting rule.
+func (s *Server) DeleteAlertingRule(ctx context.Context, request gen.DeleteAlertingRuleRequestObject) (gen.DeleteAlertingRuleResponseObject, error) {
+	return gen.DeleteAlertingRule204Response{}, nil
+}

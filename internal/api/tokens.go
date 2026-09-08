@@ -1,0 +1,155 @@
+package api
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/abn/relay/internal/api/gen"
+	"github.com/abn/relay/internal/auth"
+	storegen "github.com/abn/relay/internal/store/gen"
+)
+
+// ListTokens lists all API key tokens for an organisation.
+func (s *Server) ListTokens(ctx context.Context, request gen.ListTokensRequestObject) (gen.ListTokensResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.ListTokensdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	keys, err := s.store.ListAPIKeys(ctx, org.ID)
+	if err != nil {
+		return gen.ListTokensdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	resp := make([]gen.Token, 0, len(keys))
+	for _, k := range keys {
+		appNames := k.ApplicationNames
+		if appNames == nil {
+			appNames = []string{}
+		}
+		perms := k.Permissions
+		if perms == nil {
+			perms = []string{}
+		}
+		resp = append(resp, gen.Token{
+			TokenName:   k.Name,
+			AppIds:      appNames,
+			Permissions: perms,
+			CreatedAt:   k.CreatedAt.Time,
+		})
+	}
+
+	return gen.ListTokens200JSONResponse(resp), nil
+}
+
+// CreateToken mints a new API key and stores its record.
+func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequestObject) (gen.CreateTokenResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	plain, rec, err := auth.Mint()
+	if err != nil {
+		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	appNames := []string{}
+	permissions := []string{}
+	if request.Body != nil {
+		if request.Body.AppNames != nil {
+			appNames = *request.Body.AppNames
+		}
+		if request.Body.Permissions != nil {
+			permissions = *request.Body.Permissions
+		}
+	}
+
+	_, err = s.store.CreateAPIKey(ctx, storegen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             request.TokenName,
+		Lookup:           rec.Lookup,
+		KeyHash:          rec.Hash,
+		ApplicationNames: appNames,
+		Permissions:      permissions,
+	})
+	if err != nil {
+		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	return gen.CreateToken201JSONResponse{
+		Token:     plain,
+		TokenName: request.TokenName,
+	}, nil
+}
+
+// DeleteToken revokes an existing API key token by name.
+func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequestObject) (gen.DeleteTokenResponseObject, error) {
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+		}, nil
+	}
+
+	keys, err := s.store.ListAPIKeys(ctx, org.ID)
+	if err != nil {
+		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	var targetID pgtype.UUID
+	found := false
+	for _, k := range keys {
+		if k.Name == request.TokenName {
+			targetID = k.ID
+			found = true
+			break
+		}
+	}
+	if !found {
+		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       MakeErrorModel(http.StatusNotFound, "Token not found", "Token not found"),
+		}, nil
+	}
+
+	_, err = s.store.RevokeAPIKey(ctx, storegen.RevokeAPIKeyParams{
+		ID:             targetID,
+		OrganisationID: org.ID,
+	})
+	if err != nil {
+		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	return gen.DeleteToken204Response{}, nil
+}
