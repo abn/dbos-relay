@@ -16,6 +16,7 @@ import (
 type SDKClient struct {
 	config AppConfig
 	client dbos.Client
+	cancel context.CancelFunc
 }
 
 // NewSDKClient initializes an SDKClient backed by dbos.NewClient.
@@ -30,8 +31,7 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 		timeout = 5 * time.Second
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	appName := cfg.ApplicationName
 	if appName == "" {
@@ -44,12 +44,14 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 		SystemDBStartupTimeout: timeout,
 	})
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create dbos client: %w", err)
 	}
 
 	return &SDKClient{
 		config: cfg,
 		client: client,
+		cancel: cancel,
 	}, nil
 }
 
@@ -198,10 +200,14 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 
 // Close terminates the DBOS client runtime and connections.
 func (c *SDKClient) Close() error {
+	var err error
 	if c.client != nil {
-		return c.client.Shutdown(c.client, 5*time.Second)
+		err = c.client.Shutdown(c.client, 5*time.Second)
 	}
-	return nil
+	if c.cancel != nil {
+		c.cancel()
+	}
+	return err
 }
 
 func mapWorkflowStatus(s dbos.WorkflowStatus) protocol.ListWorkflowsResponseBody {
