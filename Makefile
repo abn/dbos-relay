@@ -19,6 +19,7 @@ setup: ## Install git hooks and generate local tool shims
 
 build: ## Build the binary
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
+	(cd examples/golang && CGO_ENABLED=0 go build -o bin/app .)
 
 dashboard/build: ## Build the web dashboard assets
 	node console/build.js

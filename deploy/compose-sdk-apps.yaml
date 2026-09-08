@@ -7,6 +7,8 @@ services:
       POSTGRES_PASSWORD: relay
     ports:
       - "5433:5432"
+    volumes:
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
       interval: 2s
@@ -33,7 +35,7 @@ services:
       postgres:
         condition: service_healthy
 
-  app-golang-victim:
+  app-golang-primary:
     image: alpine:latest
     security_opt:
       - "seccomp=unconfined"
@@ -44,8 +46,8 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: golang-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
-      ROLE: victim
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_golang?sslmode=disable
+      ROLE: primary
       HTTP_PORT: 8080
     ports:
       - "8080:8080"
@@ -57,7 +59,7 @@ services:
     command: ["/app/bin/app"]
     restart: "no"
 
-  app-golang-survivor:
+  app-golang-secondary:
     image: alpine:latest
     security_opt:
       - "seccomp=unconfined"
@@ -68,8 +70,8 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: golang-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
-      ROLE: survivor
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_golang?sslmode=disable
+      ROLE: secondary
       HTTP_PORT: 8086
     ports:
       - "8086:8086"
@@ -81,7 +83,7 @@ services:
     command: ["/app/bin/app"]
     restart: "no"
 
-  app-python-victim:
+  app-python-primary:
     image: python:3.13-slim
     working_dir: /app
     volumes:
@@ -90,8 +92,8 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: python-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
-      ROLE: victim
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_python?sslmode=disable
+      ROLE: primary
       HTTP_PORT: 8081
     ports:
       - "8081:8081"
@@ -103,7 +105,7 @@ services:
     command: ["sh", "-c", "pip install -q -r requirements.txt && python main.py"]
     restart: "no"
 
-  app-python-survivor:
+  app-python-secondary:
     image: python:3.13-slim
     working_dir: /app
     volumes:
@@ -112,8 +114,8 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: python-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
-      ROLE: survivor
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_python?sslmode=disable
+      ROLE: secondary
       HTTP_PORT: 8084
     ports:
       - "8084:8084"
@@ -125,7 +127,7 @@ services:
     command: ["sh", "-c", "pip install -q -r requirements.txt && python main.py"]
     restart: "no"
 
-  app-typescript-victim:
+  app-typescript-primary:
     image: node:22-slim
     working_dir: /app
     volumes:
@@ -134,8 +136,8 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: typescript-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
-      ROLE: victim
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_typescript?sslmode=disable
+      ROLE: primary
       HTTP_PORT: 8082
     ports:
       - "8082:8082"
@@ -147,7 +149,7 @@ services:
     command: ["node", "/app/dist/index.js"]
     restart: "no"
 
-  app-typescript-survivor:
+  app-typescript-secondary:
     image: node:22-slim
     working_dir: /app
     volumes:
@@ -156,8 +158,8 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: typescript-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
-      ROLE: survivor
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_typescript?sslmode=disable
+      ROLE: secondary
       HTTP_PORT: 8085
     ports:
       - "8085:8085"
@@ -178,7 +180,7 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: java-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_java?sslmode=disable
       HTTP_PORT: 8083
     ports:
       - "8083:8083"
