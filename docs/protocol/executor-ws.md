@@ -64,10 +64,41 @@ JSON fields use `snake_case`.
 
 ## Recovery Semantics
 
-When `recovery` is dispatched, the SDK retrieves the previous executor IDs and replays workflows.
-Idempotence guarantees:
-* Steps are at-least-once.
-* Outcomes are exactly-once.
+Relay monitors executor connectivity and coordinates workflow recovery across peer instances.
+
+### Lifecycle State Machine
+
+Each executor registration transitions through four discrete states:
+
+1. **Connected (`HEALTHY`)**: The executor maintains an active WebSocket connection and responds to heartbeats.
+2. **Disconnected (`DISCONNECTED`)**: The WebSocket connection closed or timed out. Relay starts a per-application grace period timer. If the executor reconnects with the same `executor_id` before the timer expires, it returns to `Connected` and the timer is cancelled.
+3. **Dead (`DEAD`)**: The grace period timer expired without reconnection. Relay marks the executor dead and triggers workflow recovery dispatch.
+4. **Deleted**: Following successful recovery acknowledgment by a healthy peer, the dead executor record is removed from the registry.
+
+### Timing and Grace Periods
+
+* Default grace period: 60 seconds (cited from DBOS public documentation `/production/workflow-recovery`).
+* Per-application override: Configurable via the `executorTimeoutSecs` key in application settings (Conductor OpenAPI `Application` and `PatchAppInputBody`).
+* Server ping interval: 20 seconds.
+* Read/pong deadline: 25 seconds.
+
+### Recovery Failover and Peer Selection
+
+When an executor transitions to `Dead`:
+
+1. Relay queries connected peers within the same application.
+2. Cross-application or cross-organisation recovery is strictly rejected.
+3. If multiple peers exist, candidates with a matching `application_version` are prioritized to avoid workflow version skew.
+4. Relay dispatches a `recovery` message containing `executor_ids: [dead_executor_id]`.
+5. If the chosen peer disconnects or fails to respond within the dispatch deadline, Relay fails over sequentially to the next healthy candidate.
+6. Upon receiving a response with `success: true`, Relay deletes the dead executor record from the control plane database.
+7. If no healthy peers are currently connected, the dead executor record remains in `DEAD` status until a new peer connects.
+
+### Idempotence Guarantees
+
+* Step executions are at-least-once.
+* Workflow outcomes are exactly-once.
+* Recovery dispatch is idempotent; multiple dispatches for the same dead executor do not corrupt execution state.
 
 ## SDK Differences Matrix
 
