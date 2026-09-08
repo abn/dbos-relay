@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: relay
       POSTGRES_DB: relay
@@ -75,7 +75,7 @@ services:
     restart: "no"
 
   app-python:
-    image: python:3.11-slim
+    image: python:3.13-slim
     working_dir: /app
     volumes:
       - ../examples/python:/app:ro,z
@@ -93,7 +93,7 @@ services:
     restart: "no"
 
   app-typescript:
-    image: node:20-slim
+    image: node:22-slim
     working_dir: /app
     volumes:
       - ../examples/typescript:/app:ro,z
@@ -107,11 +107,11 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-    command: ["node", "--experimental-websocket", "/app/src/index.js"]
+    command: ["node", "/app/src/index.js"]
     restart: "no"
 
   app-java:
-    image: eclipse-temurin:17-jre-alpine
+    image: eclipse-temurin:21-jre-alpine
     working_dir: /app
     volumes:
       - ../examples/java:/app:ro,z
