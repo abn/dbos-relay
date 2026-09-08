@@ -6,6 +6,9 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Creation**: Implemented the Phase 3 REST API surface with typed OpenAPI 3.0 code-generation, router-mediated executor dispatch, application metadata and token persistence in Postgres, and conformance test suite for upstream `dbosctl` compatibility.
+* **Update**: Updated the [quickstart guide](usage/quickstart.md) with REST API querying, `dbosctl` CLI usage, and RFC 9457 Problem Details error responses.
+* **Update**: Expanded [Wire to REST Mapping](protocol/wire-to-rest.md) with comprehensive field and type mappings for workflows, steps, events, notifications, queues, and schedules.
 * **Creation**: Implemented the Phase 2 protocol codec, connection hub, and executor endpoints with sample applications in Python and TypeScript.
 * **Refactor**: Consolidated OpenAPI specification access and YAML conversion
   in `api/spec`, eliminated redundant schema decoding across packages, and

@@ -86,5 +86,63 @@ export RELAY_API_KEY="dbos_..."
 Once an application connects, you can query the active executors for that application:
 
 ```bash
-curl -fsS http://localhost:8090/v2/orgs/{org}/apps/{app}/executors
+curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/executors
+```
+
+## 8. Querying workflows and resources
+
+Relay serves the Conductor v2 REST surface. Query workflows for an application:
+
+```bash
+# Search workflows
+curl -fsS -X POST http://localhost:8090/v2/orgs/acme/apps/my-app/workflows/search \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 10}'
+
+# Inspect a specific workflow
+curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/workflows/{workflowId}
+
+# List workflow execution steps
+curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/workflows/{workflowId}/steps
+```
+
+Query application queues and schedules:
+
+```bash
+# List queues
+curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/queues
+
+# List schedules
+curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/schedules
+```
+
+## 9. Operating with dbosctl
+
+The upstream `dbosctl` CLI works directly with Relay. Point `dbosctl` at Relay's URL:
+
+```bash
+export DBOS_CONDUCTOR_URL="http://localhost:8090"
+export DBOS_API_KEY="dbos_..."
+
+# List applications
+dbosctl app list
+
+# Inspect workflows
+dbosctl workflow list --app my-app
+
+# View workflow details
+dbosctl workflow get <workflow-id> --app my-app
+```
+
+## 10. Error responses
+
+All API errors return RFC 9457 Problem Details (`application/problem+json`):
+
+```json
+{
+  "type": "about:blank",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "no live executor connected for this application"
+}
 ```
