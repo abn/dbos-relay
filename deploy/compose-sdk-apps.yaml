@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_DB: relay
+      POSTGRES_PASSWORD: relay
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  app-python:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ../examples/python:/app:ro
+    environment:
+      RELAY_URL: http://relay:8090
+      DBOS_APP_NAME: python-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-c", "import sys; print('Python sample app container ready')"]
+
+  app-typescript:
+    image: node:20-slim
+    working_dir: /app
+    volumes:
+      - ../examples/typescript:/app:ro
+    environment:
+      RELAY_URL: http://relay:8090
+      DBOS_APP_NAME: typescript-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["node", "-e", "console.log('TypeScript sample app container ready')"]
+
+  app-golang:
+    image: golang:1.24-alpine
+    working_dir: /app
+    volumes:
+      - ../examples/golang:/app:ro
+    environment:
+      RELAY_URL: http://relay:8090
+      DBOS_APP_NAME: golang-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["echo", "Go sample app container ready"]
+
+  app-java:
+    image: eclipse-temurin:17-jre-alpine
+    working_dir: /app
+    volumes:
+      - ../examples/java:/app:ro
+    environment:
+      RELAY_URL: http://relay:8090
+      DBOS_APP_NAME: java-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["echo", "Java sample app container ready"]
