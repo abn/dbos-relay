@@ -54,6 +54,17 @@ func (ns NullExecutorStatus) Value() (driver.Value, error) {
 	return string(ns.ExecutorStatus), nil
 }
 
+type AlertingRule struct {
+	ID                     pgtype.UUID
+	ApplicationID          pgtype.UUID
+	ReceivingApplicationID pgtype.UUID
+	RuleType               string
+	RuleMetadata           []byte
+	MinIntervalSecs        *int32
+	LastFiredAt            pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+}
+
 type ApiKey struct {
 	ID               pgtype.UUID
 	OrganisationID   pgtype.UUID

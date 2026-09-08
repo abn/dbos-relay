@@ -74,6 +74,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 func (s *Store) Truncate(ctx context.Context) error {
 	// Truncate tables in dependency order (reverse of creation)
 	tables := []string{
+		"alerting_rules",
 		"api_keys",
 		"executors",
 		"instances",
