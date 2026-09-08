@@ -30,3 +30,18 @@ func (q *Queries) GetOrganisationByName(ctx context.Context, name string) (Organ
 	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err
 }
+
+const upsertOrganisation = `-- name: UpsertOrganisation :one
+INSERT INTO organisations (name)
+VALUES ($1)
+ON CONFLICT (name) DO UPDATE SET
+    name = EXCLUDED.name
+RETURNING id, name, created_at
+`
+
+func (q *Queries) UpsertOrganisation(ctx context.Context, name string) (Organisation, error) {
+	row := q.db.QueryRow(ctx, upsertOrganisation, name)
+	var i Organisation
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	return i, err
+}

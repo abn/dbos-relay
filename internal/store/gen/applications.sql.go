@@ -34,6 +34,30 @@ func (q *Queries) CreateApplication(ctx context.Context, arg CreateApplicationPa
 	return i, err
 }
 
+const deleteApplication = `-- name: DeleteApplication :one
+DELETE FROM applications
+WHERE organisation_id = $1 AND name = $2
+RETURNING id, organisation_id, name, settings, created_at
+`
+
+type DeleteApplicationParams struct {
+	OrganisationID pgtype.UUID
+	Name           string
+}
+
+func (q *Queries) DeleteApplication(ctx context.Context, arg DeleteApplicationParams) (Application, error) {
+	row := q.db.QueryRow(ctx, deleteApplication, arg.OrganisationID, arg.Name)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.Name,
+		&i.Settings,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getApplicationByName = `-- name: GetApplicationByName :one
 SELECT id, organisation_id, name, settings, created_at FROM applications WHERE organisation_id = $1 AND name = $2
 `
@@ -45,6 +69,91 @@ type GetApplicationByNameParams struct {
 
 func (q *Queries) GetApplicationByName(ctx context.Context, arg GetApplicationByNameParams) (Application, error) {
 	row := q.db.QueryRow(ctx, getApplicationByName, arg.OrganisationID, arg.Name)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.Name,
+		&i.Settings,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listApplicationsByOrganisation = `-- name: ListApplicationsByOrganisation :many
+SELECT id, organisation_id, name, settings, created_at FROM applications
+WHERE organisation_id = $1
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListApplicationsByOrganisation(ctx context.Context, organisationID pgtype.UUID) ([]Application, error) {
+	rows, err := q.db.Query(ctx, listApplicationsByOrganisation, organisationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Application
+	for rows.Next() {
+		var i Application
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganisationID,
+			&i.Name,
+			&i.Settings,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateApplicationSettings = `-- name: UpdateApplicationSettings :one
+UPDATE applications
+SET settings = $3
+WHERE organisation_id = $1 AND name = $2
+RETURNING id, organisation_id, name, settings, created_at
+`
+
+type UpdateApplicationSettingsParams struct {
+	OrganisationID pgtype.UUID
+	Name           string
+	Settings       []byte
+}
+
+func (q *Queries) UpdateApplicationSettings(ctx context.Context, arg UpdateApplicationSettingsParams) (Application, error) {
+	row := q.db.QueryRow(ctx, updateApplicationSettings, arg.OrganisationID, arg.Name, arg.Settings)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.Name,
+		&i.Settings,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertApplication = `-- name: UpsertApplication :one
+INSERT INTO applications (organisation_id, name, settings)
+VALUES ($1, $2, $3)
+ON CONFLICT (organisation_id, name) DO UPDATE SET
+    settings = EXCLUDED.settings
+RETURNING id, organisation_id, name, settings, created_at
+`
+
+type UpsertApplicationParams struct {
+	OrganisationID pgtype.UUID
+	Name           string
+	Settings       []byte
+}
+
+func (q *Queries) UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (Application, error) {
+	row := q.db.QueryRow(ctx, upsertApplication, arg.OrganisationID, arg.Name, arg.Settings)
 	var i Application
 	err := row.Scan(
 		&i.ID,
