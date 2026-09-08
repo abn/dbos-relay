@@ -29,3 +29,7 @@ RETURNING *;
 DELETE FROM applications
 WHERE organisation_id = $1 AND name = $2
 RETURNING *;
+
+-- name: ListAllApplications :many
+SELECT * FROM applications
+ORDER BY name ASC;

@@ -97,6 +97,37 @@ func (q *Queries) GetApplicationByName(ctx context.Context, arg GetApplicationBy
 	return i, err
 }
 
+const listAllApplications = `-- name: ListAllApplications :many
+SELECT id, organisation_id, name, settings, created_at FROM applications
+ORDER BY name ASC
+`
+
+func (q *Queries) ListAllApplications(ctx context.Context) ([]Application, error) {
+	rows, err := q.db.Query(ctx, listAllApplications)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Application
+	for rows.Next() {
+		var i Application
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganisationID,
+			&i.Name,
+			&i.Settings,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listApplicationsByOrganisation = `-- name: ListApplicationsByOrganisation :many
 SELECT id, organisation_id, name, settings, created_at FROM applications
 WHERE organisation_id = $1

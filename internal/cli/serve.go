@@ -20,6 +20,7 @@ import (
 	"github.com/abn/relay/internal/ha"
 	"github.com/abn/relay/internal/hub"
 	"github.com/abn/relay/internal/liveness"
+	"github.com/abn/relay/internal/metrics"
 	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store"
 )
@@ -90,6 +91,7 @@ func newServeCommand() *cobra.Command {
 			mux.Handle("/", handler)
 			mux.Handle("/websocket/", h)
 			mux.Handle("/internal/v1/forward/", forwardHandler)
+			mux.Handle("/v1/metrics", metrics.NewHandler(s.Queries()))
 
 			server := &http.Server{
 				Addr:              cfg.ListenAddr,
