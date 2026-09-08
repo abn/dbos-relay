@@ -112,7 +112,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		return fmt.Errorf("registering instance: %w", err)
 	}
 
-	runCtx, cancel := context.WithCancel(context.Background())
+	runCtx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 
 	m.wg.Add(2)

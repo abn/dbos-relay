@@ -232,7 +232,7 @@ func TestHA_CrossInstancePeerForwarding(t *testing.T) {
 
 	// 1. Create Node 1
 	hub1 := hub.New(store, cfg, nil)
-	defer hub1.Close()
+	defer func() { _ = hub1.Close() }()
 
 	forwardHandler1 := router.NewForwardHandler(hub1, secret, 30*time.Second)
 	mux1 := http.NewServeMux()
@@ -250,7 +250,7 @@ func TestHA_CrossInstancePeerForwarding(t *testing.T) {
 
 	// 2. Create Node 2
 	hub2 := hub.New(store, cfg, nil)
-	defer hub2.Close()
+	defer func() { _ = hub2.Close() }()
 
 	forwardHandler2 := router.NewForwardHandler(hub2, secret, 30*time.Second)
 	mux2 := http.NewServeMux()
@@ -305,7 +305,7 @@ func TestHA_CrossInstancePeerForwarding(t *testing.T) {
 	if err := exec.Connect(ctx); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
-	defer exec.Close()
+	defer func() { _ = exec.Close() }()
 
 	go func() {
 		_ = exec.Run(ctx)
@@ -349,7 +349,7 @@ func TestHA_LoopPreventionRefusesSecondHop(t *testing.T) {
 	secret := []byte("loop-prevention-secret")
 
 	hubStub := hub.New(newSharedStore(), &config.Config{ExecutorDeadline: time.Second}, nil)
-	defer hubStub.Close()
+	defer func() { _ = hubStub.Close() }()
 
 	handler := router.NewForwardHandler(hubStub, secret, 30*time.Second)
 
@@ -375,7 +375,7 @@ func TestHA_UnsignedOrTamperedForwardRefused(t *testing.T) {
 	appID := pgtype.UUID{Bytes: [16]byte{5}, Valid: true}
 
 	hubStub := hub.New(newSharedStore(), &config.Config{ExecutorDeadline: time.Second}, nil)
-	defer hubStub.Close()
+	defer func() { _ = hubStub.Close() }()
 
 	handler := router.NewForwardHandler(hubStub, secret, 30*time.Second)
 
