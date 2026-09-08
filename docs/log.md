@@ -6,6 +6,8 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-08
 
+* **Correction**: Corrected resume SQL status predicate to `status NOT IN ('SUCCESS', 'ERROR')` in [Data plane](architecture/dataplane.md), aligned with Go, Python, and TypeScript implementations, and documented durable sleep and message receive cancellation semantics across SDKs.
+* **Correction**: Corrected Problem Details specification citation to RFC 9457 in [Client behaviour](discovery/D5-client-behaviour.md).
 * **Update**: Documented wire and data-plane parity for cancellation and resume operations, step-boundary outcome check semantics across SDKs, and served-from auditing in [Data plane](architecture/dataplane.md).
 * **Creation**: Added [Declarative operations](usage/declarative.md) documenting
   `relay.yaml` manifest format, `relay diff`, and `relay apply`.

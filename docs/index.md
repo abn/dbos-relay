@@ -29,6 +29,11 @@ the implementation does.
 * [Quickstart](usage/quickstart.md) - run Relay locally with Postgres
 * [Conformance testing](usage/conformance.md) - run the automated Conductor conformance test suite
 
+## Testing
+
+* [Testing overview](testing/index.md) - verification matrices and test suites
+* [Multi-SDK verification](testing/verify-sdk.md) - test matrix across Python, TypeScript, Go, and Java SDKs
+
 ## Discovery
 
 * [Discovery overview](discovery/index.md) - phase 0 discovery findings

@@ -238,7 +238,7 @@ not an API key (`dbos_` prefix), the client executes a token refresh:
 
 ## 5. Error handling and exit codes
 
-Conductor operations use RFC 7807 problem details (`application/problem+json`)
+Conductor operations use RFC 9457 problem details (`application/problem+json`)
 for error responses:
 ```json
 {

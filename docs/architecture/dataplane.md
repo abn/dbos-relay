@@ -84,11 +84,30 @@ SET status = 'ENQUEUED',
     started_at_epoch_ms = NULL,
     completed_at = NULL
 WHERE workflow_uuid = $1
-  AND status IN ('CANCELLED', 'ERROR');
+  AND status NOT IN ('SUCCESS', 'ERROR');
 ```
 
 Any live executor polling `_dbos_internal_queue` via `DequeueWorkflows` picks up the resumed workflow
 and executes remaining steps.
+
+### Durable sleep and message receive during cancellation
+
+When a running workflow is cancelled via the data plane while suspended in a durable sleep (`sleep`)
+or waiting on an event message (`recv`):
+
+* **Go SDK** (`dbos/workflow.go:4172-4202`, `3482-3575`): The worker process sleeps for the remaining
+  duration via an in-memory timer. On timer expiration, the sleep function returns without checking the
+  system database. Cancellation is detected only at the next checkpointed step boundary or when attempting
+  to finalize the workflow outcome (`UpdateWorkflowOutcome`).
+* **Python SDK** (`dbos/_dbos.py:1871-1901`, `dbos/_sys_db.py:3647-3670`): The worker thread sleeps
+  until the local duration completes (`time.sleep` or `asyncio.sleep`). Recheck intervals in `recv`
+  poll exclusively for incoming notifications on `dbos.notifications`. On wakeup, the workflow continues
+  and detects cancellation at the subsequent step boundary.
+* **TypeScript SDK** (`src/system_database.ts:2889-2897`, `3065`): The worker sleeps locally until the
+  target timestamp. However, immediately upon timer expiration in `durableSleepms` and upon event resolution
+  in `recv`, the SDK explicitly invokes `checkIfCanceled(workflowID)`. If the row was updated to `CANCELLED`
+  in `dbos.workflow_status` during the sleep window, the executor immediately throws `DBOSWorkflowCancelledError`
+  and aborts execution before running any subsequent user steps.
 
 ### Served-from auditing
 
