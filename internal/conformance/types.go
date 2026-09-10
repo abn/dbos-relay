@@ -126,11 +126,13 @@ func (r *Report) FormatMarkdown(w io.Writer) error {
 
 // Config specifies the runtime options for a conformance test run.
 type Config struct {
-	TargetURL    string
-	ConductorKey string
-	OrgName      string
-	AppName      string
-	Output       io.Writer
-	Verbose      bool
-	Timeout      time.Duration
+	TargetURL      string
+	ConductorKey   string
+	OrgName        string
+	AppName        string
+	Output         io.Writer
+	Verbose        bool
+	Timeout        time.Duration
+	SkipBatteryIDs []int
+	SkipReason     string
 }

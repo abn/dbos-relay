@@ -80,6 +80,27 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	}
 
 	for _, b := range batteries {
+		shouldSkip := false
+		for _, skipID := range r.cfg.SkipBatteryIDs {
+			if b.id == skipID {
+				shouldSkip = true
+				break
+			}
+		}
+
+		if shouldSkip {
+			res := BatteryResult{
+				ID:     b.id,
+				Title:  b.title,
+				Status: StatusSkip,
+				Error:  r.cfg.SkipReason,
+			}
+			report.Batteries = append(report.Batteries, res)
+			report.TotalSkip++
+			r.logf("[SKIP] Battery %d: %s (%s)\n\n", b.id, b.title, r.cfg.SkipReason)
+			continue
+		}
+
 		r.logf("[RUN] Battery %d: %s...\n", b.id, b.title)
 		res := b.fn(ctx)
 		report.Batteries = append(report.Batteries, res)

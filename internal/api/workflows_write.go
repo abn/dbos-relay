@@ -260,6 +260,10 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 		queueName = request.Body.QueueName
 		queuePartitionKey = request.Body.QueuePartitionKey
 	}
+	if newWorkflowID == nil || *newWorkflowID == "" {
+		genID := uuid.NewString()
+		newWorkflowID = &genID
+	}
 
 	// Guard against stranding forks when no explicit application_version override is provided
 	if (appVersion == nil || *appVersion == "") && s.store != nil {
@@ -275,6 +279,9 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 			if wfRes, ok := getRes.(*protocol.GetWorkflowResponse); ok && wfRes.Output != nil && wfRes.Output.ApplicationVersion != nil {
 				targetVersion := *wfRes.Output.ApplicationVersion
 				if targetVersion != "" {
+					if appVersion == nil || *appVersion == "" {
+						appVersion = &targetVersion
+					}
 					org, oErr := s.store.GetOrganisationByName(ctx, orgName)
 					if oErr == nil {
 						app, aErr := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
@@ -305,6 +312,10 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 				}
 			}
 		}
+	}
+	if appVersion == nil || *appVersion == "" {
+		emptyVer := ""
+		appVersion = &emptyVer
 	}
 
 	msg := &protocol.ForkWorkflowRequest{

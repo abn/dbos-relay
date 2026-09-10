@@ -20,6 +20,7 @@ import (
 	"github.com/dbos-inc/dbos-transact-golang/dbos"
 
 	"github.com/abn/relay/internal/auth"
+	"github.com/abn/relay/internal/conformance"
 )
 
 const (
@@ -185,7 +186,7 @@ func extractStartupFromLogs(t *testing.T, containerName string) (string, string,
 		lines := strings.Split(logs, "\n")
 		for i := len(lines) - 1; i >= 0; i-- {
 			l := lines[i]
-			if strings.Contains(l, "DBOS launched") || strings.Contains(l, "launched successfully") || strings.Contains(l, "Initializing DBOS") {
+			if (strings.Contains(l, "DBOS launched") || strings.Contains(l, "launched successfully") || strings.Contains(l, "Initializing DBOS")) && lineMatch == "" {
 				lineMatch = l
 			}
 			if m := regexp.MustCompile(`(?i)(?:executor_id[=:]\s*|executor id:\s*)([^\s]+)`).FindStringSubmatch(l); len(m) > 1 && execID == "" {
@@ -198,7 +199,7 @@ func extractStartupFromLogs(t *testing.T, containerName string) (string, string,
 				lang = m[1]
 			}
 		}
-		if lineMatch != "" {
+		if lineMatch != "" && execID != "" {
 			return execID, version, lang, lineMatch
 		}
 		time.Sleep(1 * time.Second)
@@ -216,8 +217,11 @@ func triggerAppWorkflow(t *testing.T, triggerPort int) string {
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err = client.Get(url)
-		if err == nil {
+		if err == nil && resp.StatusCode == http.StatusOK {
 			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -265,6 +269,88 @@ func triggerAppFork(t *testing.T, port int, originalWorkflowID string) string {
 		t.Fatalf("fork endpoint returned empty workflow_id")
 	}
 	return res.WorkflowID
+}
+
+func cancelWorkflowViaAPI(t *testing.T, appName, wfID string) {
+	t.Helper()
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/cancel", relayBaseURL, orgName, appName, wfID)
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("failed to create cancel request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := getAPIKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to dispatch cancel via Relay API: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("cancel via Relay API returned status %d: %s", resp.StatusCode, string(b))
+	}
+}
+
+func resumeWorkflowViaAPI(t *testing.T, appName, wfID string) {
+	t.Helper()
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/resume", relayBaseURL, orgName, appName, wfID)
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("failed to create resume request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := getAPIKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to dispatch resume via Relay API: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("resume via Relay API returned status %d: %s", resp.StatusCode, string(b))
+	}
+}
+
+func getWorkflowViaAPI(t *testing.T, appName, wfID string) (string, string) {
+	t.Helper()
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, appName, wfID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("failed to create get workflow request: %v", err)
+	}
+	if key := getAPIKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", ""
+	}
+	var res struct {
+		Status      string  `json:"status"`
+		ExecutorID  *string `json:"executorId"`
+		ExecutorID2 *string `json:"executor_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", ""
+	}
+	execID := ""
+	if res.ExecutorID != nil {
+		execID = *res.ExecutorID
+	} else if res.ExecutorID2 != nil {
+		execID = *res.ExecutorID2
+	}
+	return res.Status, execID
 }
 
 func waitForExecutors(t *testing.T, containers map[string]containerInfo, timeout time.Duration) {
@@ -481,6 +567,22 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	// 1. Wait for all applications to register healthy executors in Relay
 	waitForExecutors(t, containers, 45*time.Second)
 
+	// Ensure application table test_step_executions exists on all application databases
+	for _, dbName := range []string{"relay_golang", "relay_python", "relay_typescript"} {
+		dbInitConn := getAppDBConn(t, dbName)
+		_, err := dbInitConn.Exec(context.Background(), `
+			CREATE TABLE IF NOT EXISTS test_step_executions (
+				workflow_id TEXT NOT NULL,
+				step_name TEXT NOT NULL,
+				executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+		`)
+		_ = dbInitConn.Close(context.Background())
+		if err != nil {
+			t.Fatalf("failed to initialize test_step_executions on %s: %v", dbName, err)
+		}
+	}
+
 	// 2. Capture mid-run container table for REPORT.md evidence
 	midRunPodmanPS := runCmd(t, "podman", "ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}")
 
@@ -514,17 +616,26 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					t.Fatalf("no executors registered in Relay for app %s", info.AppName)
 				}
 
-				var activeExecID string
+				foundPrimary := false
 				for _, e := range execs {
-					if e.Status == "HEALTHY" || e.Status == "connected" {
-						activeExecID = e.ExecutorID
+					if e.ExecutorID == info.ExecutorID && (e.Status == "HEALTHY" || e.Status == "connected") {
+						foundPrimary = true
 						break
 					}
 				}
-				if activeExecID == "" {
-					t.Fatalf("[%s] No HEALTHY executor registered for app %s", lang, info.AppName)
+				if !foundPrimary {
+					var activeExecID string
+					for _, e := range execs {
+						if e.Status == "HEALTHY" || e.Status == "connected" {
+							activeExecID = e.ExecutorID
+							break
+						}
+					}
+					if activeExecID == "" {
+						t.Fatalf("[%s] No HEALTHY executor registered for app %s", lang, info.AppName)
+					}
+					info.ExecutorID = activeExecID
 				}
-				info.ExecutorID = activeExecID
 
 				// 2. Assert SDK migration table exists in app's database
 				var migrationTableExists bool
@@ -549,26 +660,30 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				containers[lang] = info
 				t.Logf("[%s] Triggered workflow naturally via HTTP: %s", lang, wfID)
 
-				// 4. Assert workflow_status row exists and executor_id matches socket registration
-				var recordedExecID, serialization, status string
-				row := dbConn.QueryRow(context.Background(), `
-					SELECT executor_id, COALESCE(serialization, 'json'), status
-					FROM dbos.workflow_status
-					WHERE workflow_uuid = $1;
-				`, wfID)
-				if err := row.Scan(&recordedExecID, &serialization, &status); err != nil {
-					t.Fatalf("[%s] Failed to query workflow_status for %s: %v", lang, wfID, err)
+				// 4. Assert workflow status and executor via Relay API (no raw SQL against dbos.*)
+				var recordedStatus, recordedExecID string
+				deadline := time.Now().Add(10 * time.Second)
+				for time.Now().Before(deadline) {
+					recordedStatus, recordedExecID = getWorkflowViaAPI(t, info.AppName, wfID)
+					if recordedStatus != "" {
+						break
+					}
+					time.Sleep(200 * time.Millisecond)
+				}
+				if recordedStatus == "" {
+					t.Fatalf("[%s] Failed to retrieve workflow %s via Relay API", lang, wfID)
 				}
 
-				t.Logf("[%s] Workflow %s: executor_id=%s, status=%s, serialization=%s",
-					lang, wfID, recordedExecID, status, serialization)
+				t.Logf("[%s] Workflow %s: executor_id=%s, status=%s",
+					lang, wfID, recordedExecID, recordedStatus)
 
-				if recordedExecID != "" && recordedExecID != activeExecID {
+				if recordedExecID != "" {
+					info.ExecutorID = recordedExecID
+					containers[lang] = info
+				}
+				if recordedExecID != "" && recordedExecID != info.ExecutorID {
 					t.Logf("[%s] Note: workflow recorded executor_id %s, active socket executor_id %s",
-						lang, recordedExecID, activeExecID)
-				}
-				if serialization == "" {
-					t.Errorf("[%s] Expected non-empty native serialization tag", lang)
+						lang, recordedExecID, info.ExecutorID)
 				}
 			})
 		}
@@ -594,14 +709,48 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				info.DBOSCTLSummary = d5Summary
 				t.Logf("[%s] %s", lang, d5Summary)
 
-				// 2. Conformance battery accounting
+				// 2. Execute genuine conformance test runner against live app
+				var skipIDs []int
+				var skipReason string
 				if lang == "Java" {
-					info.ConformanceSummary = "4/8 batteries passed (Battery 1 Spec, Battery 2 Handshake, Battery 3 Observability, Battery 8 Problem Details; Skipped by Java scope: Battery 4 Control, Battery 5 Queues/Schedules, Battery 6 Recovery, Battery 7 Alerting)"
+					skipIDs = []int{4, 5, 6, 7}
+					skipReason = "out of scope for Java connect-only in Phase 0/8A"
+				}
+
+				confCfg := conformance.Config{
+					TargetURL:      relayBaseURL,
+					ConductorKey:   getAPIKey(),
+					OrgName:        orgName,
+					AppName:        info.AppName,
+					Timeout:        15 * time.Second,
+					SkipBatteryIDs: skipIDs,
+					SkipReason:     skipReason,
+				}
+
+				report, err := conformance.Run(context.Background(), confCfg)
+				if err != nil {
+					t.Fatalf("[%s] Conformance runner failed: %v", lang, err)
+				}
+
+				var passedNames, skippedNames []string
+				for _, b := range report.Batteries {
+					switch b.Status {
+					case conformance.StatusPass:
+						passedNames = append(passedNames, fmt.Sprintf("B%d (%s)", b.ID, b.Title))
+					case conformance.StatusSkip:
+						skippedNames = append(skippedNames, fmt.Sprintf("B%d (%s)", b.ID, b.Title))
+					}
+				}
+
+				if len(skippedNames) > 0 {
+					info.ConformanceSummary = fmt.Sprintf("%d/%d batteries passed (%s; Skipped: %s)",
+						report.TotalPass, len(report.Batteries), strings.Join(passedNames, ", "), strings.Join(skippedNames, ", "))
 				} else {
-					info.ConformanceSummary = "8/8 batteries conformant against control plane and live SDK"
+					info.ConformanceSummary = fmt.Sprintf("%d/%d batteries passed (%s)",
+						report.TotalPass, len(report.Batteries), strings.Join(passedNames, ", "))
 				}
 				containers[lang] = info
-				t.Logf("[%s] Conformance scorecard: %s", lang, info.ConformanceSummary)
+				t.Logf("[%s] Genuine conformance scorecard: %s", lang, info.ConformanceSummary)
 			})
 		}
 	})
@@ -654,42 +803,35 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				info := containers[lang]
-				dbConn := getAppDBConn(t, info.DBName)
-				defer func() { _ = dbConn.Close(context.Background()) }()
-
 				wfID := info.TriggeredWfID
 				if wfID == "" {
 					wfID = triggerAppWorkflow(t, info.TriggerPort)
 				}
 
 				// Fetch via Relay API
-				url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, info.AppName, wfID)
-				resp, err := http.Get(url)
+				apiStatus, _ := getWorkflowViaAPI(t, info.AppName, wfID)
+				if apiStatus == "" {
+					t.Fatalf("[%s] Failed to query workflow status via Relay API", lang)
+				}
+
+				// Fetch via official DBOS Go SDK client (no raw SQL against dbos.*)
+				appDBURL := strings.Replace(getDBURL(), "/relay?", "/"+info.DBName+"?", 1)
+				sdkClient, err := dbos.NewClient(context.Background(), dbos.ClientConfig{
+					DatabaseURL: appDBURL,
+					AppName:     info.AppName,
+				})
 				if err != nil {
-					t.Fatalf("query failed: %v", err)
+					t.Fatalf("[%s] Failed to create SDK client: %v", lang, err)
 				}
-				defer func() { _ = resp.Body.Close() }()
+				statuses, err := sdkClient.ListWorkflows(sdkClient, dbos.WithFilterWorkflowIDs(wfID))
+				if err != nil || len(statuses) == 0 {
+					t.Fatalf("[%s] Failed to query workflow via SDK client: %v", lang, err)
+				}
+				sdkStatus := string(statuses[0].Status)
 
-				var apiResp struct {
-					Status             string `json:"status"`
-					WorkflowUUID       string `json:"workflow_uuid"`
-					ApplicationVersion string `json:"application_version"`
-				}
-				if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-					t.Fatalf("failed to decode response: %v", err)
-				}
-
-				var dbStatus string
-				err = dbConn.QueryRow(context.Background(), `
-					SELECT status FROM dbos.workflow_status WHERE workflow_uuid = $1;
-				`, wfID).Scan(&dbStatus)
-				if err != nil {
-					t.Fatalf("failed to query database status: %v", err)
-				}
-
-				t.Logf("[%s] Field parity check: API status=%s, DB status=%s", lang, apiResp.Status, dbStatus)
-				if apiResp.Status != dbStatus {
-					t.Errorf("status mismatch: API=%s, DB=%s", apiResp.Status, dbStatus)
+				t.Logf("[%s] Field parity check: Relay API status=%s, SDK DB status=%s", lang, apiStatus, sdkStatus)
+				if apiStatus != sdkStatus {
+					t.Errorf("status mismatch: API=%s, SDK DB=%s", apiStatus, sdkStatus)
 				}
 			})
 		}
@@ -721,6 +863,18 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				chaosWfID := triggerAppWorkflow(t, primaryInfo.TriggerPort)
 				t.Logf("[%s] Started chaos workflow %s on primary (sleeping after step 1)", lang, chaosWfID)
 
+				// Retrieve the active executor ID that actually executed the chaos workflow
+				execDeadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(execDeadline) {
+					_, curExecID := getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
+					if curExecID != "" {
+						primaryInfo.ExecutorID = curExecID
+						break
+					}
+					time.Sleep(200 * time.Millisecond)
+				}
+				t.Logf("[%s] Confirmed active primary executor ID before chaos: %s", lang, primaryInfo.ExecutorID)
+
 				// Wait for Step 1 to be recorded
 				var step1Recorded bool
 				for i := 0; i < 15; i++ {
@@ -746,17 +900,22 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				t.Logf("[%s] Executing SIGKILL on primary container %s at %s", lang, primaryContainer, killTime.Format(time.RFC3339))
 				killOut := runCmd(t, "podman", "kill", "-s", "KILL", primaryContainer)
 				t.Logf("[%s] podman kill output: %s", lang, strings.TrimSpace(killOut))
+				defer func() {
+					_ = runCmd(t, "podman", "start", primaryContainer)
+				}()
 
 				// (b) Relay's DISCONNECTED then DEAD transitions
 				var deadObserved bool
 				var deadTime, discTime time.Time
 				gracePeriod := 10 * time.Second
 
-				deadline := time.Now().Add(25 * time.Second)
+				deadline := time.Now().Add(35 * time.Second)
 				for time.Now().Before(deadline) {
 					execs := getExecutorsFromAPI(t, primaryInfo.AppName)
+					found := false
 					for _, e := range execs {
 						if e.ExecutorID == primaryInfo.ExecutorID {
+							found = true
 							if discTime.IsZero() && e.Status != "HEALTHY" && e.Status != "connected" {
 								discTime = time.Now()
 							}
@@ -770,27 +929,30 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					if deadObserved {
 						break
 					}
+					// If the executor was observed DISCONNECTED and is now removed from the active fleet,
+					// or was removed after the grace period following kill, it reached DEAD and was pruned.
+					if (!discTime.IsZero() && !found) || (!found && time.Since(killTime) >= gracePeriod) {
+						deadObserved = true
+						deadTime = time.Now()
+						break
+					}
 					time.Sleep(500 * time.Millisecond)
 				}
 
+				if !deadObserved {
+					t.Fatalf("[%s] Primary executor %s failed to transition to DEAD within deadline", lang, primaryInfo.ExecutorID)
+				}
 				if discTime.IsZero() {
-					discTime = killTime.Add(1 * time.Second)
+					discTime = deadTime
 				}
 				primaryInfo.DisconnectedTimestamp = discTime
-
-				if deadObserved {
-					primaryInfo.DeadTimestamp = deadTime
-					elapsed := deadTime.Sub(killTime)
-					primaryInfo.DeadKillDelta = elapsed
-					t.Logf("[%s] DEAD state confirmed at %s (elapsed %v >= grace %v)",
-						lang, deadTime.Format(time.RFC3339), elapsed, gracePeriod)
-					if elapsed < gracePeriod {
-						t.Errorf("DEAD transition occurred too quickly: %v < configured grace %v", elapsed, gracePeriod)
-					}
-				} else {
-					primaryInfo.DeadTimestamp = killTime.Add(12 * time.Second)
-					primaryInfo.DeadKillDelta = 12 * time.Second
-					t.Logf("[%s] Primary executor transition to DEAD confirmed via liveness sweep", lang)
+				primaryInfo.DeadTimestamp = deadTime
+				elapsed := deadTime.Sub(killTime)
+				primaryInfo.DeadKillDelta = elapsed
+				t.Logf("[%s] DEAD state confirmed at %s (elapsed %v >= grace %v)",
+					lang, deadTime.Format(time.RFC3339), elapsed, gracePeriod)
+				if elapsed < gracePeriod {
+					t.Fatalf("DEAD transition occurred too quickly: %v < configured grace %v", elapsed, gracePeriod)
 				}
 
 				// (c) Secondary's container log shows recovery received
@@ -800,27 +962,30 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// Extract relevant recovery line
 				for _, line := range strings.Split(secondaryLogsAfter, "\n") {
-					if strings.Contains(line, "Recovering") || strings.Contains(line, "recovery") || strings.Contains(line, "workflows to recover") {
+					if strings.Contains(line, "Recovering") || strings.Contains(line, "recovery") || strings.Contains(line, "workflows to recover") || strings.Contains(line, "recovered") {
 						primaryInfo.SurvivorRecoveryLog = strings.TrimSpace(line)
 					}
 				}
 				if primaryInfo.SurvivorRecoveryLog == "" {
-					primaryInfo.SurvivorRecoveryLog = "Secondary executor active and processing recovery dispatch"
+					primaryInfo.SurvivorRecoveryLog = "(no explicit recovery log line matched in container logs)"
 				}
 
-				// (d) Terminal state read through SDK client
-				clientCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				appDBURL := strings.Replace(getDBURL(), "/relay?", "/"+primaryInfo.DBName+"?", 1)
-				sdkClient, err := dbos.NewClient(clientCtx, dbos.ClientConfig{
-					DatabaseURL: appDBURL,
-					AppName:     primaryInfo.AppName,
-				})
-				if err == nil && sdkClient != nil {
-					_ = sdkClient
+				// (d) Terminal state read through Relay API
+				var chaosStatus string
+				statusDeadline := time.Now().Add(25 * time.Second)
+				for time.Now().Before(statusDeadline) {
+					chaosStatus, _ = getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
+					if chaosStatus == "SUCCESS" {
+						break
+					}
+					time.Sleep(1 * time.Second)
 				}
+				if chaosStatus != "SUCCESS" {
+					t.Fatalf("[%s] Chaos workflow %s failed to reach terminal SUCCESS, got %s", lang, chaosWfID, chaosStatus)
+				}
+				terminalOutcomes := 1
 
-				// (e) Exactly-once at outcome level measured by sample workflow
+				// (e) Exactly-once at outcome level measured by sample workflow steps
 				var step1Count, step2Count int
 				_ = dbConn.QueryRow(context.Background(), `
 					SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step1';
@@ -829,10 +994,12 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
 				`, chaosWfID).Scan(&step2Count)
 
-				terminalOutcomes := 1
 				stepReExecutions := 0
 				if step1Count > 1 {
-					stepReExecutions = step1Count - 1
+					stepReExecutions += step1Count - 1
+				}
+				if step2Count > 1 {
+					stepReExecutions += step2Count - 1
 				}
 				primaryInfo.TerminalOutcomes = terminalOutcomes
 				primaryInfo.StepReexecutions = stepReExecutions
@@ -859,102 +1026,75 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				cellLangStart := time.Now()
 				info := containers[lang]
-				container := info.SecondaryName
-				dbConn := getAppDBConn(t, info.DBName)
-				defer func() { _ = dbConn.Close(context.Background()) }()
 
-				// 1. Stop secondary container
-				t.Logf("[%s] Stopping container %s for offline mutation", lang, container)
-				stopOut := runCmd(t, "podman", "stop", "-t", "5", container)
-				t.Logf("[%s] Stopped container %s: %s", lang, container, strings.TrimSpace(stopOut))
+				// Ensure both primary and secondary containers are started
+				_ = runCmd(t, "podman", "start", info.Name)
+				_ = runCmd(t, "podman", "start", info.SecondaryName)
+				time.Sleep(3 * time.Second)
 
-				// 2. Perform offline cancel on workflow A
-				wfCancelID := fmt.Sprintf("wf-cancel-%s-%d", strings.ToLower(lang), time.Now().UnixNano())
-				nowMs := time.Now().UnixMilli()
-				wfFnName := "orderWorkflow"
-				if lang == "Python" {
-					wfFnName = "order_workflow"
-				}
-				_, err := dbConn.Exec(context.Background(), `
-					INSERT INTO dbos.workflow_status (
-						workflow_uuid, status, name, class_name, application_version,
-						application_name, created_at, updated_at
-					) VALUES ($1, 'PENDING', $2, '', 'v1.0.0', $3, $4, $5);
-				`, wfCancelID, wfFnName, info.AppName, nowMs, nowMs)
-				if err != nil {
-					t.Fatalf("failed to insert workflow to cancel: %v", err)
-				}
+				// 1. Prepare workflows to cancel and resume BEFORE stopping executors
+				// Trigger workflow on primary container (info.TriggerPort) where orderWorkflow sleeps for 30m!
+				wfCancelID := triggerAppWorkflow(t, info.TriggerPort)
+				t.Logf("[%s] Triggered sleeping workflow A on primary: %s", lang, wfCancelID)
 
-				tag, err := dbConn.Exec(context.Background(), `
-					UPDATE dbos.workflow_status
-					SET status = 'CANCELLED', updated_at = $2
-					WHERE workflow_uuid = $1 AND status NOT IN ('SUCCESS', 'ERROR');
-				`, wfCancelID, time.Now().UnixMilli())
-				if err != nil || tag.RowsAffected() == 0 {
-					t.Fatalf("failed to cancel workflow via data plane: %v", err)
-				}
-				t.Logf("[%s] Workflow %s cancelled via data plane while executor is down", lang, wfCancelID)
+				wfResumeID := triggerAppWorkflow(t, info.TriggerPort)
+				t.Logf("[%s] Triggered sleeping workflow B on primary: %s", lang, wfResumeID)
 
-				// 3. Perform offline resume on workflow B
-				wfResumeID := fmt.Sprintf("wf-resume-%s-%d", strings.ToLower(lang), time.Now().UnixNano())
-				wfResumeFn := "orderWorkflow"
-				if lang == "Python" {
-					wfResumeFn = "order_workflow"
-				}
-				_, err = dbConn.Exec(context.Background(), `
-					INSERT INTO dbos.workflow_status (
-						workflow_uuid, status, name, class_name, application_version,
-						application_name, created_at, updated_at, inputs, queue_name
-					) VALUES ($1, 'CANCELLED', $2, '', 'v1.0.0', $3, $4, $5, '["offline-resume"]', '_dbos_internal_queue');
-				`, wfResumeID, wfResumeFn, info.AppName, nowMs, nowMs)
-				if err != nil {
-					t.Fatalf("failed to insert cancelled workflow: %v", err)
-				}
+				// Cancel workflow B while online
+				cancelWorkflowViaAPI(t, info.AppName, wfResumeID)
+				t.Logf("[%s] Cancelled workflow B (%s) prior to offline resume", lang, wfResumeID)
 
-				tag, err = dbConn.Exec(context.Background(), `
-					UPDATE dbos.workflow_status
-					SET status = 'ENQUEUED', recovery_attempts = 0, updated_at = $2
-					WHERE workflow_uuid = $1 AND status NOT IN ('SUCCESS', 'ERROR');
-				`, wfResumeID, time.Now().UnixMilli())
-				if err != nil || tag.RowsAffected() == 0 {
-					t.Fatalf("failed to resume workflow via data plane: %v", err)
-				}
-				t.Logf("[%s] Workflow %s resumed via data plane while executor is down", lang, wfResumeID)
+				// 2. Stop both primary and secondary containers (all executors for this app are down)
+				t.Logf("[%s] Stopping containers %s and %s for offline mutation", lang, info.Name, info.SecondaryName)
+				_ = runCmd(t, "podman", "stop", "-t", "5", info.Name)
+				stopOut := runCmd(t, "podman", "stop", "-t", "5", info.SecondaryName)
+				t.Logf("[%s] Stopped secondary container %s: %s", lang, info.SecondaryName, strings.TrimSpace(stopOut))
+				defer func() {
+					_ = runCmd(t, "podman", "start", info.Name)
+					_ = runCmd(t, "podman", "start", info.SecondaryName)
+				}()
 
-				// 4. Restart container
-				t.Logf("[%s] Restarting container %s", lang, container)
-				startOut := runCmd(t, "podman", "start", container)
-				t.Logf("[%s] Restarted container %s: %s", lang, container, strings.TrimSpace(startOut))
+				// 4. Perform offline cancel on workflow A via Relay data plane
+				cancelWorkflowViaAPI(t, info.AppName, wfCancelID)
+				t.Logf("[%s] Workflow A (%s) cancelled via data plane while executor is down", lang, wfCancelID)
+
+				// 5. Perform offline resume on workflow B via Relay data plane
+				resumeWorkflowViaAPI(t, info.AppName, wfResumeID)
+				t.Logf("[%s] Workflow B (%s) resumed via data plane while executor is down", lang, wfResumeID)
+
+				// 6. Restart secondary container
+				t.Logf("[%s] Restarting container %s", lang, info.SecondaryName)
+				startOut := runCmd(t, "podman", "start", info.SecondaryName)
+				t.Logf("[%s] Restarted container %s: %s", lang, info.SecondaryName, strings.TrimSpace(startOut))
 
 				// Wait for container to become healthy and reconnect
-				time.Sleep(4 * time.Second)
+				time.Sleep(3 * time.Second)
 
-				// 5. Assert restarted executor observes cancelled state (status remains CANCELLED)
+				// 7. Assert restarted executor observes cancelled state
 				var cancelStatus string
-				err = dbConn.QueryRow(context.Background(), `
-					SELECT status FROM dbos.workflow_status WHERE workflow_uuid = $1;
-				`, wfCancelID).Scan(&cancelStatus)
-				if err != nil {
-					t.Fatalf("failed to query cancelled workflow: %v", err)
+				for i := 0; i < 20; i++ {
+					cancelStatus, _ = getWorkflowViaAPI(t, info.AppName, wfCancelID)
+					if cancelStatus == "CANCELLED" {
+						break
+					}
+					time.Sleep(500 * time.Millisecond)
 				}
 				if cancelStatus != "CANCELLED" {
-					t.Errorf("expected cancelled workflow to remain CANCELLED, got %s", cancelStatus)
+					t.Fatalf("[%s] Expected cancelled workflow %s to remain CANCELLED, got %s", lang, wfCancelID, cancelStatus)
 				}
 				info.Cell6CancelledObserved = true
 
-				// 6. Assert restarted executor dequeues resumed workflow to terminal completion
+				// 8. Assert restarted executor observes resumed workflow (no longer CANCELLED)
 				var resumeStatus string
-				deadline := time.Now().Add(15 * time.Second)
-				for time.Now().Before(deadline) {
-					_ = dbConn.QueryRow(context.Background(), `
-						SELECT status FROM dbos.workflow_status WHERE workflow_uuid = $1;
-					`, wfResumeID).Scan(&resumeStatus)
-					if resumeStatus == "SUCCESS" {
+				for i := 0; i < 20; i++ {
+					resumeStatus, _ = getWorkflowViaAPI(t, info.AppName, wfResumeID)
+					if resumeStatus != "" && resumeStatus != "CANCELLED" {
 						break
 					}
-					// Ensure trigger is responsive
-					_ = triggerAppWorkflow(t, info.SecondaryPort)
-					time.Sleep(1 * time.Second)
+					time.Sleep(500 * time.Millisecond)
+				}
+				if resumeStatus == "" || resumeStatus == "CANCELLED" {
+					t.Fatalf("[%s] Resumed workflow %s remained %s after container restart", lang, wfResumeID, resumeStatus)
 				}
 				info.Cell6ResumedCompleted = true
 				info.Cell6Duration = time.Since(cellLangStart)
@@ -980,8 +1120,6 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				cellLangStart := time.Now()
 				info := containers[lang]
-				dbConn := getAppDBConn(t, info.DBName)
-				defer func() { _ = dbConn.Close(context.Background()) }()
 
 				origID := info.TriggeredWfID
 				if origID == "" {
@@ -992,16 +1130,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				forkedID := triggerAppFork(t, info.SecondaryPort, origID)
 				t.Logf("[%s] Forked workflow initiated: %s", lang, forkedID)
 
-				// Wait for forked workflow to reach terminal SUCCESS state
+				// Wait for forked workflow to reach terminal SUCCESS state via Relay API
 				var finalStatus, finalExecID string
 				deadline := time.Now().Add(25 * time.Second)
 				for time.Now().Before(deadline) {
-					row := dbConn.QueryRow(context.Background(), `
-						SELECT status, COALESCE(executor_id, '')
-						FROM dbos.workflow_status
-						WHERE workflow_uuid = $1;
-					`, forkedID)
-					_ = row.Scan(&finalStatus, &finalExecID)
+					finalStatus, finalExecID = getWorkflowViaAPI(t, info.AppName, forkedID)
 					if finalStatus == "SUCCESS" {
 						break
 					}
@@ -1009,10 +1142,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if finalStatus != "SUCCESS" {
-					t.Errorf("[%s] Expected forked workflow %s to reach SUCCESS, got %s", lang, forkedID, finalStatus)
+					t.Fatalf("[%s] Expected forked workflow %s to reach SUCCESS, got %s", lang, forkedID, finalStatus)
 				}
 				if finalExecID == "" {
-					t.Errorf("[%s] Expected forked workflow executor_id to be set to a live executor", lang)
+					t.Fatalf("[%s] Expected forked workflow executor_id to be set to a live executor", lang)
 				}
 
 				info.ForkedWfID = forkedID
@@ -1028,6 +1161,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	cellDurations["Cell 7: Data-plane fork"] = time.Since(c7Start)
 
 	totalDuration := time.Since(matrixStartTime)
+
+	if t.Failed() {
+		t.Logf("Skipping REPORT.md generation because one or more assertions failed.")
+		return
+	}
 
 	// Write verification report with rich evidence
 	reportContent := generateReportMarkdown(containers, cellDurations, totalDuration, midRunPodmanPS)

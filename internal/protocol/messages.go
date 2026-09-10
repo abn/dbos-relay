@@ -166,8 +166,8 @@ type GetWorkflowResponse struct {
 type ForkWorkflowRequestBody struct {
 	WorkflowID         string  `json:"workflow_id"`
 	StartStep          int     `json:"start_step"`
-	ApplicationVersion *string `json:"application_version,omitempty"`
-	NewWorkflowID      *string `json:"new_workflow_id,omitempty"`
+	ApplicationVersion *string `json:"application_version"`
+	NewWorkflowID      *string `json:"new_workflow_id"`
 	QueueName          *string `json:"queue_name,omitempty"`
 	QueuePartitionKey  *string `json:"queue_partition_key,omitempty"`
 }

@@ -27,8 +27,14 @@ func TestConformance_EndToEndSuite(t *testing.T) {
 
 	targetURL := os.Getenv("RELAY_CONFORMANCE_TARGET")
 	apiKey := os.Getenv("RELAY_CONFORMANCE_KEY")
-	orgName := "acme"
-	appName := "conformance-app"
+	orgName := os.Getenv("RELAY_CONFORMANCE_ORG")
+	if orgName == "" {
+		orgName = "acme"
+	}
+	appName := os.Getenv("RELAY_CONFORMANCE_APP")
+	if appName == "" {
+		appName = "conformance-app"
+	}
 
 	if targetURL == "" {
 		// Run in-process with a real test database

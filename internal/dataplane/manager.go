@@ -55,15 +55,16 @@ func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	// If a client was previously active for this app, close it first.
 	if existing, ok := m.clients[cfg.ApplicationID]; ok {
 		_ = existing.Close()
+		delete(m.clients, cfg.ApplicationID)
 	}
 
-	client, err := m.factory(cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create data-plane client: %w", err)
-	}
-
-	m.clients[cfg.ApplicationID] = client
 	m.configs[cfg.ApplicationID] = cfg
+
+	// Attempt eager initialization, but do not fail registration if database is not yet migrated
+	if client, err := m.factory(cfg); err == nil {
+		m.clients[cfg.ApplicationID] = client
+	}
+
 	return nil
 }
 
@@ -83,7 +84,7 @@ func (m *DefaultManager) UnregisterApp(appID pgtype.UUID) {
 func (m *DefaultManager) HasDataPlane(appID pgtype.UUID) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	_, ok := m.clients[appID]
+	_, ok := m.configs[appID]
 	return ok
 }
 
@@ -98,15 +99,34 @@ func (m *DefaultManager) GetMode(appID pgtype.UUID) (Mode, bool) {
 	return cfg.Mode, true
 }
 
+func (m *DefaultManager) getOrInitClient(appID pgtype.UUID) (Client, AppConfig, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cfg, ok := m.configs[appID]
+	if !ok {
+		return nil, AppConfig{}, ErrNoDataPlaneConfigured
+	}
+
+	client, ok := m.clients[appID]
+	if ok && client != nil {
+		return client, cfg, nil
+	}
+
+	client, err := m.factory(cfg)
+	if err != nil {
+		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: %w", err)
+	}
+
+	m.clients[appID] = client
+	return client, cfg, nil
+}
+
 // Dispatch routes an operation through the application's data-plane connection.
 func (m *DefaultManager) Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
-	m.mu.RLock()
-	client, ok := m.clients[appID]
-	cfg := m.configs[appID]
-	m.mu.RUnlock()
-
-	if !ok {
-		return nil, ErrNoDataPlaneConfigured
+	client, cfg, err := m.getOrInitClient(appID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Verify permission if this is a mutating operation

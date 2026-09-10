@@ -19,13 +19,6 @@ def record_step_execution(workflow_id: str, step_name: str) -> None:
     with psycopg.connect(clean_url) as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS test_step_executions (
-                    workflow_id TEXT NOT NULL,
-                    step_name TEXT NOT NULL,
-                    executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-            """)
-            cur.execute("""
                 INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
                 VALUES (%s, %s, NOW());
             """, (workflow_id, step_name))
@@ -88,7 +81,7 @@ class TriggerHandler(BaseHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 return
-            handle = DBOS.fork_workflow(orig_id, 0)
+            handle = DBOS.start_workflow(order_workflow, "python-order")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()

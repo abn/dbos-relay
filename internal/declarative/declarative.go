@@ -409,21 +409,30 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 	}
 
 	for _, app := range cfg.Applications {
-		if existing, exists := appMap[app.Name]; exists {
+		settingsMap := make(map[string]any)
+		if app.Description != "" {
+			settingsMap["description"] = app.Description
+		}
+		if app.StuckSLASecs > 0 {
+			settingsMap["stuck_sla_secs"] = app.StuckSLASecs
+		}
+		if app.ExecutorTimeoutSecs > 0 {
+			settingsMap["executorTimeoutSecs"] = app.ExecutorTimeoutSecs
+		}
+		settingsJSON, _ := json.Marshal(settingsMap)
+
+		if _, exists := appMap[app.Name]; exists {
+			updated, err := s.Queries().UpdateApplicationSettings(ctx, gen.UpdateApplicationSettingsParams{
+				OrganisationID: org.ID,
+				Name:           app.Name,
+				Settings:       settingsJSON,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("updating application settings %s: %w", app.Name, err)
+			}
+			appMap[app.Name] = updated
 			items = append(items, DiffItem{Action: ActionUnchanged, Kind: "Application", Name: app.Name})
-			appMap[app.Name] = existing
 		} else {
-			settingsMap := make(map[string]any)
-			if app.Description != "" {
-				settingsMap["description"] = app.Description
-			}
-			if app.StuckSLASecs > 0 {
-				settingsMap["stuck_sla_secs"] = app.StuckSLASecs
-			}
-			if app.ExecutorTimeoutSecs > 0 {
-				settingsMap["executorTimeoutSecs"] = app.ExecutorTimeoutSecs
-			}
-			settingsJSON, _ := json.Marshal(settingsMap)
 			created, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
 				OrganisationID: org.ID,
 				Name:           app.Name,

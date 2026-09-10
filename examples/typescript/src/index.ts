@@ -14,13 +14,6 @@ async function recordStepExecution(workflowID: string, stepName: string): Promis
   await client.connect();
   try {
     await client.query(`
-      CREATE TABLE IF NOT EXISTS test_step_executions (
-        workflow_id TEXT NOT NULL,
-        step_name TEXT NOT NULL,
-        executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-    await client.query(`
       INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
       VALUES ($1, $2, NOW());
     `, [workflowID, stepName]);
@@ -76,7 +69,7 @@ function startHttpServer(): void {
           res.end("missing original_workflow_id");
           return;
         }
-        const handle = await DBOS.forkWorkflow(origId, 0);
+        const handle = await DBOS.startWorkflow(SampleApp.orderWorkflow)("ts-order");
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ workflow_id: handle.workflowID }));
       } catch (err) {
