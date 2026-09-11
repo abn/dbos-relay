@@ -17,11 +17,11 @@ Python, TypeScript, Go, and Java.
 |---|---|---|---|---|
 | Sample app connects to Relay over the socket; appears in executors | required | required | required | required |
 | Conformance suite + `dbosctl` script via socket | required | required | required | required |
-| Data plane read: status, list, steps; payloads pass through with serialisation tag | required | required | required | may lag one iteration |
-| Field parity: same workflow via socket and data plane, byte-equal after normalisation | required | required | required | may lag |
-| Chaos, real timers: SIGKILL executor, recovery on survivor, workflow completes exactly once | required | required | required | may lag |
-| Data-plane cancel and resume while executor is down; restarted executor honours both | required | required | required | may lag |
-| Fork via data plane to a live version; executor dequeues and runs it | required | required | required | may lag |
+| Data plane read: status, list, steps; payloads pass through with serialisation tag | required | required | required | required |
+| Field parity: same workflow via socket and data plane, byte-equal after normalisation | required | required | required | may lag (upstream schema v19 vs v107) |
+| Chaos, real timers: SIGKILL executor, recovery on survivor, workflow completes exactly once | required | required | required | required |
+| Data-plane cancel and resume while executor is down; restarted executor honours both | required | required | required | may lag (upstream schema v19 vs v107) |
+| Fork via data plane to a live version; executor dequeues and runs it | required | required | required | required |
 
 ## Cell definitions and test requirements
 
@@ -64,7 +64,4 @@ steps, and records the outcome.
 
 ## Lagging cells policy
 
-Cells marked "may lag" (e.g. Java data-plane integration during initial rollout) are explicitly
-permitted to lag by at most one iteration. However, lagging tests must never be silently omitted:
-the test runner must explicitly report them as skipped by name in its execution summary. Any
-required cell without a passing test causes the test runner to fail.
+Cells marked "may lag" are explicitly permitted to lag by at most one iteration. For Java, Cell 4 (field parity) and Cell 6 (offline cancel and resume) lag because upstream DBOS Java SDK 0.8.0 system databases use migration sequence 19, which lacks schema elements (such as `completed_at` and `application_name`) expected by the Go SDK data-plane client (version 107). Under ADR 0004 schema safety, Relay's Go data-plane client refuses connection to older schemas rather than attempting uncoordinated DDL. Lagging tests must never be silently omitted: the test runner explicitly reports them as skipped by name in its execution summary. Any required cell without a passing test causes the test runner to fail.

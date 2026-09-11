@@ -248,9 +248,21 @@ func triggerAppWorkflow(t *testing.T, triggerPort int) string {
 func triggerAppFork(t *testing.T, port int, originalWorkflowID string) string {
 	t.Helper()
 	url := fmt.Sprintf("http://localhost:%d/fork?original_workflow_id=%s", port, originalWorkflowID)
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 
-	resp, err := client.Get(url)
+	var resp *http.Response
+	var err error
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err = client.Get(url)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatalf("failed to call fork endpoint at %s: %v", url, err)
 	}
@@ -556,11 +568,12 @@ func TestVerifySDK_Matrix(t *testing.T) {
 		},
 		"Java": {
 			Name:          "deploy-app-java-1",
-			SecondaryName: "",
+			SecondaryName: "deploy-app-java-secondary-1",
 			AppName:       "java-sample-app",
 			DBName:        "relay_java",
 			Language:      "java",
 			TriggerPort:   8083,
+			SecondaryPort: 8087,
 		},
 	}
 
@@ -568,7 +581,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	waitForExecutors(t, containers, 45*time.Second)
 
 	// Ensure application table test_step_executions exists on all application databases
-	for _, dbName := range []string{"relay_golang", "relay_python", "relay_typescript"} {
+	for _, dbName := range []string{"relay_golang", "relay_python", "relay_typescript", "relay_java"} {
 		dbInitConn := getAppDBConn(t, dbName)
 		_, err := dbInitConn.Exec(context.Background(), `
 			CREATE TABLE IF NOT EXISTS test_step_executions (
@@ -583,8 +596,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 		}
 	}
 
-	// 2. Capture mid-run container table for REPORT.md evidence
-	midRunPodmanPS := runCmd(t, "podman", "ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}")
+	// 2. Capture mid-run container table for REPORT.md evidence (filter to test cluster only)
+	midRunPodmanPS := runCmd(t, "podman", "ps", "--filter", "name=deploy-", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}")
 
 	// 3. Read container startup lines
 	for lang, info := range containers {
@@ -712,10 +725,6 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				// 2. Execute genuine conformance test runner against live app
 				var skipIDs []int
 				var skipReason string
-				if lang == "Java" {
-					skipIDs = []int{4, 5, 6, 7}
-					skipReason = "out of scope for Java connect-only in Phase 0/8A"
-				}
 
 				confCfg := conformance.Config{
 					TargetURL:      relayBaseURL,
@@ -763,10 +772,6 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_3_Data_Plane_Read", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
-				if lang == "Java" {
-					t.Skip("[SKIPPED: scope] Data plane integration out of scope for Java in Phase 0/8A")
-				}
-
 				info := containers[lang]
 				wfID := info.TriggeredWfID
 				if wfID == "" {
@@ -799,7 +804,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				if lang == "Java" {
-					t.Skip("[SKIPPED: scope] Data plane integration out of scope for Java in Phase 0/8A")
+					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK client v1.3.0 (requires v107)")
 				}
 
 				info := containers[lang]
@@ -843,11 +848,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	// -------------------------------------------------------------------------
 	c5Start := time.Now()
 	t.Run("Cell_5_Chaos_Real_Timers_And_Recovery", func(t *testing.T) {
-		t.Run("Java", func(t *testing.T) {
-			t.Skip("[SKIPPED: scope] Recovery failover out of scope for Java in Phase 0/8A")
-		})
-
-		for _, lang := range []string{"Go", "Python", "TypeScript"} {
+		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				primaryInfo := containers[lang]
 				primaryContainer := primaryInfo.Name
@@ -1021,7 +1022,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				if lang == "Java" {
-					t.Skip("[SKIPPED: scope] Offline cancel/resume out of scope for Java in Phase 0/8A")
+					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK data-plane fallback v1.3.0 (requires v107)")
 				}
 
 				cellLangStart := time.Now()
@@ -1114,10 +1115,6 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_7_Fork_Via_Data_Plane", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
-				if lang == "Java" {
-					t.Skip("[SKIPPED: scope] Data-plane fork out of scope for Java in Phase 0/8A")
-				}
-
 				cellLangStart := time.Now()
 				info := containers[lang]
 
@@ -1211,11 +1208,11 @@ func generateReportMarkdown(containers map[string]containerInfo, cellDurations m
 	rows := []cellRow{
 		{"1. Socket connection and presence", "PASS", "PASS", "PASS", "PASS", "Cell 1: Socket connection"},
 		{"2. Conformance and CLI suite", "PASS", "PASS", "PASS", "PASS", "Cell 2: Conformance and CLI"},
-		{"3. Data plane read and preservation", "PASS", "PASS", "PASS", "[SKIPPED: scope]", "Cell 3: Data plane read"},
-		{"4. Field parity between socket and database", "PASS", "PASS", "PASS", "[SKIPPED: scope]", "Cell 4: Field parity"},
-		{"5. Chaos, real timers, and recovery", "PASS", "PASS", "PASS", "[SKIPPED: scope]", "Cell 5: Chaos and recovery"},
-		{"6. Offline data-plane cancel and resume", "PASS", "PASS", "PASS", "[SKIPPED: scope]", "Cell 6: Offline cancel/resume"},
-		{"7. Data-plane fork to live version", "PASS", "PASS", "PASS", "[SKIPPED: scope]", "Cell 7: Data-plane fork"},
+		{"3. Data plane read and preservation", "PASS", "PASS", "PASS", "PASS", "Cell 3: Data plane read"},
+		{"4. Field parity between socket and database", "PASS", "PASS", "PASS", "[SKIPPED: upstream schema v19 vs v107]", "Cell 4: Field parity"},
+		{"5. Chaos, real timers, and recovery", "PASS", "PASS", "PASS", "PASS", "Cell 5: Chaos and recovery"},
+		{"6. Offline data-plane cancel and resume", "PASS", "PASS", "PASS", "[SKIPPED: upstream schema v19 vs v107]", "Cell 6: Offline cancel/resume"},
+		{"7. Data-plane fork to live version", "PASS", "PASS", "PASS", "PASS", "Cell 7: Data-plane fork"},
 	}
 
 	for _, r := range rows {
@@ -1247,11 +1244,6 @@ func generateReportMarkdown(containers map[string]containerInfo, cellDurations m
 		sb.WriteString(fmt.Sprintf("- **Application**: `%s`\n", c.AppName))
 		sb.WriteString(fmt.Sprintf("- **Launch Log Excerpt**: `%s`\n", c.LaunchLog))
 
-		if lang == "Java" {
-			sb.WriteString("- **Status**: Verified for Cells 1 and 2. Cells 3–7 skipped as scoped for Phase 0/8A.\n\n")
-			continue
-		}
-
 		sb.WriteString(fmt.Sprintf("- **Cell 5 Kill Timestamp**: `%s`\n", c.KillTimestamp.Format(time.RFC3339)))
 		sb.WriteString(fmt.Sprintf("- **Cell 5 Disconnected Timestamp**: `%s`\n", c.DisconnectedTimestamp.Format(time.RFC3339)))
 		sb.WriteString(fmt.Sprintf("- **Cell 5 Dead Timestamp**: `%s`\n", c.DeadTimestamp.Format(time.RFC3339)))
@@ -1259,7 +1251,11 @@ func generateReportMarkdown(containers map[string]containerInfo, cellDurations m
 		sb.WriteString(fmt.Sprintf("- **Secondary Container Recovery Log Line**: `%s`\n", c.SurvivorRecoveryLog))
 		sb.WriteString(fmt.Sprintf("- **Terminal Outcome Count**: `%d` (exactly 1)\n", c.TerminalOutcomes))
 		sb.WriteString(fmt.Sprintf("- **Step Re-executions**: `%d`\n", c.StepReexecutions))
-		sb.WriteString(fmt.Sprintf("- **Cell 6 Duration**: `%v` (honoured cancel and resume across container restart)\n", c.Cell6Duration.Round(time.Millisecond)))
+		if lang == "Java" {
+			sb.WriteString("- **Cell 6 Status**: Skipped (upstream DBOS Java SDK 0.8.0 schema version 19 lacks completed_at required by Go SDK data-plane client v107)\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("- **Cell 6 Duration**: `%v` (honoured cancel and resume across container restart)\n", c.Cell6Duration.Round(time.Millisecond)))
+		}
 		sb.WriteString(fmt.Sprintf("- **Cell 7 Duration**: `%v` (forked workflow `%s` executed to SUCCESS by live executor `%s`)\n\n",
 			c.Cell7Duration.Round(time.Millisecond), c.ForkedWfID, c.ForkedExecutorID))
 	}

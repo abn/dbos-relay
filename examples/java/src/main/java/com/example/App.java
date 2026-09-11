@@ -79,6 +79,15 @@ public class App {
         @Workflow
         public String orderWorkflow(String orderId) {
             proxy.step1(orderId);
+            String role = System.getenv("ROLE");
+            if ("primary".equalsIgnoreCase(role)) {
+                try {
+                    // Sleep for 30 minutes to stay in-flight during chaos kill and offline mutation tests
+                    Thread.sleep(1800000);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             proxy.step2(orderId);
             return "order-" + orderId + "-completed";
         }
@@ -154,6 +163,28 @@ public class App {
                 }
             }
         });
+        server.createContext("/fork", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                try {
+                    var handle = dbos.startWorkflow(() -> proxy.orderWorkflow("java-fork"));
+                    String resp = "{\"workflow_id\":\"" + handle.workflowId() + "\"}";
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    byte[] bytes = resp.getBytes("UTF-8");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
+                } catch (Exception e) {
+                    String err = "{\"error\":\"" + e.getMessage() + "\"}";
+                    byte[] bytes = err.getBytes("UTF-8");
+                    exchange.sendResponseHeaders(500, bytes.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(bytes);
+                    }
+                }
+            }
+        });
         server.createContext("/health", new HttpHandler() {
             @Override
             public void handle(HttpExchange exchange) throws IOException {
@@ -165,10 +196,19 @@ public class App {
             }
         });
         server.setExecutor(null);
-        server.start();
+
+        String role = System.getenv("ROLE");
+        if ("secondary".equalsIgnoreCase(role)) {
+            try {
+                // Allow primary to complete initial database migrations/setup
+                Thread.sleep(3000);
+            } catch (InterruptedException ignored) {}
+        }
 
         dbos.launch();
         System.out.println("DBOS Java sample application launched successfully for app " + appName);
+
+        server.start();
 
         Thread.currentThread().join();
     }

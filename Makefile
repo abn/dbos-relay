@@ -21,6 +21,13 @@ build: ## Build the binary
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(BIN) $(PKG)
 	(cd examples/golang && CGO_ENABLED=0 go build -o bin/app .)
 
+build/java: ## Build the Java sample application jar
+	@if command -v mvn >/dev/null 2>&1; then \
+		(cd examples/java && mvn clean package -DskipTests); \
+	else \
+		podman run --rm -v $(CURDIR)/examples/java:/app:z -w /app docker.io/library/maven:3.9-eclipse-temurin-21-alpine mvn clean package -DskipTests; \
+	fi
+
 dashboard/build: ## Build the web dashboard assets
 	node console/build.js
 

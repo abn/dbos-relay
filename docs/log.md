@@ -4,6 +4,11 @@ This log tracks the evolution of the knowledge base: page additions,
 deprecations, and structural refactors. It does not track software releases or
 implementation milestones; those belong in the commit history.
 
+## 2026-09-12
+
+* **Update**: Documented external alerting notification channels (Webhook with timestamped HMAC-SHA256 signatures, Slack, PagerDuty) under Relay control plane extensions in [Metrics, alerting, and HA peer forwarding](discovery/D8-metrics-alerting.md).
+* **Update**: Updated Java SDK verification status in [Multi-SDK verification matrix](testing/verify-sdk.md) to required for socket, presence, chaos, and live fork cells (Cells 1, 2, 3, 5, and 7) backed by dual-executor container orchestration and real timer failover, while documenting upstream schema version divergence (v19 vs v107) for data-plane cells (Cells 4 and 6).
+
 ## 2026-09-08
 
 * **Creation**: Added multi-SDK verification test suite in `tests/verifysdk` and real Podman compose cluster in `deploy/compose-sdk-apps.yaml` running genuine Go, Python, TypeScript, and Java runtimes under Podman, proving socket presence, conformance probes, data-plane reading, parity, real timer chaos recovery, offline cancel/resume, and live fork dequeuing.

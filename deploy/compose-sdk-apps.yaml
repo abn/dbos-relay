@@ -181,9 +181,32 @@ services:
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: java-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_java?sslmode=disable
+      ROLE: primary
       HTTP_PORT: 8083
     ports:
       - "8083:8083"
+    depends_on:
+      relay:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    command: ["java", "-jar", "/app/target/dbos-java-sample-1.0.0.jar"]
+    restart: "no"
+
+  app-java-secondary:
+    image: eclipse-temurin:21-jre-alpine
+    working_dir: /app
+    volumes:
+      - ../examples/java:/app:ro,z
+    environment:
+      RELAY_URL: ws://relay:8090
+      RELAY_API_KEY: ${RELAY_API_KEY}
+      DBOS_APP_NAME: java-sample-app
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_java?sslmode=disable
+      ROLE: secondary
+      HTTP_PORT: 8087
+    ports:
+      - "8087:8087"
     depends_on:
       relay:
         condition: service_started
