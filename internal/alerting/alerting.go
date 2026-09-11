@@ -269,6 +269,11 @@ func (e *Evaluator) evaluateRule(ctx context.Context, app gen.Application, rule 
 }
 
 func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta map[string]string) {
+	defaultMsg := fmt.Sprintf("%s alert triggered", rule.RuleType)
+	if rule.RuleType == "WorkflowFailure" {
+		defaultMsg = "Workflow failure threshold exceeded"
+	}
+
 	reqID := uuid.New().String()
 	alertReq := &protocol.AlertRequest{
 		Envelope: protocol.Envelope{
@@ -276,23 +281,25 @@ func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta m
 			RequestID: reqID,
 		},
 		Name:     rule.RuleType,
-		Message:  fmt.Sprintf("%s alert triggered", rule.RuleType),
+		Message:  defaultMsg,
 		Metadata: meta,
 	}
 
-	_, err := e.dispatcher.Dispatch(ctx, rule.ReceivingApplicationID, alertReq)
-	if err != nil {
-		e.logger.Warn("failed to dispatch alert to receiving application",
-			"ruleID", rule.ID,
-			"receivingAppID", rule.ReceivingApplicationID,
-			"error", err,
-		)
-	} else {
-		e.logger.Info("dispatched alert successfully",
-			"ruleID", rule.ID,
-			"ruleType", rule.RuleType,
-			"receivingAppID", rule.ReceivingApplicationID,
-		)
+	if rule.ReceivingApplicationID.Valid && e.dispatcher != nil {
+		_, err := e.dispatcher.Dispatch(ctx, rule.ReceivingApplicationID, alertReq)
+		if err != nil {
+			e.logger.Warn("failed to dispatch alert to receiving application",
+				"ruleID", rule.ID,
+				"receivingAppID", rule.ReceivingApplicationID,
+				"error", err,
+			)
+		} else {
+			e.logger.Info("dispatched alert successfully",
+				"ruleID", rule.ID,
+				"ruleType", rule.RuleType,
+				"receivingAppID", rule.ReceivingApplicationID,
+			)
+		}
 	}
 
 	// Dispatch to external channels if configured in metadata
@@ -304,7 +311,7 @@ func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta m
 					RuleID:   rule.ID.String(),
 					RuleType: rule.RuleType,
 					AppName:  rule.ApplicationID.String(),
-					Message:  fmt.Sprintf("%s alert triggered", rule.RuleType),
+					Message:  defaultMsg,
 					Metadata: meta,
 					FiredAt:  time.Now().UTC(),
 				}

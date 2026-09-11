@@ -2,9 +2,6 @@ package alerting_test
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -307,11 +304,13 @@ func TestHTTPChannelDispatcher_Webhook(t *testing.T) {
 	secret := "test-secret"
 	received := false
 	var receivedSig string
+	var receivedTimestamp string
 	var receivedBody []byte
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received = true
 		receivedSig = r.Header.Get("X-Relay-Signature")
+		receivedTimestamp = r.Header.Get("X-Relay-Timestamp")
 		receivedBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -340,12 +339,13 @@ func TestHTTPChannelDispatcher_Webhook(t *testing.T) {
 		t.Fatal("expected server to receive request")
 	}
 
-	// Verify HMAC-SHA256 signature
-	h := hmac.New(sha256.New, []byte(secret))
-	h.Write(receivedBody)
-	expectedSig := "sha256=" + hex.EncodeToString(h.Sum(nil))
-	if receivedSig != expectedSig {
-		t.Errorf("expected signature %s, got %s", expectedSig, receivedSig)
+	if receivedTimestamp == "" {
+		t.Fatal("expected X-Relay-Timestamp header to be set")
+	}
+
+	// Verify constant-time HMAC-SHA256 signature
+	if !alerting.VerifyWebhookSignature(secret, receivedTimestamp, receivedBody, receivedSig) {
+		t.Errorf("VerifyWebhookSignature failed for sig %s, ts %s", receivedSig, receivedTimestamp)
 	}
 }
 

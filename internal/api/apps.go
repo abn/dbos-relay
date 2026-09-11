@@ -582,9 +582,30 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 		case "unresponsiveapplication":
 			ruleType = "UnresponsiveApplication"
 		default:
-			ruleType = rt
+			return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusBadRequest,
+				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", fmt.Sprintf("invalid rule type %q: must be WorkflowFailure, SlowQueue, or UnresponsiveApplication", rt)),
+			}, nil
 		}
 		minInterval = request.Body.MinIntervalSecs
+	}
+
+	// Reject secret_from in RuleMetadata over REST (operator declarative only)
+	if request.Body != nil && request.Body.RuleMetadata != nil {
+		if metaMap, ok := request.Body.RuleMetadata.(map[string]any); ok {
+			if dests, ok := metaMap["destinations"].([]any); ok {
+				for _, d := range dests {
+					if dMap, ok := d.(map[string]any); ok {
+						if _, hasSF := dMap["secret_from"]; hasSF {
+							return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+								StatusCode: http.StatusBadRequest,
+								Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "secret_from is only permitted in operator declarative manifests"),
+							}, nil
+						}
+					}
+				}
+			}
+		}
 	}
 
 	dbRule, err := s.store.CreateAlertingRule(ctx, storegen.CreateAlertingRuleParams{
@@ -658,6 +679,7 @@ func mapStoreAlertRuleToAPI(r storegen.AlertingRule) gen.AlertingRule {
 	if len(r.RuleMetadata) > 0 {
 		_ = json.Unmarshal(r.RuleMetadata, &meta)
 	}
+	meta = sanitizeAlertMetadata(meta)
 	var lastFired *time.Time
 	if r.LastFiredAt.Valid {
 		lastFired = &r.LastFiredAt.Time
@@ -671,4 +693,49 @@ func mapStoreAlertRuleToAPI(r storegen.AlertingRule) gen.AlertingRule {
 		MinIntervalSecs: r.MinIntervalSecs,
 		LastFiredAt:     lastFired,
 	}
+}
+
+func sanitizeAlertMetadata(meta any) any {
+	metaMap, ok := meta.(map[string]any)
+	if !ok {
+		return meta
+	}
+	destsRaw, ok := metaMap["destinations"]
+	if !ok {
+		return meta
+	}
+	dests, ok := destsRaw.([]any)
+	if !ok {
+		return meta
+	}
+	newMeta := make(map[string]any, len(metaMap))
+	for k, v := range metaMap {
+		newMeta[k] = v
+	}
+	var sanitizedDests []any
+	for _, d := range dests {
+		dMap, ok := d.(map[string]any)
+		if !ok {
+			sanitizedDests = append(sanitizedDests, d)
+			continue
+		}
+		newDMap := make(map[string]any, len(dMap))
+		for k, v := range dMap {
+			newDMap[k] = v
+		}
+		if _, hasSec := newDMap["secret"]; hasSec {
+			newDMap["secret"] = "[REDACTED]"
+		}
+		if rk, ok := newDMap["routing_key"].(string); ok && rk != "" {
+			if len(rk) > 4 {
+				newDMap["routing_key"] = "xxxx..." + rk[len(rk)-4:]
+			} else {
+				newDMap["routing_key"] = "[REDACTED]"
+			}
+		}
+		delete(newDMap, "secret_from")
+		sanitizedDests = append(sanitizedDests, newDMap)
+	}
+	newMeta["destinations"] = sanitizedDests
+	return newMeta
 }

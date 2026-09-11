@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -84,11 +85,12 @@ func (d *HTTPChannelDispatcher) dispatchWebhook(ctx context.Context, dest Channe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "relay-alerting/1.0")
 
+	tsStr := strconv.FormatInt(time.Now().Unix(), 10)
+	req.Header.Set("X-Relay-Timestamp", tsStr)
+
 	if dest.Secret != "" {
-		h := hmac.New(sha256.New, []byte(dest.Secret))
-		h.Write(payloadBytes)
-		sig := hex.EncodeToString(h.Sum(nil))
-		req.Header.Set("X-Relay-Signature", "sha256="+sig)
+		sig := ComputeWebhookSignature(dest.Secret, tsStr, payloadBytes)
+		req.Header.Set("X-Relay-Signature", sig)
 	}
 
 	resp, err := d.client.Do(req)
@@ -114,6 +116,7 @@ func (d *HTTPChannelDispatcher) dispatchSlack(ctx context.Context, dest ChannelD
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "relay-alerting/1.0")
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -136,10 +139,10 @@ func (d *HTTPChannelDispatcher) dispatchPagerDuty(ctx context.Context, dest Chan
 		"routing_key":  routingKey,
 		"event_action": "trigger",
 		"payload": map[string]any{
-			"summary":   fmt.Sprintf("%s: %s (%s)", notif.RuleType, notif.Message, notif.AppName),
-			"source":    "relay-control-plane",
-			"severity":  "error",
-			"timestamp": notif.FiredAt.Format(time.RFC3339),
+			"summary":        fmt.Sprintf("%s: %s (%s)", notif.RuleType, notif.Message, notif.AppName),
+			"source":         "relay-control-plane",
+			"severity":       "error",
+			"timestamp":      notif.FiredAt.Format(time.RFC3339),
 			"custom_details": notif.Metadata,
 		},
 	}
@@ -155,6 +158,7 @@ func (d *HTTPChannelDispatcher) dispatchPagerDuty(ctx context.Context, dest Chan
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "relay-alerting/1.0")
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -166,4 +170,18 @@ func (d *HTTPChannelDispatcher) dispatchPagerDuty(ctx context.Context, dest Chan
 		return fmt.Errorf("pagerduty endpoint returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// ComputeWebhookSignature computes sha256 HMAC over timestamp.payload.
+func ComputeWebhookSignature(secret, timestamp string, payload []byte) string {
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write([]byte(timestamp + "."))
+	h.Write(payload)
+	return "sha256=" + hex.EncodeToString(h.Sum(nil))
+}
+
+// VerifyWebhookSignature verifies an incoming webhook signature using constant-time comparison.
+func VerifyWebhookSignature(secret, timestamp string, payload []byte, signatureHeader string) bool {
+	expectedSig := ComputeWebhookSignature(secret, timestamp, payload)
+	return hmac.Equal([]byte(signatureHeader), []byte(expectedSig))
 }

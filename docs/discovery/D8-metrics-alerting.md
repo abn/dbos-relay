@@ -272,6 +272,31 @@ When an alert condition is met and the minimum interval (`minIntervalSecs`) has 
 
 If the application has registered an alert handler (`@DBOS.alert_handler`, `dbos.SetAlertHandler`, `DBOS.setAlertHandler`), the handler executes. If no handler is registered, the SDK automatically logs the alert as a warning.
 
+## Relay control plane extensions: External alert channels
+
+In addition to upstream WebSocket delivery to connected executors, Relay supports dispatching alert notifications to external operational channels configured in operator manifests (`relay.yaml`).
+
+### Supported external channel types
+
+1. **`webhook`**: Generic HTTP POST webhook with replay protection.
+   * `url`: Target endpoint URL (HTTP or HTTPS).
+   * `secret`: Optional HMAC-SHA256 secret (or resolved via `secret_from`).
+   * Headers:
+     * `X-Relay-Timestamp`: Unix epoch timestamp in seconds.
+     * `X-Relay-Signature`: `sha256=` followed by hex-encoded HMAC-SHA256 of `<timestamp>.<payload>`.
+     * `User-Agent`: `relay-alerting/1.0`.
+2. **`slack`**: Slack Incoming Webhooks format.
+   * `url`: Webhook URL.
+   * Delivers JSON with formatted `text` summarizing the alert.
+3. **`pagerduty`**: PagerDuty Events API v2 format.
+   * `url`: Endpoint URL (defaults to `https://events.pagerduty.com/v2/enqueue`).
+   * `routing_key`: Integration routing key.
+   * Delivers `event_action: "trigger"` with alert metadata.
+
+### Security and secret resolution
+
+External channel destinations and secret resolution (`secret_from.env`, `secret_from.file`) are restricted exclusively to operator declarative manifests. Tenant-facing REST APIs strictly disallow filesystem probing, and secrets are redacted from all API read responses.
+
 ## High availability peer forwarding conventions
 
 In high-availability (HA) multi-node deployments, Relay nodes run behind a load balancer and share a common Postgres store.

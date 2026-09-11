@@ -86,6 +86,59 @@ func (dp *DataPlane) ResolveConnectionURL() (string, error) {
 	return "", errors.New("neither connection_url nor connection_string_from provided")
 }
 
+func resolveDestinations(meta map[string]any) (map[string]any, error) {
+	if meta == nil {
+		return nil, nil
+	}
+	destsRaw, ok := meta["destinations"]
+	if !ok {
+		return meta, nil
+	}
+	destsSlice, ok := destsRaw.([]any)
+	if !ok {
+		return meta, nil
+	}
+	newMeta := make(map[string]any, len(meta))
+	for k, v := range meta {
+		newMeta[k] = v
+	}
+	var resolvedDests []any
+	for _, dRaw := range destsSlice {
+		dMap, ok := dRaw.(map[string]any)
+		if !ok {
+			resolvedDests = append(resolvedDests, dRaw)
+			continue
+		}
+		newDMap := make(map[string]any, len(dMap))
+		for k, v := range dMap {
+			newDMap[k] = v
+		}
+		if sfRaw, ok := dMap["secret_from"]; ok {
+			var cs ConnectionSource
+			sfBytes, _ := json.Marshal(sfRaw)
+			if err := json.Unmarshal(sfBytes, &cs); err == nil {
+				if cs.Env != "" {
+					val := os.Getenv(cs.Env)
+					if val == "" {
+						return nil, fmt.Errorf("environment variable %q is not set", cs.Env)
+					}
+					newDMap["secret"] = val
+				} else if cs.File != "" {
+					b, err := os.ReadFile(cs.File)
+					if err != nil {
+						return nil, fmt.Errorf("reading secret file %q: %w", cs.File, err)
+					}
+					newDMap["secret"] = strings.TrimSpace(string(b))
+				}
+				delete(newDMap, "secret_from")
+			}
+		}
+		resolvedDests = append(resolvedDests, newDMap)
+	}
+	newMeta["destinations"] = resolvedDests
+	return newMeta, nil
+}
+
 // DiffAction indicates the change action for a resource.
 type DiffAction string
 
@@ -482,22 +535,27 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 			})
 		} else {
 			metaBytes := []byte("{}")
-			if len(rule.Metadata) > 0 {
-				metaBytes, _ = json.Marshal(rule.Metadata)
+			metaMap, err := resolveDestinations(rule.Metadata)
+			if err != nil {
+				return nil, fmt.Errorf("resolving rule destinations for %s: %w", rule.RuleType, err)
+			}
+			if len(metaMap) > 0 {
+				metaBytes, _ = json.Marshal(metaMap)
 			}
 			var minInterval *int32
 			if rule.MinIntervalSecs > 0 {
 				minInterval = &rule.MinIntervalSecs
 			}
-			_, err := s.Queries().CreateAlertingRule(ctx, gen.CreateAlertingRuleParams{
+			var createErr error
+			_, createErr = s.Queries().CreateAlertingRule(ctx, gen.CreateAlertingRuleParams{
 				ApplicationID:          app.ID,
 				ReceivingApplicationID: recvAppID,
 				RuleType:               rule.RuleType,
 				RuleMetadata:           metaBytes,
 				MinIntervalSecs:        minInterval,
 			})
-			if err != nil {
-				return nil, fmt.Errorf("creating rule %s: %w", rule.RuleType, err)
+			if createErr != nil {
+				return nil, fmt.Errorf("creating rule %s: %w", rule.RuleType, createErr)
 			}
 			items = append(items, DiffItem{
 				Action: ActionCreate,
