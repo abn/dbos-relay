@@ -6,6 +6,7 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Aligned multi-SDK verification matrix documentation in [Multi-SDK verification matrix](testing/verify-sdk.md) with genuine REST endpoint probes rather than unexercised client CLI binaries, and specified verbatim payload byte preservation rather than unmodelled serialization tags.
 * **Update**: Enforced WebSocket read limits, handshake timeouts, and error message rejections in connection hub.
 * **Update**: Implemented heartbeat pong deadlines, write mutex decoupling, and executor lease ownership renewal.
 * **Update**: Hardened connection lifecycle with idempotent closure, identity-aware unregistration, and registry drain on graceful shutdown.
