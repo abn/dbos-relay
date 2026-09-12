@@ -16,11 +16,7 @@ refinement for Relay.
 ## Clean-room derivation
 
 - All conformance claims and test assertions must be derived solely from
-  permitted clean-room sources listed in `docs/contribution/clean-room.md`:
-  - Vendored OpenAPI specifications (`api/spec/openapi.json`, `api/spec/openapi-3.0.json`).
-  - Open-source SDK clients (`dbos-transact-py`, `dbos-transact-ts`,
-    `dbos-transact-go`, `dbos-transact-java`).
-  - Public documentation (`docs.dbos.dev`).
+  permitted clean-room sources listed in `docs/contribution/clean-room.md`.
 - The proprietary Conductor server image is never downloaded, run, observed, or
   benchmarked, even to verify test cases.
 - If a protocol detail cannot be proven from permitted sources, write an

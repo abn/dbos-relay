@@ -382,7 +382,9 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 	statusStr := "SUCCESS"
 	nameStr := "testWorkflow"
 
+	var capturedMsgs []protocol.Message
 	routerFn := func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+		capturedMsgs = append(capturedMsgs, msg)
 		switch m := msg.(type) {
 		case *protocol.ListWorkflowsRequest:
 			return &protocol.ListWorkflowsResponse{
@@ -499,6 +501,16 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		t.Fatalf("cancel status = %d, want 204 or 200", resp.StatusCode)
 	}
+	if len(capturedMsgs) == 0 {
+		t.Fatal("expected captured message for cancel")
+	}
+	cancelMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.CancelWorkflowRequest)
+	if !ok {
+		t.Fatalf("expected CancelWorkflowRequest, got %T", capturedMsgs[len(capturedMsgs)-1])
+	}
+	if cancelMsg.WorkflowID != wfUUID {
+		t.Errorf("cancel WorkflowID = %q, want %q", cancelMsg.WorkflowID, wfUUID)
+	}
 
 	// 6. Resume workflow
 	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID+"/resume", "application/json", nil)
@@ -508,6 +520,13 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		t.Fatalf("resume status = %d, want 204 or 200", resp.StatusCode)
+	}
+	resumeMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.ResumeWorkflowRequest)
+	if !ok {
+		t.Fatalf("expected ResumeWorkflowRequest, got %T", capturedMsgs[len(capturedMsgs)-1])
+	}
+	if resumeMsg.WorkflowID != wfUUID {
+		t.Errorf("resume WorkflowID = %q, want %q", resumeMsg.WorkflowID, wfUUID)
 	}
 
 	// 7. Fork workflow
@@ -520,6 +539,22 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		t.Fatalf("fork status = %d, want 201 or 200", resp.StatusCode)
 	}
+	forkMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.ForkWorkflowRequest)
+	if !ok {
+		t.Fatalf("expected ForkWorkflowRequest, got %T", capturedMsgs[len(capturedMsgs)-1])
+	}
+	if forkMsg.Body.WorkflowID != wfUUID {
+		t.Errorf("fork WorkflowID = %q, want %q", forkMsg.Body.WorkflowID, wfUUID)
+	}
+	var forkResp struct {
+		WorkflowId string `json:"workflowId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&forkResp); err != nil {
+		t.Fatalf("decode fork response: %v", err)
+	}
+	if forkResp.WorkflowId != "wf-forked-456" {
+		t.Errorf("fork response workflowId = %q, want wf-forked-456", forkResp.WorkflowId)
+	}
 
 	// 8. Delete workflow
 	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID, nil)
@@ -530,6 +565,13 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		t.Fatalf("delete status = %d, want 204 or 200", resp.StatusCode)
+	}
+	deleteMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.DeleteWorkflowRequest)
+	if !ok {
+		t.Fatalf("expected DeleteWorkflowRequest, got %T", capturedMsgs[len(capturedMsgs)-1])
+	}
+	if deleteMsg.WorkflowID != wfUUID {
+		t.Errorf("delete WorkflowID = %q, want %q", deleteMsg.WorkflowID, wfUUID)
 	}
 }
 

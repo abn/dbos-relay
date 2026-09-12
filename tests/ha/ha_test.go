@@ -1,8 +1,11 @@
-// Package ha_test exercises high availability and instance lease behaviors.
+// Package ha_test exercises high availability, instance leases, and peer forwarding.
 //
 // Note: Counterparties in this package are in-process internal/fakeexecutor
-// stand-ins. Real-process cluster verification against genuine DBOS SDK runtimes
-// is performed in tests/verifysdk (see tests/verifysdk/REPORT.md).
+// stand-ins. Tests in this package run two hub and router stacks in-process over an
+// in-memory store double to verify HTTP forwarding signatures, loop prevention,
+// and lease adoption logic. They do not stand up a multi-node deployment behind
+// a reverse proxy. Full multi-process Scale tier verification remains open per
+// docs/design/compatibility-tiers.md.
 package ha_test
 
 import (

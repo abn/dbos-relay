@@ -8,17 +8,19 @@ description: Audit, detect, triage, and remediate DBOS Conductor specification a
 Orchestration skill for detecting, triaging, and remedying protocol and REST API
 conformance drift between Relay and DBOS Conductor.
 
-Relay achieves 100% drop-in parity with DBOS Conductor by maintaining exact wire,
-REST, and lifecycle behavior against unmodified DBOS Transact applications and
-`dbosctl`. When upstream SDKs or specifications evolve, this skill guides an agent
-through disciplined, clean-room compliant drift resolution.
+Relay targets wire, REST, and lifecycle compatibility with DBOS Conductor for
+unmodified DBOS Transact applications and dbosctl REST endpoints. Compatibility
+tiers are governed by docs/design/compatibility-tiers.md and the current
+measured state is recorded in tests/verifysdk/REPORT.md. When upstream SDKs or
+specifications evolve, this skill guides an agent through disciplined, clean-room
+compliant drift resolution.
 
 ## Workflow Overview
 
 ```mermaid
 graph TD
     A["1. Detect Drift<br/>(relay test-conformance / make test/conformance)"] --> B{"All Pass?"}
-    B -->|"Yes"| C["Certified Conformant ✅"]
+    B -->|"Yes"| C["All batteries pass"]
     B -->|"No"| D["2. Triage Battery Failure<br/>(Map to Batteries 1-8)"]
     D --> E["3. Verify Clean-Room Provenance<br/>(Inspect Permitted SDK/Spec Sources)"]
     E --> F["4. Author Failing Test<br/>(tests/conformance/ or internal/protocol/)"]
@@ -82,13 +84,10 @@ When a test fails, identify the owning battery (1 through 8) and component:
 Before modifying any protocol code or docs, identify the permitted upstream
 source proving the expected behavior:
 
-1. **Permitted Sources Only**:
-   - Upstream SDKs: `dbos-transact-py`, `dbos-transact-ts`, `dbos-transact-go`,
-     `dbos-transact-java`.
-   - Vendored specifications: `api/spec/openapi.json` and `api/spec/openapi-3.0.json`.
-   - Public documentation: `https://docs.dbos.dev`.
-2. **Forbidden**: Proprietary Conductor server images or binary inspection.
-3. Every wire message struct in `internal/protocol/messages.go` must maintain
+1. **Permitted Sources Only**: Consult [Clean-Room Rules](../../../docs/contribution/clean-room.md) (`docs/contribution/clean-room.md`)
+   for the canonical list of permitted and forbidden sources. Per-fact commit pins
+   are maintained in `docs/discovery/provenance.md`.
+2. Every wire message struct in `internal/protocol/messages.go` must maintain
    its provenance comment naming repository, path, and commit hash.
 
 > [!IMPORTANT]

@@ -44,7 +44,7 @@ func NewRunner(cfg Config) *Runner {
 	return &Runner{
 		cfg: cfg,
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: cfg.Timeout,
 		},
 		httpURL: httpURL,
 		wsURL:   wsURL,
@@ -104,7 +104,9 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		r.logf("[RUN] Battery %d: %s...\n", b.id, b.title)
-		res := b.fn(ctx)
+		bCtx, bCancel := context.WithTimeout(ctx, r.cfg.Timeout)
+		res := b.fn(bCtx)
+		bCancel()
 		report.Batteries = append(report.Batteries, res)
 
 		switch res.Status {
@@ -119,6 +121,10 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 			report.TotalSkip++
 			r.logf("[SKIP] Battery %d: %s\n\n", b.id, b.title)
 		}
+	}
+
+	if report.TotalPass == 0 && report.TotalFail == 0 {
+		report.AllPassed = false
 	}
 
 	report.Duration = time.Since(startTime)
@@ -153,6 +159,15 @@ func executeCheck(name string, fn func() error) CheckResult {
 }
 
 func summarizeChecks(id int, title string, checks []CheckResult) BatteryResult {
+	if len(checks) == 0 {
+		return BatteryResult{
+			ID:     id,
+			Title:  title,
+			Status: StatusSkip,
+			Checks: checks,
+		}
+	}
+
 	var totalElapsed time.Duration
 	allPass := true
 	var firstErr string

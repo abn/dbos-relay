@@ -2,6 +2,9 @@ package alerting_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -343,7 +346,14 @@ func TestHTTPChannelDispatcher_Webhook(t *testing.T) {
 		t.Fatal("expected X-Relay-Timestamp header to be set")
 	}
 
-	// Verify constant-time HMAC-SHA256 signature
+	// Verify constant-time HMAC-SHA256 signature against independent computation per docs/discovery/D8-metrics-alerting.md:286
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(receivedTimestamp + "."))
+	mac.Write(receivedBody)
+	expectedSig := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if receivedSig != expectedSig {
+		t.Errorf("independent signature mismatch: got %s, want %s", receivedSig, expectedSig)
+	}
 	if !alerting.VerifyWebhookSignature(secret, receivedTimestamp, receivedBody, receivedSig) {
 		t.Errorf("VerifyWebhookSignature failed for sig %s, ts %s", receivedSig, receivedTimestamp)
 	}

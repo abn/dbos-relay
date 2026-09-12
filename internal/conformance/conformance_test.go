@@ -2,6 +2,9 @@ package conformance_test
 
 import (
 	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -89,5 +92,136 @@ func TestReportMarkdownFailureState(t *testing.T) {
 	}
 	if !strings.Contains(out, "dial timeout") {
 		t.Errorf("expected failure detail in output, got:\n%s", out)
+	}
+}
+
+func TestSummarizeChecks_ScoringTableDriven(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         int
+		title      string
+		checks     []conformance.CheckResult
+		wantStatus conformance.BatteryStatus
+		wantErr    string
+	}{
+		{
+			name:       "empty check slice yields StatusSkip",
+			id:         1,
+			title:      "Empty Battery",
+			checks:     []conformance.CheckResult{},
+			wantStatus: conformance.StatusSkip,
+			wantErr:    "",
+		},
+		{
+			name:  "all passing checks yields StatusPass",
+			id:    2,
+			title: "Passing Battery",
+			checks: []conformance.CheckResult{
+				{Name: "2.1", Status: conformance.StatusPass, Elapsed: 10 * time.Millisecond},
+				{Name: "2.2", Status: conformance.StatusPass, Elapsed: 20 * time.Millisecond},
+			},
+			wantStatus: conformance.StatusPass,
+			wantErr:    "",
+		},
+		{
+			name:  "mixed checks yields StatusFail with first error",
+			id:    3,
+			title: "Mixed Battery",
+			checks: []conformance.CheckResult{
+				{Name: "3.1", Status: conformance.StatusPass, Elapsed: 10 * time.Millisecond},
+				{Name: "3.2", Status: conformance.StatusFail, Detail: "failed detail", Elapsed: 15 * time.Millisecond},
+				{Name: "3.3", Status: conformance.StatusFail, Detail: "second failure", Elapsed: 5 * time.Millisecond},
+			},
+			wantStatus: conformance.StatusFail,
+			wantErr:    "3.2: failed detail",
+		},
+		{
+			name:  "all failing checks yields StatusFail",
+			id:    4,
+			title: "Failing Battery",
+			checks: []conformance.CheckResult{
+				{Name: "4.1", Status: conformance.StatusFail, Detail: "err1", Elapsed: 5 * time.Millisecond},
+			},
+			wantStatus: conformance.StatusFail,
+			wantErr:    "4.1: err1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := conformance.SummarizeChecks(tc.id, tc.title, tc.checks)
+			if res.Status != tc.wantStatus {
+				t.Errorf("status = %s, want %s", res.Status, tc.wantStatus)
+			}
+			if res.Error != tc.wantErr {
+				t.Errorf("error = %q, want %q", res.Error, tc.wantErr)
+			}
+			if len(res.Checks) != len(tc.checks) {
+				t.Errorf("checks len = %d, want %d", len(res.Checks), len(tc.checks))
+			}
+		})
+	}
+}
+
+func TestRunner_TimeoutAndClientConfiguration(t *testing.T) {
+	cfg := conformance.Config{
+		TargetURL: "http://127.0.0.1:9999",
+		Timeout:   45 * time.Second,
+	}
+	runner := conformance.NewRunner(cfg)
+	if runner == nil {
+		t.Fatal("expected non-nil runner")
+	}
+
+	// Default fallback when 0
+	defRunner := conformance.NewRunner(conformance.Config{TargetURL: "http://127.0.0.1:9999"})
+	if defRunner == nil {
+		t.Fatal("expected non-nil default runner")
+	}
+}
+
+func TestRunner_RunAllSkippedNotAllPassed(t *testing.T) {
+	cfg := conformance.Config{
+		TargetURL:      "http://127.0.0.1:9999",
+		SkipBatteryIDs: []int{1, 2, 3, 4, 5, 6, 7, 8},
+		SkipReason:     "testing all skip",
+	}
+	runner := conformance.NewRunner(cfg)
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if report.AllPassed {
+		t.Errorf("expected AllPassed to be false when all batteries skipped")
+	}
+	if report.TotalPass != 0 {
+		t.Errorf("expected TotalPass = 0, got %d", report.TotalPass)
+	}
+	if report.TotalSkip != 8 {
+		t.Errorf("expected TotalSkip = 8, got %d", report.TotalSkip)
+	}
+}
+
+func TestRunner_RunCheckFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := conformance.Config{
+		TargetURL:      server.URL,
+		SkipBatteryIDs: []int{2, 3, 4, 5, 6, 7, 8}, // only run battery 1
+		SkipReason:     "testing battery 1 failure",
+	}
+	runner := conformance.NewRunner(cfg)
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if report.AllPassed {
+		t.Errorf("expected AllPassed = false when checks fail")
+	}
+	if report.TotalFail != 1 {
+		t.Errorf("expected TotalFail = 1, got %d", report.TotalFail)
 	}
 }

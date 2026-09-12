@@ -182,7 +182,7 @@ func (s *dashboardTestStore) GetAPIKeyByLookup(_ context.Context, lookup string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key, ok := s.keys[lookup]
-	if !ok {
+	if !ok || !key.RevokedAt.Time.IsZero() {
 		return storegen.ApiKey{}, errors.New("key not found")
 	}
 	return key, nil
@@ -193,7 +193,7 @@ func (s *dashboardTestStore) ListAPIKeys(_ context.Context, orgID pgtype.UUID) (
 	defer s.mu.Unlock()
 	var res []storegen.ApiKey
 	for _, k := range s.keys {
-		if k.OrganisationID == orgID {
+		if k.OrganisationID == orgID && k.RevokedAt.Time.IsZero() {
 			res = append(res, k)
 		}
 	}
