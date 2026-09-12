@@ -41,7 +41,6 @@ func NewManager(factory ClientFactory) *DefaultManager {
 // RegisterApp configures and activates data-plane connectivity for an application.
 func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if cfg.DatabaseURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -63,14 +62,23 @@ func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	}
 
 	m.configs[cfg.ApplicationID] = cfg
-	m.initMu[cfg.ApplicationID] = &sync.Mutex{}
+	appMu := &sync.Mutex{}
+	m.initMu[cfg.ApplicationID] = appMu
 	delete(m.lastInitErr, cfg.ApplicationID)
+	m.mu.Unlock()
 
-	// Attempt eager initialization, but do not fail registration if database is not yet migrated
+	// Attempt eager initialization under per-app mutex without holding the global manager lock
+	appMu.Lock()
+	defer appMu.Unlock()
+
 	if client, err := m.factory(cfg); err == nil {
+		m.mu.Lock()
 		m.clients[cfg.ApplicationID] = client
+		m.mu.Unlock()
 	} else {
+		m.mu.Lock()
 		m.lastInitErr[cfg.ApplicationID] = time.Now()
+		m.mu.Unlock()
 	}
 
 	return nil
