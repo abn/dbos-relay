@@ -305,7 +305,10 @@ func (h *Hub) SendRecovery(ctx context.Context, appID pgtype.UUID, targetExecuto
 		return nil, errors.New("recovery request must have an ID")
 	}
 
-	ch, unregister := conn.mux.Register(reqID)
+	ch, unregister, err := conn.mux.Register(reqID)
+	if err != nil {
+		return nil, err
+	}
 	defer unregister()
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)
@@ -342,7 +345,10 @@ func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Mess
 		return nil, errors.New("request must have an ID")
 	}
 
-	ch, unregister := conn.mux.Register(reqID)
+	ch, unregister, err := conn.mux.Register(reqID)
+	if err != nil {
+		return nil, err
+	}
 	defer unregister()
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)

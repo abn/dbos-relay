@@ -1,6 +1,8 @@
 package hub
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/abn/relay/internal/protocol"
@@ -21,28 +23,34 @@ func NewMultiplexer() *Multiplexer {
 
 // Register creates a channel to await a response for a given request ID.
 // The returned function should be called to clean up the channel, typically in a defer.
-func (m *Multiplexer) Register(requestID string) (<-chan protocol.Message, func()) {
+// Returns an error if the multiplexer is closed or if a request with the given ID is already pending.
+func (m *Multiplexer) Register(requestID string) (<-chan protocol.Message, func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ch := make(chan protocol.Message, 1)
 	if m.closed {
+		ch := make(chan protocol.Message, 1)
 		close(ch)
-		return ch, func() {}
+		return ch, func() {}, errors.New("multiplexer is closed")
 	}
 
+	if _, exists := m.pending[requestID]; exists {
+		return nil, nil, fmt.Errorf("duplicate request id: %s", requestID)
+	}
+
+	ch := make(chan protocol.Message, 1)
 	m.pending[requestID] = ch
 
 	unregister := func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if c, ok := m.pending[requestID]; ok {
+		if c, ok := m.pending[requestID]; ok && c == ch {
 			delete(m.pending, requestID)
 			close(c)
 		}
 	}
 
-	return ch, unregister
+	return ch, unregister, nil
 }
 
 // RouteResponse attempts to route a message to the waiting requester.

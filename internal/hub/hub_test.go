@@ -63,7 +63,10 @@ func TestHandleAuthError(t *testing.T) {
 
 func TestMultiplexer_LateResponse(t *testing.T) {
 	m := NewMultiplexer()
-	ch, unregister := m.Register("req1")
+	ch, unregister, err := m.Register("req1")
+	if err != nil {
+		t.Fatalf("unexpected register error: %v", err)
+	}
 
 	// Simulate timeout
 	unregister()
@@ -82,6 +85,86 @@ func TestMultiplexer_LateResponse(t *testing.T) {
 		}
 	default:
 		t.Error("expected channel to be closed")
+	}
+}
+
+func TestMultiplexer_DuplicateRequestID(t *testing.T) {
+	m := NewMultiplexer()
+	ch1, unreg1, err := m.Register("req-dup")
+	if err != nil {
+		t.Fatalf("expected first register to succeed, got: %v", err)
+	}
+	defer unreg1()
+
+	// Second registration of same request ID must return error
+	ch2, unreg2, err := m.Register("req-dup")
+	if err == nil {
+		unreg2()
+		t.Fatal("expected duplicate register to fail with error, got nil")
+	}
+	if ch2 != nil {
+		t.Errorf("expected nil channel on duplicate register, got %v", ch2)
+	}
+
+	// First channel must remain open and routeable
+	routed := m.RouteResponse(&protocol.Envelope{RequestID: "req-dup"})
+	if !routed {
+		t.Fatal("expected message to route to first channel")
+	}
+
+	select {
+	case msg, ok := <-ch1:
+		if !ok || msg == nil {
+			t.Fatal("expected valid message on first channel")
+		}
+	default:
+		t.Fatal("expected message ready on first channel")
+	}
+}
+
+func TestMultiplexer_UnregisterIdentityBound(t *testing.T) {
+	m := NewMultiplexer()
+	ch1, unreg1, err := m.Register("req-reuse")
+	if err != nil {
+		t.Fatalf("unexpected register error: %v", err)
+	}
+	_ = ch1
+
+	// Unregister first waiter
+	unreg1()
+
+	// Register second waiter with same ID
+	ch2, unreg2, err := m.Register("req-reuse")
+	if err != nil {
+		t.Fatalf("second register failed: %v", err)
+	}
+	defer unreg2()
+
+	// Calling stale unreg1 again must NOT delete or close ch2
+	unreg1()
+
+	select {
+	case _, ok := <-ch2:
+		if !ok {
+			t.Fatal("stale unregister closed the second channel")
+		}
+	default:
+		// Expected: channel is still open
+	}
+
+	// Channel 2 should still be routable
+	routed := m.RouteResponse(&protocol.Envelope{RequestID: "req-reuse"})
+	if !routed {
+		t.Fatal("expected RouteResponse to succeed for second channel")
+	}
+
+	select {
+	case msg, ok := <-ch2:
+		if !ok || msg == nil {
+			t.Fatal("expected valid message on second channel")
+		}
+	default:
+		t.Fatal("expected message ready on second channel")
 	}
 }
 
@@ -416,7 +499,10 @@ func TestHub_ReadLimit_LargePayload(t *testing.T) {
 
 	// Register a request ID in the executor conn multiplexer
 	reqID := "req-large-payload-1"
-	ch, unreg := execConn.mux.Register(reqID)
+	ch, unreg, err := execConn.mux.Register(reqID)
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
 	defer unreg()
 
 	// Construct a >32 KiB (64 KiB) response payload
