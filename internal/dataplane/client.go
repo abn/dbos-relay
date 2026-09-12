@@ -81,23 +81,90 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 
 	case *protocol.ListWorkflowsRequest:
 		var opts []dbos.ListWorkflowsOption
+		if len(req.Body.WorkflowUUIDs) > 0 {
+			opts = append(opts, dbos.WithFilterWorkflowIDs(req.Body.WorkflowUUIDs...))
+		}
+		if len(req.Body.WorkflowName) > 0 {
+			opts = append(opts, dbos.WithFilterName(req.Body.WorkflowName...))
+		}
+		if len(req.Body.AuthenticatedUser) > 0 {
+			opts = append(opts, dbos.WithFilterUser(req.Body.AuthenticatedUser...))
+		}
+		if req.Body.StartTime != nil {
+			opts = append(opts, dbos.WithFilterCreatedAfter(*req.Body.StartTime))
+		}
+		if req.Body.EndTime != nil {
+			opts = append(opts, dbos.WithFilterCreatedBefore(*req.Body.EndTime))
+		}
+		if req.Body.CompletedAfter != nil {
+			opts = append(opts, dbos.WithFilterCompletedAfter(*req.Body.CompletedAfter))
+		}
+		if req.Body.CompletedBefore != nil {
+			opts = append(opts, dbos.WithFilterCompletedBefore(*req.Body.CompletedBefore))
+		}
+		if req.Body.DequeuedAfter != nil {
+			opts = append(opts, dbos.WithFilterDequeuedAfter(*req.Body.DequeuedAfter))
+		}
+		if req.Body.DequeuedBefore != nil {
+			opts = append(opts, dbos.WithFilterDequeuedBefore(*req.Body.DequeuedBefore))
+		}
+		if len(req.Body.Status) > 0 {
+			var statuses []dbos.WorkflowStatusType
+			for _, s := range req.Body.Status {
+				statuses = append(statuses, dbos.WorkflowStatusType(s))
+			}
+			opts = append(opts, dbos.WithFilterStatus(statuses...))
+		}
+		if len(req.Body.ApplicationVersion) > 0 {
+			opts = append(opts, dbos.WithFilterAppVersion(req.Body.ApplicationVersion...))
+		}
+		if len(req.Body.ForkedFrom) > 0 {
+			opts = append(opts, dbos.WithFilterForkedFrom(req.Body.ForkedFrom...))
+		}
+		if len(req.Body.ParentWorkflowID) > 0 {
+			opts = append(opts, dbos.WithFilterParentWorkflowID(req.Body.ParentWorkflowID...))
+		}
+		if req.Body.WasForkedFrom != nil {
+			opts = append(opts, dbos.WithFilterWasForkedFrom(*req.Body.WasForkedFrom))
+		}
+		if req.Body.HasParent != nil {
+			opts = append(opts, dbos.WithFilterHasParent(*req.Body.HasParent))
+		}
+		if len(req.Body.QueueName) > 0 {
+			opts = append(opts, dbos.WithFilterQueueName(req.Body.QueueName...))
+		}
+		if req.Body.Limit != nil {
+			opts = append(opts, dbos.WithFilterLimit(*req.Body.Limit))
+		}
+		if req.Body.Offset != nil {
+			opts = append(opts, dbos.WithFilterOffset(*req.Body.Offset))
+		}
+		if req.Body.SortDesc {
+			opts = append(opts, dbos.WithFilterSortDesc())
+		}
+		if len(req.Body.WorkflowIDPrefix) > 0 {
+			opts = append(opts, dbos.WithFilterWorkflowIDPrefix(req.Body.WorkflowIDPrefix...))
+		}
 		if req.Body.LoadInput {
 			opts = append(opts, dbos.WithFilterLoadInput(true))
 		}
 		if req.Body.LoadOutput {
 			opts = append(opts, dbos.WithFilterLoadOutput(true))
 		}
-		if len(req.Body.WorkflowUUIDs) > 0 {
-			opts = append(opts, dbos.WithFilterWorkflowIDs(req.Body.WorkflowUUIDs...))
+		if len(req.Body.ExecutorID) > 0 {
+			opts = append(opts, dbos.WithFilterExecutorIDs(req.Body.ExecutorID...))
 		}
-		if req.Body.Limit != nil && *req.Body.Limit > 0 {
-			opts = append(opts, dbos.WithFilterLimit(*req.Body.Limit))
+		if req.Body.QueuesOnly {
+			opts = append(opts, dbos.WithFilterQueuesOnly())
 		}
-		if req.Body.Offset != nil && *req.Body.Offset > 0 {
-			opts = append(opts, dbos.WithFilterOffset(*req.Body.Offset))
+		if req.Body.Attributes != nil {
+			opts = append(opts, dbos.WithFilterAttributes(req.Body.Attributes))
 		}
-		if req.Body.SortDesc {
-			opts = append(opts, dbos.WithFilterSortDesc())
+		if len(req.Body.ScheduleName) > 0 {
+			opts = append(opts, dbos.WithFilterScheduleName(req.Body.ScheduleName...))
+		}
+		if len(req.Body.ApplicationName) > 0 {
+			opts = append(opts, dbos.WithFilterApplicationName(req.Body.ApplicationName...))
 		}
 		statuses, err := c.client.ListWorkflows(c.client, opts...)
 		if err != nil {
