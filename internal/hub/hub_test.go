@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +109,7 @@ func TestHub_HandshakeOrder(t *testing.T) {
 	cfg := &config.Config{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
 
 	server := httptest.NewServer(h)
 	defer server.Close()
@@ -117,9 +119,12 @@ func TestHub_HandshakeOrder(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
 		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
 	}
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
 
@@ -173,5 +178,64 @@ func TestHub_HandshakeOrder(t *testing.T) {
 	}
 	if !found && len(connected) == 0 {
 		t.Fatalf("expected executor test-exec-1 to be registered in hub registry")
+	}
+}
+
+func TestHub_HandshakeTimeout(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+	h.SetHandshakeTimeout(100 * time.Millisecond)
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	// Open 25 upgrades that stall (never send executor_info)
+	const numClients = 25
+	conns := make([]*websocket.Conn, numClients)
+	ctx := context.Background()
+
+	for i := 0; i < numClients; i++ {
+		c, resp, err := websocket.Dial(ctx, wsURL, nil)
+		if err != nil {
+			t.Fatalf("failed to dial client %d: %v", i, err)
+		}
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		conns[i] = c
+		defer func(conn *websocket.Conn) { _ = conn.Close(websocket.StatusNormalClosure, "") }(c)
+	}
+
+	// Wait past the handshake timeout
+	time.Sleep(300 * time.Millisecond)
+
+	// Assert all 25 sockets are closed by the server
+	for i, c := range conns {
+		readCtx, readCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		closed := false
+		for {
+			_, _, err := c.Read(readCtx)
+			if err != nil {
+				closed = true
+				break
+			}
+		}
+		readCancel()
+		if !closed {
+			t.Errorf("expected client %d connection to be closed by server", i)
+		}
+	}
+
+	// Assert runtime stack has no Hub.ServeHTTP frames lingering
+	buf := make([]byte, 1024*1024)
+	n := runtime.Stack(buf, true)
+	stack := string(buf[:n])
+	if strings.Contains(stack, "(*Hub).ServeHTTP") {
+		t.Errorf("expected no lingering Hub.ServeHTTP goroutines, but found in stack: %s", stack)
 	}
 }

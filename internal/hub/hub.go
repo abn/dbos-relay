@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -32,14 +33,15 @@ type HubStore interface {
 }
 
 type Hub struct {
-	store    HubStore
-	registry *Registry
-	config   *config.Config
-	logger   *slog.Logger
-	liveness LivenessTracker
-	wg       sync.WaitGroup
-	ctx      context.Context
-	cancel   context.CancelFunc
+	store            HubStore
+	registry         *Registry
+	config           *config.Config
+	logger           *slog.Logger
+	liveness         LivenessTracker
+	handshakeTimeout time.Duration
+	wg               sync.WaitGroup
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
@@ -51,13 +53,19 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 		hs = sp.Queries()
 	}
 	return &Hub{
-		store:    hs,
-		registry: NewRegistry(hs),
-		config:   cfg,
-		logger:   logger,
-		ctx:      ctx,
-		cancel:   cancel,
+		store:            hs,
+		registry:         NewRegistry(hs),
+		config:           cfg,
+		logger:           logger,
+		handshakeTimeout: 5 * time.Second,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
+}
+
+// SetHandshakeTimeout sets the handshake timeout (useful in tests).
+func (h *Hub) SetHandshakeTimeout(d time.Duration) {
+	h.handshakeTimeout = d
 }
 
 // SetLivenessTracker sets the liveness manager to receive executor lifecycle events.
@@ -91,6 +99,20 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	timeout := h.handshakeTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	handshakeCtx, cancelHandshake := context.WithTimeout(r.Context(), timeout)
+	defer cancelHandshake()
+
+	registered := false
+	defer func() {
+		if !registered {
+			_ = conn.Close(websocket.StatusPolicyViolation, "handshake failed or timed out")
+		}
+	}()
+
 	// Send executor_info request to prompt executor registration per D7 protocol
 	infoReq := &protocol.ExecutorInfoRequest{
 		Envelope: protocol.Envelope{
@@ -99,14 +121,16 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	if reqData, err := protocol.Encode(infoReq); err == nil {
-		_ = conn.Write(r.Context(), websocket.MessageText, reqData)
+		if err := conn.Write(handshakeCtx, websocket.MessageText, reqData); err != nil {
+			h.logger.Error("failed to write executor_info prompt", "error", err)
+			return
+		}
 	}
 
 	// First message must be executor info
-	typ, data, err := conn.Read(r.Context())
+	typ, data, err := conn.Read(handshakeCtx)
 	if err != nil {
 		h.logger.Error("failed to read executor info", "error", err)
-		_ = conn.Close(websocket.StatusPolicyViolation, "missing executor info")
 		return
 	}
 	if typ != websocket.MessageText {
@@ -179,6 +203,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	execConn = NewExecutorConn(conn, appID, executorID, appName, appVersion, hostname, metadata, mux, unregister)
 
 	h.registry.Register(execConn)
+	registered = true
 	if h.liveness != nil {
 		_ = h.liveness.OnConnect(r.Context(), appID, executorID, appVersion)
 	}
