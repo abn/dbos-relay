@@ -19,6 +19,7 @@ import (
 	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store"
 	storegen "github.com/abn/relay/internal/store/gen"
+	"github.com/abn/relay/internal/testdb"
 )
 
 func TestConformance_EndToEndSuite(t *testing.T) {
@@ -38,7 +39,10 @@ func TestConformance_EndToEndSuite(t *testing.T) {
 
 	if targetURL == "" {
 		// Run in-process with a real test database
-		dbURL := os.Getenv("RELAY_TEST_DATABASE_URL")
+		dbURL, err := testdb.URL("conformance")
+		if err != nil {
+			t.Fatalf("failed to derive test db url: %v", err)
+		}
 		if dbURL == "" {
 			t.Skip("skipping in-process e2e conformance: RELAY_TEST_DATABASE_URL is not set")
 		}

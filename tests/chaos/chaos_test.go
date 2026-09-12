@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +21,7 @@ import (
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
+	"github.com/abn/relay/internal/testdb"
 )
 
 type memoryStore struct {
@@ -368,7 +368,10 @@ func (m *mockTransportChaos) SendRecovery(ctx context.Context, appID pgtype.UUID
 }
 
 func TestChaos_LiveDatabase_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
-	dbURL := os.Getenv("RELAY_TEST_DATABASE_URL")
+	dbURL, err := testdb.URL("chaos")
+	if err != nil {
+		t.Fatalf("failed to derive test db url: %v", err)
+	}
 	if dbURL == "" {
 		t.Skip("RELAY_TEST_DATABASE_URL is not set")
 	}

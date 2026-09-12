@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
+	"github.com/abn/relay/internal/testdb"
 )
 
 type mockConsistencyStore struct {
@@ -151,7 +151,10 @@ func ptr(s string) *string {
 }
 
 func TestRouter_LiveDatabase_DataPlaneFallback(t *testing.T) {
-	dbURL := os.Getenv("RELAY_TEST_DATABASE_URL")
+	dbURL, err := testdb.URL("router")
+	if err != nil {
+		t.Fatalf("failed to derive test db url: %v", err)
+	}
 	if dbURL == "" {
 		t.Skip("RELAY_TEST_DATABASE_URL is not set")
 	}

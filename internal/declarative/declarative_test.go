@@ -2,12 +2,12 @@ package declarative_test
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/abn/relay/internal/declarative"
 	"github.com/abn/relay/internal/store"
+	"github.com/abn/relay/internal/testdb"
 )
 
 const sampleValidYAML = `version: "1"
@@ -182,7 +182,10 @@ func TestPlan_SummaryAndString(t *testing.T) {
 }
 
 func TestDiffAndApply_LiveDB(t *testing.T) {
-	url := os.Getenv("RELAY_TEST_DATABASE_URL")
+	url, err := testdb.URL("declarative")
+	if err != nil {
+		t.Fatalf("deriving test database url: %v", err)
+	}
 	if url == "" {
 		t.Skip("RELAY_TEST_DATABASE_URL is not set")
 	}
