@@ -80,7 +80,7 @@ Wire `ScheduleOutput` maps to OpenAPI `#/components/schemas/Schedule`:
 * `ScheduleID` -> `id`
 * `ScheduleName` -> `name`
 * `WorkflowName` -> `workflowName`
-* `WorkflowClassName` -> `workflow_className`
+* `WorkflowClassName` -> `workflowClassName`
 * `Schedule` -> `schedule`
 * `Status` -> `status`
 * `Context` -> `context`
