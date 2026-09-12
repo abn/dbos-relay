@@ -57,12 +57,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	report := &Report{
 		TargetURL: r.httpURL,
 		Timestamp: startTime,
-		Batteries: make([]BatteryResult, 0, 8),
-		AllPassed: true,
+		Batteries:     make([]BatteryResult, 0, 8),
+		AllPassed:     true,
+		SyntheticPeer: true,
 	}
 
 	r.logf("Starting DBOS Conductor Conformance Test Suite against %s\n", r.httpURL)
-	r.logf("Organization: %s | Application: %s\n\n", r.cfg.OrgName, r.cfg.AppName)
+	r.logf("Organization: %s | Application: %s\n", r.cfg.OrgName, r.cfg.AppName)
+	r.logf("Execution Mode: Synthetic / Fake Executor\n\n")
 
 	batteries := []struct {
 		id    int

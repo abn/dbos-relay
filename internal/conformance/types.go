@@ -42,8 +42,9 @@ type Report struct {
 	TotalPass int             `json:"total_pass"`
 	TotalFail int             `json:"total_fail"`
 	TotalSkip int             `json:"total_skip"`
-	AllPassed bool            `json:"all_passed"`
-	Duration  time.Duration   `json:"duration"`
+	AllPassed     bool            `json:"all_passed"`
+	Duration      time.Duration   `json:"duration"`
+	SyntheticPeer bool            `json:"synthetic_peer"`
 }
 
 // FormatMarkdown outputs a clean, readable conformance scorecard in Markdown.
@@ -53,6 +54,9 @@ func (r *Report) FormatMarkdown(w io.Writer) error {
 	b.WriteString(fmt.Sprintf("- **Target URL**: `%s`\n", r.TargetURL))
 	b.WriteString(fmt.Sprintf("- **Timestamp**: %s\n", r.Timestamp.UTC().Format(time.RFC3339)))
 	b.WriteString(fmt.Sprintf("- **Duration**: %s\n", r.Duration.Round(time.Millisecond)))
+	if r.SyntheticPeer {
+		b.WriteString("- **Execution Mode**: Synthetic / Fake Executor\n")
+	}
 	if r.AllPassed {
 		b.WriteString("- **Overall Status**: ✅ **CONFORMANT (100% PASS)**\n\n")
 	} else {

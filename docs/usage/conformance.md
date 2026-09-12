@@ -7,7 +7,8 @@ type: HowTo
 Relay includes an automated conformance test suite that certifies whether a target
 server adheres to the DBOS Conductor protocol and REST specification. The suite can
 run either in-process during local testing or as a blackbox client against any running
-Conductor or Relay endpoint.
+Conductor or Relay endpoint. Note that the conformance suite utilizes a synthetic,
+fake executor peer to simulate SDK connectivity during the tests.
 
 ## Batteries tested
 

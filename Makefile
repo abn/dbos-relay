@@ -46,7 +46,7 @@ vet: lint/sdk-isolation lint/examples-isolation ## Run static analysis
 	golangci-lint run
 
 lint/sdk-isolation: ## Verify tests/verifysdk imports no fakes, mocks, or fake clock packages
-	@if grep -rnE 'github\.com/abn/relay/internal/.*(fake|mock|clock)' tests/verifysdk/ 2>/dev/null; then \
+	@if go list -deps ./tests/verifysdk/... | grep -E 'github\.com/abn/relay/internal/.*(fake|mock|clock)'; then \
 		echo "ERROR: tests/verifysdk must not import fakes, mocks, or clock packages from internal/" >&2; \
 		exit 1; \
 	fi
