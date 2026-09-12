@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -18,6 +19,7 @@ type SDKClient struct {
 	client dbos.Client
 	cancel context.CancelFunc
 }
+
 
 // NewSDKClient initializes an SDKClient backed by dbos.NewClient.
 // Provenance: dbos-inc/dbos-transact-golang (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8, dbos/dbos.go:742)
@@ -38,8 +40,23 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 		appName = "relay-dataplane"
 	}
 
+	u, err := url.Parse(cfg.DatabaseURL)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("invalid database URL: %w", err)
+	}
+	q := u.Query()
+	if cfg.MaxConnections > 0 {
+		q.Set("pool_max_conns", strconv.Itoa(cfg.MaxConnections))
+	}
+	if timeout > 0 {
+		q.Set("statement_timeout", strconv.FormatInt(timeout.Milliseconds(), 10))
+	}
+	u.RawQuery = q.Encode()
+	dbURL := u.String()
+
 	client, err := dbos.NewClient(ctx, dbos.ClientConfig{
-		DatabaseURL:            cfg.DatabaseURL,
+		DatabaseURL:            dbURL,
 		AppName:                appName,
 		SystemDBStartupTimeout: timeout,
 	})
@@ -57,9 +74,10 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 
 // Dispatch executes v1 data-plane operations against the application system database.
 func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protocol.Message, error) {
+	cli := dbos.From(c.client.(dbos.Context), ctx)
 	switch req := msg.(type) {
 	case *protocol.GetWorkflowRequest:
-		statuses, err := c.client.ListWorkflows(c.client,
+		statuses, err := cli.ListWorkflows(cli,
 			dbos.WithFilterWorkflowIDs(req.WorkflowID),
 			dbos.WithFilterLoadInput(true),
 			dbos.WithFilterLoadOutput(true),
@@ -166,7 +184,7 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if len(req.Body.ApplicationName) > 0 {
 			opts = append(opts, dbos.WithFilterApplicationName(req.Body.ApplicationName...))
 		}
-		statuses, err := c.client.ListWorkflows(c.client, opts...)
+		statuses, err := cli.ListWorkflows(cli, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list workflows: %w", err)
 		}
@@ -189,7 +207,7 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if req.Limit != nil && *req.Limit > 0 {
 			stepOpts = append(stepOpts, dbos.WithStepsLimit(*req.Limit))
 		}
-		steps, err := c.client.GetWorkflowSteps(c.client, req.WorkflowID, stepOpts...)
+		steps, err := cli.GetWorkflowSteps(cli, req.WorkflowID, stepOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get workflow steps for %s: %w", req.WorkflowID, err)
 		}
@@ -206,7 +224,7 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		}, nil
 
 	case *protocol.CancelWorkflowRequest:
-		if err := c.client.CancelWorkflow(c.client, req.WorkflowID); err != nil {
+		if err := cli.CancelWorkflow(cli, req.WorkflowID); err != nil {
 			return nil, fmt.Errorf("failed to cancel workflow %s: %w", req.WorkflowID, err)
 		}
 		return &protocol.CancelWorkflowResponse{
@@ -218,7 +236,7 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		}, nil
 
 	case *protocol.ResumeWorkflowRequest:
-		if _, err := c.client.ResumeWorkflow(c.client, req.WorkflowID); err != nil {
+		if _, err := cli.ResumeWorkflow(cli, req.WorkflowID); err != nil {
 			return nil, fmt.Errorf("failed to resume workflow %s: %w", req.WorkflowID, err)
 		}
 		return &protocol.ResumeWorkflowResponse{
@@ -247,7 +265,7 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if req.Body.ApplicationVersion != nil {
 			input.ApplicationVersion = *req.Body.ApplicationVersion
 		}
-		handle, err := c.client.ForkWorkflow(c.client, input)
+		handle, err := cli.ForkWorkflow(cli, input)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fork workflow %s: %w", req.Body.WorkflowID, err)
 		}
