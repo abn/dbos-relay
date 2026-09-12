@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/abn/relay/internal/dataplane"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/store/gen"
 )
@@ -166,6 +167,9 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 			if dpErr == nil {
 				SetServedFrom(ctx, "database")
 				return dpRes, nil
+			}
+			if errors.Is(dpErr, dataplane.ErrUnsupportedOperation) {
+				return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, dpErr)
 			}
 			return nil, fmt.Errorf("data-plane fallback failed: %w", dpErr)
 		}

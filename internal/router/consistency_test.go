@@ -146,6 +146,53 @@ func TestRouter_DataPlaneFallbackAndConsistency(t *testing.T) {
 	}
 }
 
+func TestRouter_DataPlaneFallback_UnsupportedOperationReturns503(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{2, 3, 4, 5}, Valid: true}
+	orgID := pgtype.UUID{Bytes: [16]byte{6, 7, 8, 9}, Valid: true}
+
+	store := &mockConsistencyStore{
+		org: gen.Organisation{ID: orgID, Name: "acme"},
+		app: gen.Application{ID: appID, Name: "billing", OrganisationID: orgID},
+	}
+
+	hub := &mockConsistencyHub{
+		onDispatch: func(ctx context.Context, aID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	}
+	r := router.New(store, hub)
+
+	mockClient := &mockDataPlaneClient{
+		onDispatch: func(ctx context.Context, msg protocol.Message) (protocol.Message, error) {
+			return nil, dataplane.ErrUnsupportedOperation
+		},
+	}
+	dpMgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return mockClient, nil
+	})
+	if err := dpMgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://localhost:5432/test",
+		Mode:          dataplane.ModeReadWrite,
+	}); err != nil {
+		t.Fatalf("RegisterApp failed: %v", err)
+	}
+	r.SetDataPlane(dpMgr)
+
+	reqMsg := &protocol.GetWorkflowAggregatesRequest{
+		Envelope: protocol.Envelope{Type: protocol.MessageTypeGetWorkflowAggregates, RequestID: "req-agg-fail"},
+	}
+
+	ctx := context.Background()
+	_, err := r.Dispatch(ctx, "acme", "billing", reqMsg)
+	if err == nil {
+		t.Fatalf("expected dispatch error, got nil")
+	}
+	if !errors.Is(err, router.ErrNoLiveExecutor) {
+		t.Fatalf("expected ErrNoLiveExecutor for unsupported fallback operation, got %v", err)
+	}
+}
+
 func ptr(s string) *string {
 	return &s
 }
