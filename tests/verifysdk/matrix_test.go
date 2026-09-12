@@ -414,130 +414,65 @@ func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
 
 	var passedOps, totalOps int
 
-	// 1. App get
-	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s", relayBaseURL, orgName, info.AppName), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
+	doProbe := func(name, method, url, body string, expectedStatus int) {
+		t.Helper()
+		totalOps++
+		var req *http.Request
+		if body != "" {
+			req, _ = http.NewRequest(method, url, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req, _ = http.NewRequest(method, url, nil)
+		}
+		req.Header.Set("Authorization", authHeader)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Errorf("probe %s failed: %v", name, err)
+			return
+		}
 		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
+		if resp.StatusCode == expectedStatus {
 			passedOps++
+		} else {
+			t.Errorf("probe %s expected %d, got %d", name, expectedStatus, resp.StatusCode)
 		}
 	}
+
+	// 1. App get
+	doProbe("App get", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s", relayBaseURL, orgName, info.AppName), "", http.StatusOK)
 
 	// 2. App executors
-	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", relayBaseURL, orgName, info.AppName), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			passedOps++
-		}
-	}
+	doProbe("App executors", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", relayBaseURL, orgName, info.AppName), "", http.StatusOK)
 
 	// 3. Workflow search
-	searchBody := `{"limit": 10}`
-	req, _ = http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/search", relayBaseURL, orgName, info.AppName), strings.NewReader(searchBody))
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Content-Type", "application/json")
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			passedOps++
-		}
-	}
+	doProbe("Workflow search", http.MethodPost, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/search", relayBaseURL, orgName, info.AppName), `{"limit": 10}`, http.StatusOK)
 
 	// 4. Workflow get
 	if wfID != "" {
-		req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, info.AppName, wfID), nil)
-		req.Header.Set("Authorization", authHeader)
-		totalOps++
-		if resp, err := client.Do(req); err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				passedOps++
-			}
-		}
+		doProbe("Workflow get", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, info.AppName, wfID), "", http.StatusOK)
 
 		// 5. Workflow steps
-		req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/steps", relayBaseURL, orgName, info.AppName, wfID), nil)
-		req.Header.Set("Authorization", authHeader)
-		totalOps++
-		if resp, err := client.Do(req); err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				passedOps++
-			}
-		}
+		doProbe("Workflow steps", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/steps", relayBaseURL, orgName, info.AppName, wfID), "", http.StatusOK)
 
 		// 6. Workflow events
-		req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/events", relayBaseURL, orgName, info.AppName, wfID), nil)
-		req.Header.Set("Authorization", authHeader)
-		totalOps++
-		if resp, err := client.Do(req); err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				passedOps++
-			}
-		}
+		doProbe("Workflow events", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/events", relayBaseURL, orgName, info.AppName, wfID), "", http.StatusOK)
 	}
 
 	// 7. Queues list
-	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/queues", relayBaseURL, orgName, info.AppName), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			passedOps++
-		}
-	}
+	doProbe("Queues list", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/queues", relayBaseURL, orgName, info.AppName), "", http.StatusOK)
 
 	// 8. Schedules list
-	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/schedules", relayBaseURL, orgName, info.AppName), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			passedOps++
-		}
-	}
+	doProbe("Schedules list", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/apps/%s/schedules", relayBaseURL, orgName, info.AppName), "", http.StatusOK)
 
 	// 9. Permissions list
-	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/permissions", relayBaseURL, orgName), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			passedOps++
-		}
-	}
+	doProbe("Permissions list", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/permissions", relayBaseURL, orgName), "", http.StatusOK)
 
 	// 10. API keys list
-	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/tokens", relayBaseURL, orgName), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			passedOps++
-		}
-	}
+	doProbe("API keys list", http.MethodGet, fmt.Sprintf("%s/v2/orgs/%s/tokens", relayBaseURL, orgName), "", http.StatusOK)
 
-	// 11. Identity bypass (whoami returns 404 problem in no-auth mode)
-	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v2/users/me", relayBaseURL), nil)
-	req.Header.Set("Authorization", authHeader)
-	totalOps++
-	if resp, err := client.Do(req); err == nil {
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusNotFound {
-			passedOps++
-		}
-	}
+	// 11. Identity bypass
+	doProbe("Identity bypass", http.MethodGet, fmt.Sprintf("%s/v2/users/me", relayBaseURL), "", http.StatusNotFound)
 
 	return fmt.Sprintf("%d/%d D5 REST endpoints verified conformant", passedOps, totalOps)
 }
