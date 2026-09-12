@@ -6,6 +6,10 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Added per-package test database helper in `internal/testdb` and serialized test execution in Makefile to isolate concurrent database access.
+* **Update**: Configured PostgreSQL service user in test-suite workflow to match test connection credentials.
+* **Update**: Added `RELAY_VERIFY_SDK=1` environment gate and full cluster container checks to multi-SDK verification matrix.
+* **Update**: Added dashboard JavaScript bundle syntax verification step to code quality pipeline.
 * **Update**: Documented external alerting notification channels (Webhook with timestamped HMAC-SHA256 signatures, Slack, PagerDuty) under Relay control plane extensions in [Metrics, alerting, and HA peer forwarding](discovery/D8-metrics-alerting.md).
 * **Update**: Updated Java SDK verification status in [Multi-SDK verification matrix](testing/verify-sdk.md) to required for socket, presence, chaos, and live fork cells (Cells 1, 2, 3, 5, and 7) backed by dual-executor container orchestration and real timer failover, while documenting upstream schema version divergence (v19 vs v107) for data-plane cells (Cells 4 and 6).
 
