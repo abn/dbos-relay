@@ -6,6 +6,10 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Enforced WebSocket read limits, handshake timeouts, and error message rejections in connection hub.
+* **Update**: Implemented heartbeat pong deadlines, write mutex decoupling, and executor lease ownership renewal.
+* **Update**: Hardened connection lifecycle with idempotent closure, identity-aware unregistration, and registry drain on graceful shutdown.
+* **Update**: Balanced executor dispatch selection across replicas and added automatic request retry on executor write failure.
 * **Update**: Documented synthetic executor disclosure in conformance test reporting and CLI usage guide.
 * **Update**: Wired timeout configuration into conformance HTTP client and per-battery execution context.
 * **Update**: Hardened conformance test suite scoring logic and added workflow mutation identifier assertions.
