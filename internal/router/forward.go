@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,6 +31,8 @@ const (
 	HeaderHop = "X-Relay-Forward-Hop"
 	// HeaderDeadline is the context deadline header formatted in RFC 3339.
 	HeaderDeadline = "X-Relay-Forward-Deadline"
+	// HeaderNonce is the replay-protection nonce header.
+	HeaderNonce = "X-Relay-Forward-Nonce"
 )
 
 var (
@@ -36,20 +40,58 @@ var (
 	ErrExpiredTimestamp = errors.New("expired forward timestamp")
 	ErrLoopDetected     = errors.New("forward loop detected")
 	ErrMissingHeaders   = errors.New("missing forward authentication headers")
+	ErrExpiredDeadline  = errors.New("expired forward deadline")
+	ErrReplayedNonce    = errors.New("replayed forward nonce")
 )
+
+type nonceCache struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+}
+
+func newNonceCache() *nonceCache {
+	return &nonceCache{seen: make(map[string]time.Time)}
+}
+
+func (c *nonceCache) checkAndRecord(nonce string, now time.Time, ttl time.Duration) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for k, t := range c.seen {
+		if now.Sub(t) > ttl {
+			delete(c.seen, k)
+		}
+	}
+
+	if _, exists := c.seen[nonce]; exists {
+		return false
+	}
+	c.seen[nonce] = now
+	return true
+}
 
 // SignRequest calculates and attaches HMAC authentication headers to an outgoing forward request.
 func SignRequest(req *http.Request, body []byte, secret []byte, hop int, deadline time.Time) {
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	hopStr := strconv.Itoa(hop)
 
-	req.Header.Set(HeaderTimestamp, ts)
-	req.Header.Set(HeaderHop, hopStr)
-	if !deadline.IsZero() {
-		req.Header.Set(HeaderDeadline, deadline.Format(time.RFC3339Nano))
+	nonce := req.Header.Get(HeaderNonce)
+	if nonce == "" {
+		raw := make([]byte, 16)
+		_, _ = rand.Read(raw)
+		nonce = hex.EncodeToString(raw)
+		req.Header.Set(HeaderNonce, nonce)
 	}
 
-	payload := buildSignaturePayload(ts, hopStr, req.Method, req.URL.RequestURI(), body)
+	req.Header.Set(HeaderTimestamp, ts)
+	req.Header.Set(HeaderHop, hopStr)
+	deadlineStr := ""
+	if !deadline.IsZero() {
+		deadlineStr = deadline.Format(time.RFC3339Nano)
+		req.Header.Set(HeaderDeadline, deadlineStr)
+	}
+
+	payload := buildSignaturePayload(ts, hopStr, req.Method, req.URL.RequestURI(), nonce, deadlineStr, body)
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(payload)
 	req.Header.Set(HeaderSignature, hex.EncodeToString(mac.Sum(nil)))
@@ -57,12 +99,17 @@ func SignRequest(req *http.Request, body []byte, secret []byte, hop int, deadlin
 
 // VerifyRequest verifies the HMAC signature, timestamp drift, and hop counter of an incoming forward request.
 func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.Duration) (int, time.Time, error) {
+	if len(secret) == 0 {
+		return 0, time.Time{}, ErrInvalidSignature
+	}
+
 	sig := req.Header.Get(HeaderSignature)
 	tsStr := req.Header.Get(HeaderTimestamp)
 	hopStr := req.Header.Get(HeaderHop)
+	nonce := req.Header.Get(HeaderNonce)
 	deadlineStr := req.Header.Get(HeaderDeadline)
 
-	if sig == "" || tsStr == "" || hopStr == "" {
+	if sig == "" || tsStr == "" || hopStr == "" || nonce == "" {
 		return 0, time.Time{}, ErrMissingHeaders
 	}
 
@@ -71,8 +118,8 @@ func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.
 		return 0, time.Time{}, fmt.Errorf("invalid timestamp header: %w", err)
 	}
 
-	now := time.Now().Unix()
-	drift := time.Duration(abs(now-ts)) * time.Second
+	now := time.Now()
+	drift := time.Duration(abs(now.Unix()-ts)) * time.Second
 	if drift > maxDrift {
 		return 0, time.Time{}, ErrExpiredTimestamp
 	}
@@ -85,7 +132,19 @@ func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.
 		return hop, time.Time{}, ErrLoopDetected
 	}
 
-	payload := buildSignaturePayload(tsStr, hopStr, req.Method, req.URL.RequestURI(), body)
+	var deadline time.Time
+	if deadlineStr != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, deadlineStr)
+		if err != nil {
+			return 0, time.Time{}, fmt.Errorf("invalid deadline header: %w", err)
+		}
+		if !parsed.IsZero() && now.After(parsed) {
+			return 0, time.Time{}, ErrExpiredDeadline
+		}
+		deadline = parsed
+	}
+
+	payload := buildSignaturePayload(tsStr, hopStr, req.Method, req.URL.RequestURI(), nonce, deadlineStr, body)
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(payload)
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
@@ -94,19 +153,11 @@ func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.
 		return 0, time.Time{}, ErrInvalidSignature
 	}
 
-	var deadline time.Time
-	if deadlineStr != "" {
-		parsed, err := time.Parse(time.RFC3339Nano, deadlineStr)
-		if err == nil {
-			deadline = parsed
-		}
-	}
-
 	return hop, deadline, nil
 }
 
-func buildSignaturePayload(ts, hop, method, uri string, body []byte) []byte {
-	return []byte(fmt.Sprintf("%s\n%s\n%s\n%s\n%s", ts, hop, method, uri, string(body)))
+func buildSignaturePayload(ts, hop, method, uri, nonce, deadline string, body []byte) []byte {
+	return []byte(fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s\n%s", ts, hop, method, uri, nonce, deadline, string(body)))
 }
 
 func abs(n int64) int64 {
@@ -184,9 +235,16 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 	if maxDrift <= 0 {
 		maxDrift = 30 * time.Second
 	}
+	cache := newNonceCache()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if len(secret) == 0 {
+			http.Error(w, "peer forwarding not configured", http.StatusUnauthorized)
 			return
 		}
 
@@ -203,12 +261,14 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 			return
 		}
 
-		// Verify headers before reading body
+		// Cheap header rejections before reading body
 		sig := r.Header.Get(HeaderSignature)
 		tsStr := r.Header.Get(HeaderTimestamp)
 		hopStr := r.Header.Get(HeaderHop)
+		nonce := r.Header.Get(HeaderNonce)
+		deadlineStr := r.Header.Get(HeaderDeadline)
 
-		if sig == "" || tsStr == "" || hopStr == "" {
+		if sig == "" || tsStr == "" || hopStr == "" || nonce == "" {
 			http.Error(w, ErrMissingHeaders.Error(), http.StatusUnauthorized)
 			return
 		}
@@ -219,15 +279,51 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 			return
 		}
 
-		now := time.Now().Unix()
-		drift := time.Duration(abs(now-ts)) * time.Second
+		now := time.Now()
+		drift := time.Duration(abs(now.Unix()-ts)) * time.Second
 		if drift > maxDrift {
 			http.Error(w, ErrExpiredTimestamp.Error(), http.StatusUnauthorized)
 			return
 		}
 
+		hop, err := strconv.Atoi(hopStr)
+		if err != nil {
+			http.Error(w, "invalid hop header", http.StatusUnauthorized)
+			return
+		}
+		if hop >= 1 {
+			http.Error(w, ErrLoopDetected.Error(), http.StatusConflict)
+			return
+		}
+
+		if deadlineStr != "" {
+			dl, err := time.Parse(time.RFC3339Nano, deadlineStr)
+			if err != nil {
+				http.Error(w, "invalid deadline header", http.StatusUnauthorized)
+				return
+			}
+			if !dl.IsZero() && now.After(dl) {
+				http.Error(w, ErrExpiredDeadline.Error(), http.StatusUnauthorized)
+				return
+			}
+		}
+
+		// Replay check using nonce cache
+		if !cache.checkAndRecord(nonce, now, maxDrift) {
+			http.Error(w, ErrReplayedNonce.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		// Limit body read to 10 MiB with http.MaxBytesReader
+		const maxForwardBodyBytes = 10 * 1024 * 1024
+		r.Body = http.MaxBytesReader(w, r.Body, maxForwardBodyBytes)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			http.Error(w, "failed to read body", http.StatusBadRequest)
 			return
 		}

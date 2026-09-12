@@ -23,5 +23,23 @@ func CatalogPermissions() []string {
 }
 
 // RolePermissions returns default permissions granted to the specified role.
+func RolePermissions(role string) []string {
+	switch role {
+	case RoleAdmin, RoleOperator:
+		return []string{PermApplicationRead, PermApplicationWrite, PermWebsocketConnect}
+	case RoleViewer:
+		return []string{PermApplicationRead}
+	default:
+		return []string{PermApplicationRead}
+	}
+}
 
 // HasPermission reports whether granted contains required.
+func HasPermission(granted []string, required string) bool {
+	for _, p := range granted {
+		if p == required {
+			return true
+		}
+	}
+	return false
+}

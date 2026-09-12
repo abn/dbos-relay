@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -80,6 +81,62 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		}
 		if request.Body.Permissions != nil {
 			permissions = *request.Body.Permissions
+		}
+	}
+
+
+	// Default to all catalog permissions if none requested
+	if len(permissions) == 0 {
+		permissions = auth.CatalogPermissions()
+	}
+
+	// Subset checking if caller is constrained
+	callerIdentity, _ := auth.IdentityFromContext(ctx)
+	if callerIdentity != nil {
+		if !callerIdentity.IsAdmin && callerIdentity.Role != auth.RoleAdmin {
+			if !auth.HasPermission(callerIdentity.Permissions, auth.PermApplicationWrite) {
+				return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+					StatusCode: http.StatusForbidden,
+					Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: application.write"),
+				}, nil
+			}
+		}
+
+		// App-scoped caller can only mint tokens for a subset of their allowed apps
+		if callerIdentity.IsAPIKey && len(callerIdentity.ApplicationNames) > 0 {
+			if len(appNames) == 0 {
+				return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+					StatusCode: http.StatusForbidden,
+					Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "App-scoped key cannot mint unscoped tokens"),
+				}, nil
+			}
+			for _, app := range appNames {
+				found := false
+				for _, allowed := range callerIdentity.ApplicationNames {
+					if app == allowed {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+						StatusCode: http.StatusForbidden,
+						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant app %q outside key scope", app)),
+					}, nil
+				}
+			}
+		}
+
+		// Permission-restricted caller can only mint permissions within their own scope
+		if callerIdentity.IsAPIKey && len(callerIdentity.Permissions) > 0 {
+			for _, perm := range permissions {
+				if !auth.HasPermission(callerIdentity.Permissions, perm) {
+					return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+						StatusCode: http.StatusForbidden,
+						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant permission %q outside key scope", perm)),
+					}, nil
+				}
+			}
 		}
 	}
 

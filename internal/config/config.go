@@ -3,8 +3,6 @@ package config
 
 import (
 	"errors"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -62,30 +60,15 @@ func Load(getenv func(string) string) (*Config, error) {
 	var problems []error
 
 	if cfg.DatabaseURL == "" {
-
-	if cfg.OIDCIssuer != "" && cfg.OIDCAudience == "" {
-		problems = append(problems, errors.New("RELAY_OIDC_AUDIENCE is required when RELAY_OIDC_ISSUER is set"))
-	}
 		problems = append(problems, errors.New("RELAY_DATABASE_URL is required"))
-
-	if cfg.OIDCIssuer != "" && cfg.OIDCAudience == "" {
-		problems = append(problems, errors.New("RELAY_OIDC_AUDIENCE is required when RELAY_OIDC_ISSUER is set"))
-	}
 	}
 
 	if cfg.OIDCIssuer != "" && cfg.OIDCAudience == "" {
 		problems = append(problems, errors.New("RELAY_OIDC_AUDIENCE is required when RELAY_OIDC_ISSUER is set"))
 	}
 
-	if cfg.InternalSecret == "" {
-		if cfg.AuthEnabled() {
-			problems = append(problems, errors.New("RELAY_INTERNAL_SECRET is required when authentication is enabled"))
-		} else {
-			raw := make([]byte, 32)
-			if _, err := rand.Read(raw); err == nil {
-				cfg.InternalSecret = base64.RawURLEncoding.EncodeToString(raw)
-			}
-		}
+	if cfg.InternalSecret == "" && cfg.AuthEnabled() {
+		problems = append(problems, errors.New("RELAY_INTERNAL_SECRET is required when authentication is enabled"))
 	}
 
 	if raw := getenv("RELAY_EXECUTOR_DEADLINE"); raw != "" {

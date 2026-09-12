@@ -3,16 +3,25 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/auth"
 	storegen "github.com/abn/relay/internal/store/gen"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type orgSecretEntry struct {
+	secret    string
+	expiresAt time.Time
+}
+
+var joinSecretTTL = 1 * time.Hour
 
 func isGlobalRole(name string) bool {
 	return name == auth.RoleAdmin || name == auth.RoleOperator || name == auth.RoleViewer
@@ -36,6 +45,50 @@ func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserR
 			StatusCode: http.StatusUnauthorized,
 			Body:       MakeErrorModel(http.StatusUnauthorized, "Unauthorized", "Not authenticated"),
 		}, nil
+	}
+
+	if identity.IsAPIKey {
+		roleName := auth.RoleViewer
+		if identity.Role != "" {
+			roleName = identity.Role
+		} else if identity.IsAdmin {
+			roleName = auth.RoleAdmin
+		}
+		perms := identity.Permissions
+		if len(perms) == 0 {
+			perms = auth.CatalogPermissions()
+		}
+
+		orgName := identity.OrgName
+		if orgName == "" {
+			if orgGetter, ok := s.store.(interface {
+				GetOrganisationByID(ctx context.Context, id pgtype.UUID) (storegen.Organisation, error)
+			}); ok {
+				org, err := orgGetter.GetOrganisationByID(ctx, identity.OrgID)
+				if err == nil {
+					orgName = org.Name
+				} else {
+					orgName = "local"
+				}
+			} else {
+				orgName = "local"
+			}
+		}
+
+		profile := gen.UserProfile{
+			Name:             identity.Username,
+			Email:            "",
+			OrgName:          orgName,
+			OrgId:            formatUUID(identity.OrgID),
+			SubscriptionPlan: "self-hosted",
+			CreatedAt:        time.Now(),
+			Role: &gen.RoleOutput{
+				Name:        roleName,
+				IsGlobal:    isGlobalRole(roleName),
+				Permissions: perms,
+			},
+		}
+		return gen.GetCurrentUser200JSONResponse(profile), nil
 	}
 
 	user, err := s.store.GetUserByUsername(ctx, identity.Username)
@@ -174,11 +227,26 @@ func (s *Server) handleJoinOrg(ctx context.Context, request gen.JoinOrgRequestOb
 		}, nil
 	}
 
-	storedSecret, ok := s.orgSecrets.Load(org.Name)
-	if !ok || storedSecret.(string) != request.Body.Secret {
+	val, ok := s.orgSecrets.Load(org.Name)
+	if !ok {
 		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
 			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Invalid join secret"),
+		}, nil
+	}
+
+	entry, ok := val.(orgSecretEntry)
+	if !ok || subtle.ConstantTimeCompare([]byte(entry.secret), []byte(request.Body.Secret)) != 1 {
+		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Invalid join secret"),
+		}, nil
+	}
+
+	if time.Now().After(entry.expiresAt) {
+		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Join secret has expired"),
 		}, nil
 	}
 
@@ -186,6 +254,15 @@ func (s *Server) handleJoinOrg(ctx context.Context, request gen.JoinOrgRequestOb
 	username := "user"
 	if identity != nil && identity.Username != "" {
 		username = identity.Username
+	}
+
+	// Check if already an admin in this org - do not downgrade
+	existingMember, err := s.store.GetMember(ctx, storegen.GetMemberParams{
+		OrganisationID: org.ID,
+		Username:       username,
+	})
+	if err == nil && existingMember.RoleName == auth.RoleAdmin {
+		return gen.JoinOrg204Response{}, nil
 	}
 
 	user, err := s.store.GetUserByUsername(ctx, username)
@@ -238,12 +315,16 @@ func (s *Server) handleGenerateSecret(ctx context.Context, request gen.GenerateS
 	}
 	secret := base64.RawURLEncoding.EncodeToString(raw)
 
-	s.orgSecrets.Store(org.Name, secret)
+	s.orgSecrets.Store(org.Name, orgSecretEntry{
+		secret:    secret,
+		expiresAt: time.Now().Add(joinSecretTTL),
+	})
 
 	return gen.GenerateSecret201JSONResponse{
 		Secret: secret,
 	}, nil
 }
+
 
 func (s *Server) handleListMembers(ctx context.Context, request gen.ListMembersRequestObject) (gen.ListMembersResponseObject, error) {
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
@@ -620,6 +701,19 @@ func (s *Server) handleListAuditLogs(ctx context.Context, request gen.ListAuditL
 		}, nil
 	}
 
+	if request.Params.Limit != nil && *request.Params.Limit < 0 {
+		return gen.ListAuditLogsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "limit must be non-negative"),
+		}, nil
+	}
+	if request.Params.Offset != nil && *request.Params.Offset < 0 {
+		return gen.ListAuditLogsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "offset must be non-negative"),
+		}, nil
+	}
+
 	limit := int64(50)
 	if request.Params.Limit != nil && *request.Params.Limit > 0 {
 		limit = *request.Params.Limit
@@ -660,12 +754,21 @@ func (s *Server) handleListAuditLogs(ctx context.Context, request gen.ListAuditL
 		if len(l.Details) > 0 {
 			_ = json.Unmarshal(l.Details, &details)
 		}
+		status := gen.Success
+		if sVal, ok := details["status"].(string); ok && sVal == "failure" {
+			status = gen.Failure
+		}
+		sourceIp := "127.0.0.1"
+		if ip, ok := details["ip_address"].(string); ok && ip != "" {
+			sourceIp = ip
+		}
+
 		out = append(out, gen.AuditLogEntry{
 			Id:        formatUUID(l.ID),
 			Operation: l.Action,
 			EmitTime:  l.CreatedAt.Time,
-			Status:    gen.Success,
-			SourceIp:  "127.0.0.1",
+			Status:    status,
+			SourceIp:  sourceIp,
 			Details:   &details,
 			Subject: gen.AuditSubject{
 				Id:      formatUUID(l.UserID),

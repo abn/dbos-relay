@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/problem"
@@ -33,7 +35,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 
 			path := r.URL.Path
 			if path == "/healthz" || path == "/openapi.json" || path == "/openapi-3.0.json" ||
-				path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/schemas/") {
+				path == "/openapi.yaml" || strings.HasPrefix(path, "/docs") || strings.HasPrefix(path, "/schemas/") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -67,7 +69,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			if strings.HasPrefix(token, auth.KeyPrefix) {
 				lookup := auth.Lookup(token)
 				keyRec, err := server.store.GetAPIKeyByLookup(r.Context(), lookup)
-				if err != nil || !auth.Verify(token, keyRec.KeyHash) {
+				if err != nil || !auth.AuthenticateKey(token, keyRec.KeyHash) {
 					problem.Write(w, &problem.Problem{
 						Type:   "about:blank",
 						Title:  "Unauthorized",
@@ -79,6 +81,14 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 
 				_ = server.store.TouchAPIKeyLastUsed(r.Context(), keyRec.ID)
 
+				orgName := ""
+				if orgGetter, ok := server.store.(interface {
+					GetOrganisationByID(ctx context.Context, id pgtype.UUID) (storegen.Organisation, error)
+				}); ok {
+					if org, err := orgGetter.GetOrganisationByID(r.Context(), keyRec.OrganisationID); err == nil {
+						orgName = org.Name
+					}
+				}
 				identity = &auth.UserIdentity{
 					Subject:          keyRec.Lookup,
 					Username:         keyRec.Name,
@@ -86,6 +96,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					IsAPIKey:         true,
 					Token:            token,
 					OrgID:            keyRec.OrganisationID,
+					OrgName:          orgName,
 					ApplicationNames: keyRec.ApplicationNames,
 					Permissions:      keyRec.Permissions,
 				}
@@ -108,7 +119,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						Type:   "about:blank",
 						Title:  "Unauthorized",
 						Status: http.StatusUnauthorized,
-						Detail: err.Error(),
+						Detail: "invalid token",
 					})
 					return
 				}
@@ -170,13 +181,14 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			// Perform authorization checks based on path
 			targetOrgName := r.PathValue("orgName")
 			targetAppName := r.PathValue("appName")
+			isJoin := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/join")
 			if targetOrgName == "" && r.URL.Path == "/v2/users/me" {
                 // Allow /v2/users/me
             } else if targetOrgName != "" {
 				// We have a target organization, let's verify access
 				org, err := server.store.GetOrganisationByName(r.Context(), targetOrgName)
 				if err != nil {
-					if errors.Is(err, pgx.ErrNoRows) {
+					if errors.Is(err, pgx.ErrNoRows) || strings.Contains(err.Error(), "not found") {
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Not Found", Status: http.StatusNotFound, Detail: "Organisation not found"})
 					} else {
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Internal Error", Status: http.StatusInternalServerError, Detail: err.Error()})
@@ -184,13 +196,21 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					return
 				}
 
-				if identity.IsAPIKey {
+				if isJoin {
+					identity.OrgName = org.Name
+				} else if identity.IsAPIKey {
 					// API Key org check
 					if org.ID != identity.OrgID {
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key does not belong to this organisation"})
 						return
 					}
                     identity.OrgName = org.Name
+
+					// App-scoped keys cannot access org-level routes (routes where appName is empty)
+					if len(identity.ApplicationNames) > 0 && targetAppName == "" {
+						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key is scoped to specific applications and cannot access organization-level resources"})
+						return
+					}
 				} else {
 					// OIDC user org check
 					member, err := server.store.GetMember(r.Context(), storegen.GetMemberParams{
@@ -218,41 +238,40 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					}
 				}
 
-				// Check app scoping
-				if targetAppName != "" && identity.IsAPIKey {
-					if len(identity.ApplicationNames) > 0 {
-						allowed := false
-						for _, appName := range identity.ApplicationNames {
-							if appName == targetAppName {
-								allowed = true
-								break
+				if !isJoin {
+					// Check app scoping
+					if targetAppName != "" && identity.IsAPIKey {
+						if len(identity.ApplicationNames) > 0 {
+							allowed := false
+							for _, appName := range identity.ApplicationNames {
+								if appName == targetAppName {
+									allowed = true
+									break
+								}
+							}
+							if !allowed {
+								problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key does not have access to this application"})
+								return
 							}
 						}
-						if !allowed {
-							problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key does not have access to this application"})
-							return
-						}
 					}
-				}
 
-				// Check permissions
-				reqPerm := ""
-				if r.Method == http.MethodGet {
-					reqPerm = auth.PermApplicationRead
-				} else {
-					reqPerm = auth.PermApplicationWrite
-				}
+					// Check permissions
+					reqPerm := ""
+					if r.Method == http.MethodGet {
+						reqPerm = auth.PermApplicationRead
+					} else {
+						reqPerm = auth.PermApplicationWrite
+					}
 
-				hasPerm := false
-				for _, p := range identity.Permissions {
-					if p == reqPerm {
+					hasPerm := auth.HasPermission(identity.Permissions, reqPerm)
+					if identity.IsAPIKey && len(identity.Permissions) == 0 {
 						hasPerm = true
-						break
 					}
-				}
-				if !hasPerm && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
-					problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + reqPerm})
-					return
+					if !hasPerm && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
+						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + reqPerm})
+						return
+					}
 				}
 			} else {
 				// No org in path, might be like /v2/users/me, let's ensure primary org logic for OIDC users

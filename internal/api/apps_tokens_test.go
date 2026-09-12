@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,6 +32,7 @@ type mockStoreReader struct {
 	createAPIKeyFunc      func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
 	revokeAPIKeyFunc      func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
 	upsertOrgFunc         func(ctx context.Context, name string) (storegen.Organisation, error)
+	listAlertRulesFunc    func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
 }
 
 func (m *mockStoreReader) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {
@@ -37,6 +40,10 @@ func (m *mockStoreReader) GetOrganisationByName(ctx context.Context, name string
 		return m.getOrgByNameFunc(ctx, name)
 	}
 	return storegen.Organisation{}, errors.New("unexpected GetOrganisationByName")
+}
+
+func (m *mockStoreReader) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (storegen.Organisation, error) {
+	return storegen.Organisation{ID: id, Name: "mock-org"}, nil
 }
 
 func (m *mockStoreReader) GetApplicationByName(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
@@ -122,6 +129,9 @@ func (m *mockStoreReader) GetAlertingRule(ctx context.Context, arg storegen.GetA
 }
 
 func (m *mockStoreReader) ListAlertingRulesByApplication(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error) {
+	if m.listAlertRulesFunc != nil {
+		return m.listAlertRulesFunc(ctx, applicationID)
+	}
 	return nil, nil
 }
 
@@ -1120,4 +1130,102 @@ func TestWorkflowMutations(t *testing.T) {
 
 func (m *mockStoreReader) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
 	return nil
+}
+
+func TestAlertingRulesSSRFAndSanitization(t *testing.T) {
+	ctx := context.Background()
+	orgID := makeUUID(40)
+	appID := makeUUID(41)
+
+	store := &mockStoreReader{
+		getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+			return storegen.Organisation{ID: orgID, Name: name}, nil
+		},
+		getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+			return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+		},
+	}
+	srv := api.NewServer(nil, store, nil)
+
+	// 1. SSRF URL blocked: loopback and cloud metadata
+	ssrfURLs := []string{"http://127.0.0.1:1", "http://localhost:8080/hook", "http://169.254.169.254/latest/meta-data"}
+	for _, u := range ssrfURLs {
+		req := gen.CreateAlertingRuleRequestObject{
+			OrgName: "test-org",
+			AppName: "test-app",
+			Body: &gen.CreateAlertInputBody{
+				RuleType: "WorkflowFailure",
+				RuleMetadata: map[string]any{
+					"destinations": []any{
+						map[string]any{"type": "webhook", "url": u},
+					},
+				},
+			},
+		}
+		resp, err := srv.CreateAlertingRule(ctx, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse)
+		if !ok || probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for SSRF URL %s, got: %T", u, resp)
+		}
+	}
+
+	// 2. Secret path redaction in ListAlertingRules
+	ruleMeta := map[string]any{
+		"destinations": []any{
+			map[string]any{"type": "slack", "url": "https://hooks.slack.com/services/T0000/B0000/SUPERSECRETPATHTOKEN", "secret": "shh"},
+			map[string]any{"type": "webhook", "url": "https://example.com/alerts/SUPERSECRETHOOKTOKEN", "secret": "shh"},
+		},
+	}
+	ruleMetaBytes, _ := json.Marshal(ruleMeta)
+	listStore := &mockStoreReader{
+		getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+			return storegen.Organisation{ID: orgID, Name: name}, nil
+		},
+		getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+			return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+		},
+		listAlertRulesFunc: func(ctx context.Context, aID pgtype.UUID) ([]storegen.AlertingRule, error) {
+			return []storegen.AlertingRule{
+				{
+					ID:            makeUUID(42),
+					ApplicationID: appID,
+					RuleType:      "WorkflowFailure",
+					RuleMetadata:  ruleMetaBytes,
+				},
+			}, nil
+		},
+	}
+	srvList := api.NewServer(nil, listStore, nil)
+	listResp, err := srvList.ListAlertingRules(ctx, gen.ListAlertingRulesRequestObject{
+		OrgName: "test-org",
+		AppName: "test-app",
+	})
+	if err != nil {
+		t.Fatalf("ListAlertingRules: %v", err)
+	}
+	rules, ok := listResp.(gen.ListAlertingRules200JSONResponse)
+	if !ok || len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %v", listResp)
+	}
+	dests, _ := rules[0].RuleMetadata.(map[string]any)["destinations"].([]any)
+	if len(dests) != 2 {
+		t.Fatalf("expected 2 destinations, got %d", len(dests))
+	}
+	slackDest := dests[0].(map[string]any)
+	if slackDest["url"] != "https://hooks.slack.com/..." {
+		t.Errorf("expected slack URL 'https://hooks.slack.com/...', got %q", slackDest["url"])
+	}
+	if strings.Contains(fmt.Sprintf("%v", slackDest["url"]), "SUPERSECRETPATHTOKEN") {
+		t.Errorf("secret token leaked in slack url: %v", slackDest["url"])
+	}
+	webhookDest := dests[1].(map[string]any)
+	if webhookDest["url"] != "https://example.com/..." {
+		t.Errorf("expected webhook URL 'https://example.com/...', got %q", webhookDest["url"])
+	}
+	if strings.Contains(fmt.Sprintf("%v", webhookDest["url"]), "SUPERSECRETHOOKTOKEN") {
+		t.Errorf("secret token leaked in webhook url: %v", webhookDest["url"])
+	}
 }

@@ -42,9 +42,14 @@ func Mint() (string, KeyRecord, error) {
 // Lookup returns the non-secret index for a key.
 func Lookup(key string) string {
 	if len(key) < lookupLen {
-		return key
+		return ""
 	}
 	return key[:lookupLen]
+}
+
+// AuthenticateKey verifies that rawKey matches stored hash in constant time.
+func AuthenticateKey(rawKey string, storedHash []byte) bool {
+	return Verify(rawKey, storedHash)
 }
 
 // Verify reports whether key matches a stored hash, in constant time.

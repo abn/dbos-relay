@@ -7,6 +7,8 @@ package gen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createOrganisation = `-- name: CreateOrganisation :one
@@ -15,6 +17,17 @@ INSERT INTO organisations (name) VALUES ($1) RETURNING id, name, created_at
 
 func (q *Queries) CreateOrganisation(ctx context.Context, name string) (Organisation, error) {
 	row := q.db.QueryRow(ctx, createOrganisation, name)
+	var i Organisation
+	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	return i, err
+}
+
+const getOrganisationByID = `-- name: GetOrganisationByID :one
+SELECT id, name, created_at FROM organisations WHERE id = $1
+`
+
+func (q *Queries) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (Organisation, error) {
+	row := q.db.QueryRow(ctx, getOrganisationByID, id)
 	var i Organisation
 	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
 	return i, err

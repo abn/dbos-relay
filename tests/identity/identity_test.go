@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api"
@@ -168,6 +169,7 @@ type memoryStore struct {
 	roles        map[string]storegen.Role
 	domainClaims map[string]storegen.DomainClaim
 	auditLogs    []storegen.AuditLog
+	touchedKeys  map[pgtype.UUID]time.Time
 	idCounter    byte
 }
 
@@ -183,6 +185,7 @@ func newMemoryStore() *memoryStore {
 		roles:        make(map[string]storegen.Role),
 		domainClaims: make(map[string]storegen.DomainClaim),
 		auditLogs:    make([]storegen.AuditLog, 0),
+		touchedKeys:  make(map[pgtype.UUID]time.Time),
 		idCounter:    1,
 	}
 	// Seed global roles
@@ -216,7 +219,16 @@ func (m *memoryStore) GetOrganisationByName(_ context.Context, name string) (sto
 	if org, ok := m.orgs[name]; ok {
 		return org, nil
 	}
-	return storegen.Organisation{}, fmt.Errorf("org not found: %s", name)
+	return storegen.Organisation{}, fmt.Errorf("org not found: %s: %w", name, pgx.ErrNoRows)
+}
+
+func (m *memoryStore) GetOrganisationByID(_ context.Context, id pgtype.UUID) (storegen.Organisation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if org, ok := m.orgsByID[id]; ok {
+		return org, nil
+	}
+	return storegen.Organisation{}, fmt.Errorf("org not found by id: %v", id)
 }
 
 func (m *memoryStore) UpsertOrganisation(_ context.Context, name string) (storegen.Organisation, error) {
@@ -1184,5 +1196,291 @@ func TestIdentity_WriteHandlers_EnforceAdmin(t *testing.T) {
 }
 
 func (m *memoryStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.touchedKeys == nil {
+		m.touchedKeys = make(map[pgtype.UUID]time.Time)
+	}
+	m.touchedKeys[id] = time.Now()
 	return nil
+}
+
+func TestIdentity_APIKey_TouchLastUsed(t *testing.T) {
+	store := newMemoryStore()
+	org, _ := store.UpsertOrganisation(context.Background(), "acme")
+
+	plain, rec, err := auth.Mint()
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	apiKey, err := store.CreateAPIKey(context.Background(), storegen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "test-key",
+		Lookup:           rec.Lookup,
+		KeyHash:          rec.Hash,
+		ApplicationNames: []string{},
+		Permissions:      []string{auth.PermApplicationRead},
+	})
+	if err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+
+	ts := setupServer(store, true, nil)
+	defer ts.Close()
+
+	// 1. Successful authentication touches last_used_at
+	req, _ := http.NewRequest("GET", ts.URL+"/v2/orgs/acme/apps", nil)
+	req.Header.Set("Authorization", "Bearer "+plain)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	store.mu.Lock()
+	_, touched := store.touchedKeys[apiKey.ID]
+	store.mu.Unlock()
+	if !touched {
+		t.Error("expected TouchAPIKeyLastUsed to be called on successful authentication")
+	}
+
+	// 2. Unauthenticated / invalid key does NOT touch last_used_at
+	store.mu.Lock()
+	store.touchedKeys = make(map[pgtype.UUID]time.Time)
+	store.mu.Unlock()
+
+	reqBad, _ := http.NewRequest("GET", ts.URL+"/v2/orgs/acme/apps", nil)
+	reqBad.Header.Set("Authorization", "Bearer "+auth.KeyPrefix+"badkeymaterial12345678901234567890")
+	respBad, err := http.DefaultClient.Do(reqBad)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	_ = respBad.Body.Close()
+	if respBad.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", respBad.StatusCode)
+	}
+
+	store.mu.Lock()
+	touchCount := len(store.touchedKeys)
+	store.mu.Unlock()
+	if touchCount != 0 {
+		t.Error("expected TouchAPIKeyLastUsed NOT to be called on failed authentication")
+	}
+}
+
+func TestIdentity_DomainClaims_CrossOrgRejected(t *testing.T) {
+	idp := newMockIdP(t)
+	store := newMemoryStore()
+
+	orgA, _ := store.UpsertOrganisation(context.Background(), "org-a")
+	if _, err := store.UpsertOrganisation(context.Background(), "org-b"); err != nil {
+		t.Fatalf("failed to upsert org-b: %v", err)
+	}
+
+	userA, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "user-a-sub",
+		Username: "user-a",
+		Email:    "user-a@org-a.corp",
+	})
+	// user-a is admin of org-a only
+	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+		OrganisationID: orgA.ID,
+		UserID:         userA.ID,
+		RoleName:       auth.RoleAdmin,
+	})
+
+	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
+	ts := setupServer(store, true, validator)
+	defer ts.Close()
+
+	tokenA := idp.mintToken(t, map[string]any{
+		"sub": "user-a-sub",
+		"iss": idp.server.URL,
+		"aud": "relay-client",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	// User in org A requesting domain claim on org B must be rejected with 403 Forbidden
+	reqBody := strings.NewReader(`{"domain": "org-b.com"}`)
+	req, _ := http.NewRequest("POST", ts.URL+"/v2/orgs/org-b/domain-claims", reqBody)
+	req.Header.Set("Authorization", "Bearer "+tokenA)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for cross-org domain claim, got %d", resp.StatusCode)
+	}
+
+	// User in org A requesting domain claim on org A succeeds with 201 Created
+	reqBodyOk := strings.NewReader(`{"domain": "org-a.com"}`)
+	reqOk, _ := http.NewRequest("POST", ts.URL+"/v2/orgs/org-a/domain-claims", reqBodyOk)
+	reqOk.Header.Set("Authorization", "Bearer "+tokenA)
+	reqOk.Header.Set("Content-Type", "application/json")
+	respOk, err := http.DefaultClient.Do(reqOk)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	_ = respOk.Body.Close()
+	if respOk.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 Created for in-org domain claim, got %d", respOk.StatusCode)
+	}
+}
+
+func TestIdentity_WriteHandlers_Execution(t *testing.T) {
+	idp := newMockIdP(t)
+	store := newMemoryStore()
+
+	org, _ := store.UpsertOrganisation(context.Background(), "acme")
+
+	adminUser, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "admin-sub",
+		Username: "admin-user",
+		Email:    "admin@acme.corp",
+	})
+	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+		OrganisationID: org.ID,
+		UserID:         adminUser.ID,
+		RoleName:       auth.RoleAdmin,
+	})
+
+	memberUser, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "member-sub",
+		Username: "member-user",
+		Email:    "member@acme.corp",
+	})
+	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+		OrganisationID: org.ID,
+		UserID:         memberUser.ID,
+		RoleName:       auth.RoleViewer,
+	})
+
+	joinerUser, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "joiner-sub",
+		Username: "joiner-user",
+		Email:    "joiner@external.com",
+	})
+
+	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
+	ts := setupServer(store, true, validator)
+	defer ts.Close()
+
+	adminToken := idp.mintToken(t, map[string]any{
+		"sub": "admin-sub",
+		"iss": idp.server.URL,
+		"aud": "relay-client",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	joinerToken := idp.mintToken(t, map[string]any{
+		"sub": "joiner-sub",
+		"iss": idp.server.URL,
+		"aud": "relay-client",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	// 1. Generate org secret (handleGenerateSecret)
+	secReq, _ := http.NewRequest("POST", ts.URL+"/v2/orgs/acme/secrets", strings.NewReader("{}"))
+	secReq.Header.Set("Authorization", "Bearer "+adminToken)
+	secReq.Header.Set("Content-Type", "application/json")
+	secResp, err := http.DefaultClient.Do(secReq)
+	if err != nil {
+		t.Fatalf("generate secret failed: %v", err)
+	}
+	defer func() { _ = secResp.Body.Close() }()
+	if secResp.StatusCode != http.StatusCreated && secResp.StatusCode != http.StatusOK {
+		t.Fatalf("generate secret: expected 201 or 200, got %d", secResp.StatusCode)
+	}
+	var secBody struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.NewDecoder(secResp.Body).Decode(&secBody)
+	if secBody.Secret == "" {
+		t.Fatal("expected non-empty secret in response")
+	}
+
+	// 2. Join org with invalid secret -> 403 (handleJoinOrg)
+	badJoinReq, _ := http.NewRequest("POST", ts.URL+"/v2/orgs/acme/join", strings.NewReader(`{"secret":"wrong-secret"}`))
+	badJoinReq.Header.Set("Authorization", "Bearer "+joinerToken)
+	badJoinReq.Header.Set("Content-Type", "application/json")
+	badJoinResp, err := http.DefaultClient.Do(badJoinReq)
+	if err != nil {
+		t.Fatalf("join request failed: %v", err)
+	}
+	_ = badJoinResp.Body.Close()
+	if badJoinResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("bad join secret: expected 403, got %d", badJoinResp.StatusCode)
+	}
+
+	// 3. Join org with valid secret -> 200 OK (handleJoinOrg)
+	joinReq, _ := http.NewRequest("POST", ts.URL+"/v2/orgs/acme/join", strings.NewReader(fmt.Sprintf(`{"secret":%q}`, secBody.Secret)))
+	joinReq.Header.Set("Authorization", "Bearer "+joinerToken)
+	joinReq.Header.Set("Content-Type", "application/json")
+	joinResp, err := http.DefaultClient.Do(joinReq)
+	if err != nil {
+		t.Fatalf("join request failed: %v", err)
+	}
+	_ = joinResp.Body.Close()
+	if joinResp.StatusCode != http.StatusNoContent && joinResp.StatusCode != http.StatusOK {
+		t.Fatalf("valid join secret: expected 204 or 200, got %d", joinResp.StatusCode)
+	}
+
+	// 4. Grant role -> 204 No Content (handleGrantRole)
+	grantReq, _ := http.NewRequest("PUT", ts.URL+"/v2/orgs/acme/members/member-user/roles/operator", nil)
+	grantReq.Header.Set("Authorization", "Bearer "+adminToken)
+	grantResp, err := http.DefaultClient.Do(grantReq)
+	if err != nil {
+		t.Fatalf("grant role failed: %v", err)
+	}
+	_ = grantResp.Body.Close()
+	if grantResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("grant role: expected 204, got %d", grantResp.StatusCode)
+	}
+
+	// 5. Remove member -> 204 No Content (handleRemoveMember)
+	delReq, _ := http.NewRequest("DELETE", ts.URL+"/v2/orgs/acme/members/member-user", nil)
+	delReq.Header.Set("Authorization", "Bearer "+adminToken)
+	delResp, err := http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatalf("remove member failed: %v", err)
+	}
+	_ = delResp.Body.Close()
+	if delResp.StatusCode != http.StatusNoContent && delResp.StatusCode != http.StatusOK {
+		t.Fatalf("remove member: expected 204/200, got %d", delResp.StatusCode)
+	}
+
+	// 6. List audit logs (handleListAuditLogs)
+	_, _ = store.CreateAuditLog(context.Background(), storegen.CreateAuditLogParams{
+		OrganisationID: org.ID,
+		UserID:         adminUser.ID,
+		Action:         "generateSecret",
+		Details:        []byte(`{"status":"success","sourceIp":"10.0.0.1"}`),
+	})
+	auditReq, _ := http.NewRequest("GET", ts.URL+"/v2/orgs/acme/audit-logs", nil)
+	auditReq.Header.Set("Authorization", "Bearer "+adminToken)
+	auditResp, err := http.DefaultClient.Do(auditReq)
+	if err != nil {
+		t.Fatalf("list audit logs failed: %v", err)
+	}
+	_ = auditResp.Body.Close()
+	if auditResp.StatusCode != http.StatusOK {
+		t.Fatalf("list audit logs: expected 200, got %d", auditResp.StatusCode)
+	}
+
+	// 7. Unknown org audit logs -> 404 Not Found
+	badAuditReq, _ := http.NewRequest("GET", ts.URL+"/v2/orgs/nonexistent-org/audit-logs", nil)
+	badAuditReq.Header.Set("Authorization", "Bearer "+adminToken)
+	badAuditResp, err := http.DefaultClient.Do(badAuditReq)
+	if err != nil {
+		t.Fatalf("unknown org audit logs failed: %v", err)
+	}
+	_ = badAuditResp.Body.Close()
+	if badAuditResp.StatusCode != http.StatusNotFound && badAuditResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("unknown org audit logs: expected 404 or 403, got %d", badAuditResp.StatusCode)
+	}
+	_ = joinerUser
 }

@@ -43,6 +43,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	perms := identity.Permissions
+	if len(perms) == 0 && identity.IsAPIKey {
+		perms = auth.CatalogPermissions()
+	}
+
+	if !identity.IsAdmin && !auth.HasPermission(perms, auth.PermApplicationRead) {
+		http.Error(w, "forbidden: missing application.read permission", http.StatusForbidden)
+		return
+	}
+
 	appsFilter := r.URL.Query()["applications"]
 	metricsFilter := r.URL.Query()["metrics"]
 
@@ -83,14 +93,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !identity.IsAdmin {
-			if identity.IsAPIKey {
-				if !contains(identity.ApplicationNames, app.Name) {
-					continue
-				}
-			} else {
-				if app.OrganisationID != identity.OrgID {
-					continue
-				}
+			if app.OrganisationID != identity.OrgID {
+				continue
+			}
+			if len(identity.ApplicationNames) > 0 && !contains(identity.ApplicationNames, app.Name) {
+				continue
 			}
 		}
 
@@ -137,11 +144,13 @@ func contains(slice []string, val string) bool {
 }
 
 func sanitizeLabel(s string) string {
-	s = strings.ReplaceAll(s, "\"", "")
-	s = strings.ReplaceAll(s, "\\", "")
-	s = strings.ReplaceAll(s, "\n", "")
-	if len(s) > 64 {
-		s = s[:64]
+	runes := []rune(s)
+	if len(runes) > 64 {
+		runes = runes[:64]
 	}
+	s = string(runes)
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
 	return s
 }

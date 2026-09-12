@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -63,17 +64,23 @@ func init() {
 	schemaComponents = doc.Components.Schemas
 }
 
+//go:embed swagger/swagger-ui.css
+var swaggerCSS []byte
+
+//go:embed swagger/swagger-ui-bundle.js
+var swaggerJS []byte
+
 const docsHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Relay API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" integrity="sha384-+yyzNgM3K92sROwsXxYCxaiLWxWJ0G+v/9A+qIZ2rgefKgkdcmJI+L601cqPD/Ut" crossorigin="anonymous" />
+  <link rel="stylesheet" href="/docs/swagger-ui.css" />
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js" integrity="sha384-qn5tagrAjZi8cSmvZ+k3zk4+eDEEUcP9myuR2J6V+/H6rne++v6ChO7EeHAEzqxQ" crossorigin="anonymous"></script>
+<script src="/docs/swagger-ui-bundle.js"></script>
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
@@ -112,7 +119,7 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 			problem.Write(w, &problem.Problem{
 				Title:  "database unavailable",
 				Status: http.StatusServiceUnavailable,
-				Detail: err.Error(),
+				Detail: "database unavailable",
 			})
 			return
 		}
@@ -145,6 +152,20 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		_, _ = w.Write([]byte(docsHTML))
 	})
 
+	mux.HandleFunc("/docs/swagger-ui.css", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(swaggerCSS)
+	})
+
+	mux.HandleFunc("/docs/swagger-ui-bundle.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(swaggerJS)
+	})
+
 	mux.HandleFunc("/schemas/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/schemas/")
 		name = strings.TrimSuffix(name, ".json")
@@ -166,7 +187,7 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 					Type:   "about:blank",
 					Title:  "Bad Request",
 					Status: http.StatusBadRequest,
-					Detail: err.Error(),
+					Detail: "bad request",
 				})
 			},
 			ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -174,15 +195,15 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 					Type:   "about:blank",
 					Title:  "Internal Server Error",
 					Status: http.StatusInternalServerError,
-					Detail: err.Error(),
+					Detail: "internal server error",
 				})
 			},
 		})
 		gen.HandlerWithOptions(strictHandler, gen.StdHTTPServerOptions{
 			BaseRouter: mux,
 			Middlewares: []gen.MiddlewareFunc{
-				AuthMiddleware(server),
 				AuditMiddleware(server),
+				AuthMiddleware(server),
 			},
 		})
 	}

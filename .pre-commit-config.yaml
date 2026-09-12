@@ -3,7 +3,7 @@
 default_install_hook_types: [pre-commit, commit-msg]
 # Without this, every file hook would also run against the commit message.
 default_stages: [pre-commit]
-exclude: ^api/spec/
+exclude: ^(api/spec/|internal/api/swagger/swagger-ui)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

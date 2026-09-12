@@ -299,3 +299,132 @@ func TestNewForwardHandler(t *testing.T) {
 		t.Errorf("expected request ID 'test-req', got %q", res.GetRequestID())
 	}
 }
+
+func TestForward_EmptySecretRejection(t *testing.T) {
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, aID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return &protocol.Envelope{Type: protocol.MessageTypeListWorkflows}, nil
+		},
+	}
+	handler := router.NewForwardHandler(dispatcher, nil, 30*time.Second)
+
+	body := []byte(`{"type":"list_workflows"}`)
+	req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+	router.SignRequest(req, body, nil, 0, time.Now().Add(5*time.Second))
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for empty secret, got %d", w.Code)
+	}
+}
+
+func TestForward_SignatureTamperingAndReplay(t *testing.T) {
+	secret := []byte("fwd-secret-key")
+	var dispatchCount int
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, aID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			dispatchCount++
+			return &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: msg.GetRequestID()}, nil
+		},
+	}
+	handler := router.NewForwardHandler(dispatcher, secret, 30*time.Second)
+
+	reqMsg := &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "test-req"}
+	body, _ := protocol.Encode(reqMsg)
+
+	// 1. Modified deadline header -> 401
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		router.SignRequest(req, body, secret, 0, time.Now().Add(10*time.Second))
+		req.Header.Set(router.HeaderDeadline, time.Now().Add(20*time.Second).Format(time.RFC3339Nano))
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("modified deadline: expected 401, got %d", w.Code)
+		}
+	}
+
+	// 2. Added query parameter -> 401
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		router.SignRequest(req, body, secret, 0, time.Now().Add(10*time.Second))
+		// Tamper request URI by adding query param
+		req.URL.RawQuery = "tampered=true"
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("added query param: expected 401, got %d", w.Code)
+		}
+	}
+
+	// 3. Replayed nonce -> 401
+	{
+		req1, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		router.SignRequest(req1, body, secret, 0, time.Now().Add(10*time.Second))
+		w1 := httptest.NewRecorder()
+		handler.ServeHTTP(w1, req1)
+		if w1.Code != http.StatusOK {
+			t.Fatalf("first presentation: expected 200, got %d", w1.Code)
+		}
+
+		// Replay exact same request
+		req2, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		req2.Header = req1.Header.Clone()
+		w2 := httptest.NewRecorder()
+		handler.ServeHTTP(w2, req2)
+		if w2.Code != http.StatusUnauthorized {
+			t.Errorf("replayed nonce: expected 401, got %d", w2.Code)
+		}
+	}
+
+	// 4. Expired deadline rejected before dispatch -> 401, dispatchCount unchanged
+	{
+		dispatchesBefore := dispatchCount
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		pastDeadline := time.Now().Add(-10 * time.Second)
+		router.SignRequest(req, body, secret, 0, pastDeadline)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expired deadline: expected 401, got %d", w.Code)
+		}
+		if dispatchCount != dispatchesBefore {
+			t.Errorf("dispatcher called for expired deadline: dispatches before=%d, after=%d", dispatchesBefore, dispatchCount)
+		}
+	}
+}
+
+func TestForward_BodyCapAndCheapRejection(t *testing.T) {
+	secret := []byte("fwd-secret-key")
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, aID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return &protocol.Envelope{Type: protocol.MessageTypeListWorkflows}, nil
+		},
+	}
+	handler := router.NewForwardHandler(dispatcher, secret, 30*time.Second)
+
+	// 1. Unauthenticated request with large content -> 401 immediately without reading large body
+	{
+		largeBody := make([]byte, 64*1024*1024) // 64 MiB
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(largeBody))
+		// No auth headers
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for unauthenticated probe, got %d", w.Code)
+		}
+	}
+
+	// 2. Properly signed request exceeding 10 MiB limit -> 413 Payload Too Large
+	{
+		largeBody := make([]byte, 11*1024*1024) // 11 MiB
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(largeBody))
+		router.SignRequest(req, largeBody, secret, 0, time.Now().Add(10*time.Second))
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("expected 413 Request Entity Too Large, got %d: %s", w.Code, w.Body.String())
+		}
+	}
+}

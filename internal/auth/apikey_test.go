@@ -43,3 +43,16 @@ func TestHashIsNotThePlaintext(t *testing.T) {
 		t.Fatal("the stored hash contains the plaintext key")
 	}
 }
+
+func TestLookup_ShortKeyDoesNotReturnPlaintext(t *testing.T) {
+	shortKeys := []string{"", "a", "local", "dbos_secret", "12345678901"}
+	for _, k := range shortKeys {
+		lookup := auth.Lookup(k)
+		if lookup == k && len(k) > 0 {
+			t.Errorf("Lookup(%q) returned plaintext key", k)
+		}
+		if lookup != "" {
+			t.Errorf("Lookup(%q) = %q, want empty string for sub-12 char key", k, lookup)
+		}
+	}
+}
