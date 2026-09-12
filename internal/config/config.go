@@ -3,6 +3,8 @@ package config
 
 import (
 	"errors"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -49,7 +51,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		DatabaseURL:      getenv("RELAY_DATABASE_URL"),
 		ListenAddr:       or(getenv("RELAY_LISTEN_ADDR"), defaultListenAddr),
 		AdvertiseAddress: or(or(getenv("RELAY_ADVERTISE_ADDRESS"), getenv("DBOS__ADVERTISE_ADDRESS")), "127.0.0.1"),
-		InternalSecret:   or(or(getenv("RELAY_INTERNAL_SECRET"), getenv("DBOS__CLUSTER_SECRET")), "relay-cluster-secret"),
+		InternalSecret:   or(getenv("RELAY_INTERNAL_SECRET"), getenv("DBOS__CLUSTER_SECRET")),
 		OIDCIssuer:       getenv("RELAY_OIDC_ISSUER"),
 		OIDCAudience:     getenv("RELAY_OIDC_AUDIENCE"),
 		OIDCClientID:     getenv("RELAY_OIDC_CLIENT_ID"),
@@ -61,6 +63,17 @@ func Load(getenv func(string) string) (*Config, error) {
 
 	if cfg.DatabaseURL == "" {
 		problems = append(problems, errors.New("RELAY_DATABASE_URL is required"))
+	}
+
+	if cfg.InternalSecret == "" {
+		if cfg.AuthEnabled() {
+			problems = append(problems, errors.New("RELAY_INTERNAL_SECRET is required when authentication is enabled"))
+		} else {
+			raw := make([]byte, 32)
+			if _, err := rand.Read(raw); err == nil {
+				cfg.InternalSecret = base64.RawURLEncoding.EncodeToString(raw)
+			}
+		}
 	}
 
 	if raw := getenv("RELAY_EXECUTOR_DEADLINE"); raw != "" {

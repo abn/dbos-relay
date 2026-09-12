@@ -49,7 +49,7 @@ func SignRequest(req *http.Request, body []byte, secret []byte, hop int, deadlin
 		req.Header.Set(HeaderDeadline, deadline.Format(time.RFC3339Nano))
 	}
 
-	payload := buildSignaturePayload(ts, hopStr, req.Method, req.URL.Path, body)
+	payload := buildSignaturePayload(ts, hopStr, req.Method, req.URL.RequestURI(), body)
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(payload)
 	req.Header.Set(HeaderSignature, hex.EncodeToString(mac.Sum(nil)))
@@ -85,7 +85,7 @@ func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.
 		return hop, time.Time{}, ErrLoopDetected
 	}
 
-	payload := buildSignaturePayload(tsStr, hopStr, req.Method, req.URL.Path, body)
+	payload := buildSignaturePayload(tsStr, hopStr, req.Method, req.URL.RequestURI(), body)
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(payload)
 	expectedSig := hex.EncodeToString(mac.Sum(nil))
@@ -105,8 +105,8 @@ func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.
 	return hop, deadline, nil
 }
 
-func buildSignaturePayload(ts, hop, method, path string, body []byte) []byte {
-	return []byte(fmt.Sprintf("%s\n%s\n%s\n%s\n%s", ts, hop, method, path, string(body)))
+func buildSignaturePayload(ts, hop, method, uri string, body []byte) []byte {
+	return []byte(fmt.Sprintf("%s\n%s\n%s\n%s\n%s", ts, hop, method, uri, string(body)))
 }
 
 func abs(n int64) int64 {
@@ -200,6 +200,29 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 		var appID pgtype.UUID
 		if err := appID.Scan(parts[3]); err != nil || !appID.Valid {
 			http.Error(w, "invalid application id", http.StatusBadRequest)
+			return
+		}
+
+		// Verify headers before reading body
+		sig := r.Header.Get(HeaderSignature)
+		tsStr := r.Header.Get(HeaderTimestamp)
+		hopStr := r.Header.Get(HeaderHop)
+
+		if sig == "" || tsStr == "" || hopStr == "" {
+			http.Error(w, ErrMissingHeaders.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		ts, err := strconv.ParseInt(tsStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid timestamp header", http.StatusUnauthorized)
+			return
+		}
+
+		now := time.Now().Unix()
+		drift := time.Duration(abs(now-ts)) * time.Second
+		if drift > maxDrift {
+			http.Error(w, ErrExpiredTimestamp.Error(), http.StatusUnauthorized)
 			return
 		}
 
