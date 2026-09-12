@@ -1,3 +1,8 @@
+// Package ha_test exercises high availability and instance lease behaviors.
+//
+// Note: Counterparties in this package are in-process internal/fakeexecutor
+// stand-ins. Real-process cluster verification against genuine DBOS SDK runtimes
+// is performed in tests/verifysdk (see tests/verifysdk/REPORT.md).
 package ha_test
 
 import (
@@ -194,7 +199,8 @@ func parseHostPort(addr string) (string, int) {
 	return host, port
 }
 
-func TestHA_CrossInstancePeerForwarding(t *testing.T) {
+func TestHA_CrossInstancePeerForwarding_FakeExecutor(t *testing.T) {
+	t.Logf("counterparty: internal/fakeexecutor (in-process stand-in for a DBOS SDK executor)")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -311,8 +317,21 @@ func TestHA_CrossInstancePeerForwarding(t *testing.T) {
 		_ = exec.Run(ctx)
 	}()
 
-	// Wait for executor registration
-	time.Sleep(50 * time.Millisecond)
+	// Poll until executor registration is complete
+	deadline := time.Now().Add(5 * time.Second)
+	var registered bool
+	for time.Now().Before(deadline) {
+		store.mu.Lock()
+		_, registered = store.executors["exec-node-1"]
+		store.mu.Unlock()
+		if registered {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !registered {
+		t.Fatal("timed out waiting for executor registration")
+	}
 
 	// Manually update store executor owner to Node 1
 	store.mu.Lock()
@@ -435,11 +454,18 @@ func TestHA_InstanceCrashAndLeaseAdoption(t *testing.T) {
 	}
 	defer mgr.Stop()
 
-	time.Sleep(50 * time.Millisecond)
-
-	store.mu.Lock()
-	adopted := store.executors["exec-orphan"]
-	store.mu.Unlock()
+	// Poll until lease is adopted
+	deadline := time.Now().Add(5 * time.Second)
+	var adopted gen.Executor
+	for time.Now().Before(deadline) {
+		store.mu.Lock()
+		adopted = store.executors["exec-orphan"]
+		store.mu.Unlock()
+		if adopted.OwnerInstanceID == survivingNodeID {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	if adopted.OwnerInstanceID != survivingNodeID {
 		t.Errorf("expected adopted owner %v, got %v", survivingNodeID, adopted.OwnerInstanceID)

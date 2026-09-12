@@ -390,6 +390,7 @@ func TestDashboard_StaticAssetsAndSPARoutes(t *testing.T) {
 }
 
 func TestDashboard_EndToEndWithFakeExecutor(t *testing.T) {
+	t.Logf("counterparty: internal/fakeexecutor (in-process stand-in for a DBOS SDK executor)")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -451,8 +452,21 @@ func TestDashboard_EndToEndWithFakeExecutor(t *testing.T) {
 		_ = exec.Run(ctx)
 	}()
 
-	// Allow registration
-	time.Sleep(50 * time.Millisecond)
+	// Poll until executor appears in store
+	deadline := time.Now().Add(5 * time.Second)
+	var registered bool
+	for time.Now().Before(deadline) {
+		store.mu.Lock()
+		_, registered = store.executors["exec-dash-1"]
+		store.mu.Unlock()
+		if registered {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !registered {
+		t.Fatal("timed out waiting for executor registration")
+	}
 
 	// Query executor list from the REST endpoint used by the Dashboard UI
 	execURL := ts.URL + "/v2/orgs/" + orgName + "/apps/" + appName + "/executors"

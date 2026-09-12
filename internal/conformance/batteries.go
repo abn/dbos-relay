@@ -18,6 +18,91 @@ import (
 	"github.com/abn/relay/internal/protocol"
 )
 
+func (r *Runner) waitForExecutorHealthy(ctx context.Context, executorID string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		if r.cfg.ConductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err == nil {
+			if resp.StatusCode == http.StatusOK {
+				var execs []map[string]any
+				if err := json.NewDecoder(resp.Body).Decode(&execs); err == nil {
+					_ = resp.Body.Close()
+					for _, e := range execs {
+						if id, ok := e["executor_id"].(string); ok && id == executorID {
+							if status, ok := e["status"].(string); ok && status == "HEALTHY" {
+								return nil
+							}
+						}
+					}
+				} else {
+					_ = resp.Body.Close()
+				}
+			} else {
+				_ = resp.Body.Close()
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("timed out waiting for executor %q to appear HEALTHY", executorID)
+}
+
+func (r *Runner) waitForExecutorUnhealthy(ctx context.Context, executorID string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		if r.cfg.ConductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err == nil {
+			if resp.StatusCode == http.StatusOK {
+				var execs []map[string]any
+				if err := json.NewDecoder(resp.Body).Decode(&execs); err == nil {
+					_ = resp.Body.Close()
+					healthy := false
+					for _, e := range execs {
+						if id, ok := e["executor_id"].(string); ok && id == executorID {
+							if status, ok := e["status"].(string); ok && status == "HEALTHY" {
+								healthy = true
+								break
+							}
+						}
+					}
+					if !healthy {
+						return nil
+					}
+				} else {
+					_ = resp.Body.Close()
+				}
+			} else {
+				_ = resp.Body.Close()
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("timed out waiting for executor %q to leave HEALTHY state", executorID)
+}
+
 func (r *Runner) runBattery1Spec(ctx context.Context) BatteryResult {
 	var checks []CheckResult
 
@@ -240,8 +325,11 @@ func (r *Runner) runBattery2Handshake(ctx context.Context) BatteryResult {
 			_ = fe.Run(ctx)
 		}()
 
-		// Allow server to process handshake frame
-		time.Sleep(150 * time.Millisecond)
+		// Wait for server to register executor as HEALTHY
+		if err := r.waitForExecutorHealthy(ctx, "conformance-exec-1"); err != nil {
+			_ = fe.Close()
+			return err
+		}
 
 		// Verify executor appears via REST API
 		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
@@ -367,7 +455,14 @@ func (r *Runner) runBattery3Observability(ctx context.Context) BatteryResult {
 	}
 	go func() { _ = fe.Run(ctx) }()
 	defer func() { _ = fe.Close() }()
-	time.Sleep(150 * time.Millisecond)
+	if err := r.waitForExecutorHealthy(ctx, "conformance-obs-exec"); err != nil {
+		return BatteryResult{
+			ID:     3,
+			Title:  "REST & Wire Multiplexing (Observability)",
+			Status: StatusFail,
+			Error:  fmt.Sprintf("failed waiting for fake executor: %v", err),
+		}
+	}
 
 	// Check 3.1: List Workflows
 	checks = append(checks, executeCheck("3.1 List Workflows Multiplexing", func() error {
@@ -527,7 +622,14 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 	}
 	go func() { _ = fe.Run(ctx) }()
 	defer func() { _ = fe.Close() }()
-	time.Sleep(150 * time.Millisecond)
+	if err := r.waitForExecutorHealthy(ctx, "conformance-ctrl-exec"); err != nil {
+		return BatteryResult{
+			ID:     4,
+			Title:  "Workflow Control Operations",
+			Status: StatusFail,
+			Error:  fmt.Sprintf("failed waiting for fake executor: %v", err),
+		}
+	}
 
 	// Check 4.1: Cancel Workflow
 	checks = append(checks, executeCheck("4.1 Cancel Workflow Mutation", func() error {
@@ -697,7 +799,14 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 	}
 	go func() { _ = fe.Run(ctx) }()
 	defer func() { _ = fe.Close() }()
-	time.Sleep(150 * time.Millisecond)
+	if err := r.waitForExecutorHealthy(ctx, "conformance-qs-exec"); err != nil {
+		return BatteryResult{
+			ID:     5,
+			Title:  "Queues & Schedules Operations",
+			Status: StatusFail,
+			Error:  fmt.Sprintf("failed waiting for fake executor: %v", err),
+		}
+	}
 
 	// Check 5.1: List Queues
 	checks = append(checks, executeCheck("5.1 List Queues", func() error {
@@ -837,11 +946,16 @@ func (r *Runner) runBattery6Recovery(ctx context.Context) BatteryResult {
 			return fmt.Errorf("connect failed: %w", err)
 		}
 		go func() { _ = fe.Run(ctx) }()
-		time.Sleep(100 * time.Millisecond)
+		if err := r.waitForExecutorHealthy(ctx, "conformance-rec-dead"); err != nil {
+			_ = fe.Close()
+			return err
+		}
 
 		// Hard disconnect
 		_ = fe.Close()
-		time.Sleep(200 * time.Millisecond)
+		if err := r.waitForExecutorUnhealthy(ctx, "conformance-rec-dead"); err != nil {
+			return err
+		}
 
 		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -906,7 +1020,9 @@ func (r *Runner) runBattery6Recovery(ctx context.Context) BatteryResult {
 		}
 		go func() { _ = fe.Run(ctx) }()
 		defer func() { _ = fe.Close() }()
-		time.Sleep(150 * time.Millisecond)
+		if err := r.waitForExecutorHealthy(ctx, "conformance-rec-survivor"); err != nil {
+			return err
+		}
 
 		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

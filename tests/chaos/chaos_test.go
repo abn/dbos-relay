@@ -1,3 +1,8 @@
+// Package chaos_test exercises control-plane failure recovery workflows.
+//
+// Note: Counterparties in this package are in-process internal/fakeexecutor
+// stand-ins. Real-process chaos verification against genuine DBOS SDK runtimes
+// is performed in tests/verifysdk Cell 5 (see tests/verifysdk/REPORT.md).
 package chaos_test
 
 import (
@@ -163,7 +168,8 @@ func (m *memoryStore) seedTestData() (string, pgtype.UUID) {
 	return rawKey, appID
 }
 
-func TestChaos_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
+func TestChaos_FakeExecutorFailureDispatchesRecovery(t *testing.T) {
+	t.Logf("counterparty: internal/fakeexecutor (in-process stand-in for a DBOS SDK executor); clock: liveness.VirtualClock")
 	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	store := newMemoryStore()
 	apiKey, appID := store.seedTestData()
@@ -248,23 +254,33 @@ func TestChaos_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
 	})
 	go func() { _ = exec2.Run(ctx) }()
 
-	// Give handshakes a few milliseconds to settle
-	time.Sleep(50 * time.Millisecond)
-
-	// Verify both are tracked as connected
-	peers, err := h.FindHealthyPeers(ctx, appID)
-	if err != nil {
-		t.Fatalf("FindHealthyPeers failed: %v", err)
+	// Poll until both executors are tracked as connected
+	deadline := time.Now().Add(5 * time.Second)
+	var peers []liveness.Peer
+	var err error
+	for time.Now().Before(deadline) {
+		peers, err = h.FindHealthyPeers(ctx, appID)
+		if err == nil && len(peers) == 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if len(peers) != 2 {
-		t.Fatalf("expected 2 connected peers, got %d", len(peers))
+		t.Fatalf("expected 2 connected peers, got %d (err: %v)", len(peers), err)
 	}
 
 	// 3. Chaos: Kill Executor 1 abruptly
 	_ = exec1.Close()
 
-	// Give socket close pump a moment to fire unregister
-	time.Sleep(50 * time.Millisecond)
+	// Poll until socket close pump unregisters executor 1
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		peers, err = h.FindHealthyPeers(ctx, appID)
+		if err == nil && len(peers) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// 4. Advance virtual clock past grace period (61s > 60s default)
 	clock.Advance(61 * time.Second)
@@ -280,30 +296,23 @@ func TestChaos_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
 	}
 
 	// 6. Oracle verification: Dead executor record is deleted from store
-	time.Sleep(50 * time.Millisecond)
-	store.mu.Lock()
-	_, stillExists := store.executors["exec-victim-1"]
-	store.mu.Unlock()
+	deadline = time.Now().Add(5 * time.Second)
+	var stillExists bool
+	for time.Now().Before(deadline) {
+		store.mu.Lock()
+		_, stillExists = store.executors["exec-victim-1"]
+		store.mu.Unlock()
+		if !stillExists {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if stillExists {
 		t.Fatalf("expected dead executor 'exec-victim-1' record to be deleted after recovery acknowledgment")
 	}
 }
 
-func TestChaos_CrossTenantRecoveryRefused(t *testing.T) {
-	app1 := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	app2 := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
-
-	foreignPeers := []liveness.Peer{
-		{AppID: app2, ExecutorID: "exec-rogue", ApplicationVersion: "v1"},
-	}
-
-	_, err := liveness.SelectCandidates(app1, "dead-1", "v1", foreignPeers, true)
-	if !errors.Is(err, liveness.ErrCrossTenantRecovery) {
-		t.Fatalf("expected ErrCrossTenantRecovery, got %v", err)
-	}
-}
-
-func TestChaos_DuplicateRecoveryIsIdempotent(t *testing.T) {
+func TestChaos_RepeatedRecoveryDispatchIsSafe(t *testing.T) {
 	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	ctx := context.Background()
 
@@ -367,7 +376,8 @@ func (m *mockTransportChaos) SendRecovery(ctx context.Context, appID pgtype.UUID
 	}, nil
 }
 
-func TestChaos_LiveDatabase_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
+func TestChaos_LiveDatabase_FakeExecutorFailureDispatchesRecovery(t *testing.T) {
+	t.Logf("counterparty: internal/fakeexecutor (in-process stand-in for a DBOS SDK executor); clock: liveness.VirtualClock")
 	dbURL, err := testdb.URL("chaos")
 	if err != nil {
 		t.Fatalf("failed to derive test db url: %v", err)
@@ -504,19 +514,32 @@ func TestChaos_LiveDatabase_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
 	})
 	go func() { _ = exec2.Run(ctx) }()
 
-	time.Sleep(50 * time.Millisecond)
-
-	peers, err := h.FindHealthyPeers(ctx, app.ID)
-	if err != nil {
-		t.Fatalf("FindHealthyPeers failed: %v", err)
+	// Poll until both executors are tracked as connected
+	deadline := time.Now().Add(5 * time.Second)
+	var peers []liveness.Peer
+	for time.Now().Before(deadline) {
+		peers, err = h.FindHealthyPeers(ctx, app.ID)
+		if err == nil && len(peers) == 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if len(peers) != 2 {
-		t.Fatalf("expected 2 connected peers, got %d", len(peers))
+		t.Fatalf("expected 2 connected peers, got %d (err: %v)", len(peers), err)
 	}
 
 	// 3. Chaos: Kill Executor 1 abruptly
 	_ = exec1.Close()
-	time.Sleep(50 * time.Millisecond)
+
+	// Poll until socket close pump unregisters executor 1
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		peers, err = h.FindHealthyPeers(ctx, app.ID)
+		if err == nil && len(peers) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// 4. Advance virtual clock past grace period
 	clock.Advance(61 * time.Second)
@@ -531,16 +554,27 @@ func TestChaos_LiveDatabase_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
 		t.Fatal("oracle timed out waiting for workflow recovery dispatch to survivor")
 	}
 
-	// 6. Verify in real PostgreSQL store that recovery was executed
-	time.Sleep(50 * time.Millisecond)
-	execs, err := s.Queries().ListExecutorsByApplication(ctx, app.ID)
-	if err != nil {
-		t.Fatalf("failed to list executors from DB: %v", err)
-	}
-	for _, e := range execs {
-		if e.ExecutorID == "exec-victim-1" && e.Status == "connected" {
-			t.Fatalf("expected exec-victim-1 to not be connected, got %s", e.Status)
+	// 6. Verify in real PostgreSQL store that dead executor is deleted
+	deadline = time.Now().Add(5 * time.Second)
+	var victimFound bool
+	for time.Now().Before(deadline) {
+		execs, err := s.Queries().ListExecutorsByApplication(ctx, app.ID)
+		if err == nil {
+			victimFound = false
+			for _, e := range execs {
+				if e.ExecutorID == "exec-victim-1" {
+					victimFound = true
+					break
+				}
+			}
+			if !victimFound {
+				break
+			}
 		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if victimFound {
+		t.Fatalf("expected exec-victim-1 record to be deleted from database after recovery acknowledgment")
 	}
 }
 

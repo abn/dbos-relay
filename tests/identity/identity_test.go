@@ -40,6 +40,7 @@ type mockIdP struct {
 
 func newMockIdP(t *testing.T) *mockIdP {
 	t.Helper()
+	t.Logf("identity provider: in-test mockIdP stand-in (not a real external OIDC provider)")
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -835,7 +836,8 @@ func TestIdentity_FailClosedOnJWKSUnavailable(t *testing.T) {
 	}
 }
 
-func TestIdentity_DeviceFlowLogin(t *testing.T) {
+func TestIdentity_TokenFromFakeIdPDeviceFlowAuthenticates(t *testing.T) {
+	t.Logf("identity provider: in-test mockIdP stand-in; client: direct HTTP (not dbosctl)")
 	idp := newMockIdP(t)
 	store := newMemoryStore()
 
@@ -875,13 +877,13 @@ func TestIdentity_DeviceFlowLogin(t *testing.T) {
 		IDToken     string `json:"id_token"`
 	}
 	_ = json.NewDecoder(tokenResp.Body).Decode(&tokenResult)
-	if tokenResult.IDToken == "" {
-		t.Fatalf("expected non-empty id_token")
+	if tokenResult.AccessToken == "" {
+		t.Fatalf("expected non-empty access_token")
 	}
 
 	// 3. Client uses token to authenticate against Relay
 	req, _ := http.NewRequest("GET", ts.URL+"/v2/users/me", nil)
-	req.Header.Set("Authorization", "Bearer "+tokenResult.IDToken)
+	req.Header.Set("Authorization", "Bearer "+tokenResult.AccessToken)
 
 	relayResp, err := http.DefaultClient.Do(req)
 	if err != nil {
