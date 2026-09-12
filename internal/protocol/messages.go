@@ -590,10 +590,28 @@ type GetWorkflowAggregatesRequest struct {
 	Body GetWorkflowAggregatesRequestBody `json:"body"`
 }
 
+// WorkflowAggregateRow mirrors the Go SDK dbos.WorkflowAggregateRow shape.
+// Provenance: dbos-inc/dbos-transact-golang dbos/internal/sysdb/system_database.go:3414 (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+type WorkflowAggregateRow struct {
+	Group             map[string]*string `json:"group"`
+	Count             *int64             `json:"count"`
+	MinCreatedAt      *int64             `json:"min_created_at"`
+	MaxQueueWaitMs    *int64             `json:"max_queue_wait_ms"`
+	MaxTotalLatencyMs *int64             `json:"max_total_latency_ms"`
+}
+
 // GetWorkflowAggregatesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
 type GetWorkflowAggregatesResponse struct {
 	Envelope
 	Output []WorkflowAggregateRow `json:"output"`
+}
+
+// StepAggregateRow mirrors the Go SDK dbos.StepAggregateRow shape.
+// Provenance: dbos-inc/dbos-transact-golang dbos/internal/sysdb/system_database.go:3708 (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+type StepAggregateRow struct {
+	Group         map[string]*string `json:"group"`
+	Count         *int64             `json:"count"`
+	MaxDurationMs *int64             `json:"max_duration_ms"`
 }
 
 // GetStepAggregatesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
@@ -620,7 +638,7 @@ type GetStepAggregatesRequest struct {
 // GetStepAggregatesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
 type GetStepAggregatesResponse struct {
 	Envelope
-	Output []WorkflowAggregateRow `json:"output"`
+	Output []StepAggregateRow `json:"output"`
 }
 
 // ApplicationVersionOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)

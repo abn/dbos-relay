@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -34,8 +35,6 @@ func Decode(data []byte) (Message, error) {
 	}
 	return decodeWithDirection(data, isResponse)
 }
-
-import "bytes"
 
 func decodeWithDirection(data []byte, isResponse bool) (Message, error) {
 	var raw map[string]json.RawMessage
