@@ -15,7 +15,8 @@ have, it is defined here rather than invented per page.
 
 **Executor.** One running process of an application that uses the workflow
 library. It opens an outbound WebSocket to the control plane, and it owns its
-system database, which the control plane does not touch. It carries an
+system database, which Relay accesses only via official SDK client methods
+when an opt-in data plane is configured, never via direct raw SQL. It carries an
 identifier, an application name, and an application version. How the
 identifier is generated and when it changes are open questions until the
 protocol specification closes them.
@@ -28,7 +29,8 @@ exactly.
 published API.
 
 **System database.** The application's own Postgres database, holding workflow
-and step state. Off limits to Relay.
+and step state. Off limits to direct raw SQL from Relay; accessed only via the
+official SDK client when an opt-in data plane is configured.
 
 **Workflow, step, queue, schedule.** The library's own concepts. Relay never
 redefines them; it lists, reads, and manipulates them through executors.

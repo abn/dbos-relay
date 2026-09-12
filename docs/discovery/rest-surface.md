@@ -33,9 +33,11 @@ The OpenAPI specification defines 64 operations across applications, workflows,
 steps, queues, schedules, executors, alerting rules, metrics, organizations,
 members, roles, and tokens.
 
-Per Relay architectural invariants, Relay never reads an application's database
-directly. Workflow, step, queue, and schedule data are fetched on demand from
-executors over the WebSocket connection hub. System metadata (applications,
+Per Relay architectural invariants and ADR 0004, Relay never executes direct raw
+SQL against an application's system database. Workflow, step, queue, and schedule
+data are fetched on demand from executors over the WebSocket connection hub, or
+via the official SDK client when an application has an explicitly configured data-plane
+connection (with live executors taking precedence). System metadata (applications,
 versions, API keys, alert rules, and executor registrations) is stored in Relay's
 own Postgres database.
 

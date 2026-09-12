@@ -22,7 +22,7 @@ status: draft
   and searches workflows and their steps including the step graph, and can
   cancel, resume, and fork.
 - **One binary and a database.** A complete deployment is the binary plus a
-  Postgres URL. Container images are multi-architecture.
+  Postgres URL. Container images: multi-architecture images are planned.
 - **Ready for more than one instance.** Executor ownership is recorded in
   Postgres from the first schema, so high availability is added without
   schema churn even though v0 runs a single instance.
@@ -39,8 +39,11 @@ status: draft
 
 ## Rules that constrain every feature
 
-- Relay never connects to an application's system database. If a feature
-  appears to need that access, it belongs in the SDK and is filed upstream.
+- Relay never executes direct raw SQL against an application's system database.
+  When an operator explicitly configures a data-plane connection, database access
+  is mediated exclusively through the official SDK client, and live executors
+  take precedence over data-plane fallbacks. See [ADR 0004](../adr/0004-data-plane-via-sdk-client.md)
+  and [data plane](../architecture/dataplane.md).
 - Relay never requires an application-side change. If a capability needs the
   SDK to change, Relay keeps working without it in the meantime.
 - Where "nicer" and "identical to the documented behaviour" conflict,

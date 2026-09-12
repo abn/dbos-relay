@@ -21,9 +21,9 @@ session; the criteria are the same for a person.
   tracking, task, or work identifiers?
 - Does every new protocol or API claim cite a permitted source, or is it
   proven by a test against a real SDK?
-- Does it respect the invariants: clean-room sourcing, no access to an
-  application's database, no application-side change required, parity with the
-  documented behaviour?
+- Does it respect the invariants: clean-room sourcing, no direct application
+  database queries (SDK client only, opt-in data plane only per ADR 0004), no
+  application-side change required, parity with the documented behaviour?
 - Do the tests assert real behaviour, and does the wiki reflect what the code
   now does?
 

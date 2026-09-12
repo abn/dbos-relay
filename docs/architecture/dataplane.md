@@ -21,8 +21,8 @@ Direct database access is governed by strict architectural boundaries:
   restarts, resume) are rejected unless the operator explicitly opts in to `read-write` mode.
 * **Executor precedence**: When a live executor is connected, requests are routed to the executor over
   WebSocket. The data plane acts as a fallback when no executors are reachable.
-* **Auditable responses**: When a query is served via database fallback, Relay marks the response with
-  `served_from: database` in metadata and response headers.
+* **Auditable responses**: Internal routing tracks source attribution (`internal/router.ServedFromTracker`).
+  External emission of `served_from` in response headers and metrics is planned for a subsequent observability release.
 
 ## Configuration
 
@@ -51,9 +51,10 @@ executor or applied directly through the SDK client data plane.
 
 ### Cancellation semantics
 
-WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update:
+WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update. The abridged SQL below illustrates the status transition (source: `dbos/internal/sysdb/system_database.go` `CancelWorkflows`):
 
 ```sql
+-- Abridged illustration (source: dbos/internal/sysdb/system_database.go)
 UPDATE dbos.workflow_status
 SET status = 'CANCELLED'
 WHERE workflow_uuid = $1
@@ -74,9 +75,10 @@ and safety guarantees as live WebSocket cancellations.
 
 ### Resume semantics
 
-WebSocket resume requests and data-plane resume calls transition workflows back into the queue table:
+WebSocket resume requests and data-plane resume calls transition workflows back into the queue table. The abridged SQL below illustrates the transition (source: `dbos/internal/sysdb/system_database.go` `ResumeWorkflows`):
 
 ```sql
+-- Abridged illustration (source: dbos/internal/sysdb/system_database.go)
 UPDATE dbos.workflow_status
 SET status = 'ENQUEUED',
     queue_name = '_dbos_internal_queue',
@@ -111,17 +113,17 @@ or waiting on an event message (`recv`):
 
 ### Served-from auditing
 
-Every response served through the data plane is tagged in response headers and metrics with
-`served_from: database` (compared to `served_from: executor` for WebSocket dispatches). This covers
-both read queries and administrative mutations (cancel, resume, restart).
+Internal routing tracks request dispatch attribution (`internal/router.ServedFromTracker`)
+between live WebSocket executors and data-plane fallback reads. Surfacing `served_from`
+in HTTP response headers and export metrics is planned for an observability update.
 
 ## Operational metrics and alerting
 
-Relay records the source that fulfilled each request in the `relay_requests_served_total` metric
-with the `served_from` label (`executor` or `database`).
+Under the planned observability specification, Relay records the source that fulfilled each request
+in the `relay_requests_served_total` metric with the `served_from` label (`executor` or `database`).
 
 If the ratio of requests served via database fallback exceeds 50% over a 5-minute window,
-the `RelayHighDatabaseFallbackRatio` Prometheus alert rule fires:
+the `RelayHighDatabaseFallbackRatio` Prometheus alert rule is designed to fire:
 
 ```yaml
 # deploy/observability/prometheus/relay-alerts.yaml

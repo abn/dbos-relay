@@ -211,21 +211,13 @@ Relay will **not** consume or depend on `@dbos-argus/ui`.
    dependency with zero architectural benefit, creating version drift and supply
    chain risk.
 
-### Direction for Phase 6 (Dashboard)
+## Outcome
 
-Relay Phase 6 will implement the web interface directly in `console/` under
-the following design:
-1. **Framework Baseline**: SvelteKit with Svelte 5 and static adapter
-   (`@sveltejs/adapter-static`), matching Relay's single-binary embed architecture.
-2. **Direct Schema Codegen**: TypeScript types generated directly from
-   `api/spec/openapi.json` via `openapi-typescript` or similar tooling, ensuring
-   zero schema drift.
-3. **DAG Visualization**: Direct integration of `@xyflow/svelte` (Svelte Flow)
-   with `elkjs` layout, or a lightweight bespoke SVG DAG renderer tailored to
-   DBOS Transact step graphs.
-4. **Tailwind and Modern Primitives**: UI components built with Tailwind CSS and
-   `bits-ui` primitives, matching the clean aesthetic of modern developer tools.
-
+The No-Go decision on `@dbos-argus/ui` held in full. The web interface shipped as
+a zero-dependency vanilla JS console with no npm dependencies, avoiding
+supply-chain overhead. DAG visualization shipped as the permitted bespoke SVG DAG
+renderer (`WorkflowDAG.js`). UI styling and client API models are maintained directly
+in `console/src/` without external framework toolchains. See [ADR 0009](../adr/0009-dashboard-web-stack.md).
 
 ## Addendum
 OIDC Login flow added.

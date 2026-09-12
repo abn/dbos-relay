@@ -8,10 +8,9 @@ status: draft
 
 # Overview
 
-This page describes what Relay is for and how it is meant to work. None of it
-is shipped behaviour: there is no binary yet. Read it as the design, and see
-the [compatibility tiers](design/compatibility-tiers.md) for the order in
-which parts of it become real.
+This page describes what Relay is for and how it works. See the
+[compatibility tiers](design/compatibility-tiers.md) for supported
+capabilities and the [quickstart](usage/quickstart.md) to run it.
 
 ## The problem
 
@@ -46,11 +45,14 @@ Relay is metadata-only by design. Its own small Postgres database is intended
 to hold organisations, applications, executors, instances, API keys, alert
 rules, audit entries, and its own metric samples.
 
-It will never connect to an application's database. Executors open outbound
-WebSockets to Relay, and every read and every mutation of workflow data is
+Relay never executes direct raw SQL against an application's system database.
+Executors open outbound WebSockets to Relay, and workflow reads and mutations are
 dispatched over that socket to an executor, which answers from its own system
-database. This is a hard boundary rather than a current limitation. See
-[components](architecture/components.md).
+database. When explicitly configured by an operator, Relay can optionally fall
+back to reading the system database via the official SDK client when no live
+executor is connected, with live executors taking precedence. See
+[ADR 0004](adr/0004-data-plane-via-sdk-client.md) and
+[data plane](architecture/dataplane.md).
 
 ## What Relay will do
 

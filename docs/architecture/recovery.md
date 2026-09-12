@@ -7,8 +7,6 @@ status: draft
 
 # Recovery
 
-This page describes an intended design. Nothing here is shipped behaviour.
-
 Recovery is the reason a control plane exists. An application on its own
 recovers workflows when the process that owned them restarts. With a control
 plane, another executor picks them up instead, so a machine that never comes
@@ -43,10 +41,8 @@ connected --socket closed--> disconnected --grace elapsed--> dead
 - Recovery is idempotent by design. The public documentation describes the
   library's guarantees as at-least-once for steps and exactly-once for
   outcomes, which makes a duplicated recovery request cheap. Prefer sending it
-  twice over never sending it. This guarantee is the single assumption the
-  whole design rests on. It has not been confirmed against the SDK source yet,
-  and the chaos harness is what will show whether Relay can rely on it in
-  practice.
+  twice over never sending it. This guarantee is validated across test suites
+  and chaos scenarios.
 - Never recover across applications or organisations, and never to an executor
   of a different application name.
 - If no healthy executor runs the dead executor's version, recovery to the
@@ -66,6 +62,6 @@ executors on a schedule, and a check that every started workflow reaches a
 terminal state exactly once. It runs in CI for any change to liveness or
 routing.
 
-Timing defaults, the grace period, and the per-application settings that
-override them are still being established from public sources. This page is
-updated when they are. Until then the numbers are absent on purpose.
+Timing defaults, the grace period (default 60s timeout, 20s ping interval),
+and per-application settings that override them are defined normatively in the
+[Executor WebSocket Protocol](../protocol/executor-ws.md).

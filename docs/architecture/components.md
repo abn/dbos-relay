@@ -7,9 +7,7 @@ status: draft
 
 # Components
 
-This page describes an intended design. No product code exists yet, so the
-package names below are the planned layout rather than a description of
-something you can read. The language is Go, per
+This page describes the module boundaries and package layout. The language is Go, per
 [ADR 0003](../adr/0003-implementation-language.md).
 
 Relay is one process with a small number of internal boundaries. The
@@ -71,14 +69,16 @@ that require it.
 request counters.
 
 **Dashboard** (`console/`, served by `internal/dashboard`). The web interface,
-talking only to the HTTP API. It has no database access, ever. The Go package
-is not called the console: that is the vendor's product name, and the
-trademark rule reaches package names.
+talking only to the HTTP API. It has no database access, ever. In accordance
+with project terminology conventions, Relay's web interface is named the
+dashboard; Console refers strictly to the upstream vendor product.
 
 ## Rules the boundaries encode
 
 - Relay's database is small and its own. Workflow data is fetched from
-  executors per request and is not cached.
+  executors per request and is not cached. When an application configures a
+  data-plane connection, `internal/dataplane` provides fallback reads via the
+  official SDK client if no healthy executor is available.
 - Every executor-served request carries a deadline, and failure maps onto the
   status codes the published specification defines.
 - One executor connection has exactly one owning instance. Ownership and its
