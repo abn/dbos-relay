@@ -40,6 +40,8 @@ type Hub struct {
 	liveness         LivenessTracker
 	handshakeTimeout time.Duration
 	readLimit        int64
+	pingInterval     time.Duration
+	pongTimeout      time.Duration
 	wg               sync.WaitGroup
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -60,6 +62,8 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 		logger:           logger,
 		handshakeTimeout: 5 * time.Second,
 		readLimit:        32 * 1024 * 1024,
+		pingInterval:     20 * time.Second,
+		pongTimeout:      25 * time.Second,
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -73,6 +77,12 @@ func (h *Hub) SetHandshakeTimeout(d time.Duration) {
 // SetReadLimit sets the websocket message read limit (default 32 MiB).
 func (h *Hub) SetReadLimit(limit int64) {
 	h.readLimit = limit
+}
+
+// SetPingPongTimeouts sets the heartbeat ping interval and pong timeout (useful in tests).
+func (h *Hub) SetPingPongTimeouts(interval, timeout time.Duration) {
+	h.pingInterval = interval
+	h.pongTimeout = timeout
 }
 
 // SetLivenessTracker sets the liveness manager to receive executor lifecycle events.
@@ -223,6 +233,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	execConn = NewExecutorConn(conn, appID, executorID, appName, appVersion, hostname, metadata, mux, unregister)
+	if h.pingInterval > 0 && h.pongTimeout > 0 {
+		execConn.SetPingPongTimeouts(h.pingInterval, h.pongTimeout)
+	}
 
 	h.registry.Register(execConn)
 	registered = true
@@ -273,12 +286,12 @@ func (h *Hub) SendRecovery(ctx context.Context, appID pgtype.UUID, targetExecuto
 	ch, unregister := conn.mux.Register(reqID)
 	defer unregister()
 
-	if err := conn.WriteMessage(ctx, req); err != nil {
-		return nil, fmt.Errorf("send recovery failed: %w", err)
-	}
-
 	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)
 	defer cancel()
+
+	if err := conn.WriteMessage(timeoutCtx, req); err != nil {
+		return nil, fmt.Errorf("send recovery failed: %w", err)
+	}
 
 	select {
 	case <-timeoutCtx.Done():
@@ -310,12 +323,12 @@ func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Mess
 	ch, unregister := conn.mux.Register(reqID)
 	defer unregister()
 
-	if err := conn.WriteMessage(ctx, req); err != nil {
-		return nil, fmt.Errorf("dispatch failed: %w", err)
-	}
-
 	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)
 	defer cancel()
+
+	if err := conn.WriteMessage(timeoutCtx, req); err != nil {
+		return nil, fmt.Errorf("dispatch failed: %w", err)
+	}
 
 	select {
 	case <-timeoutCtx.Done():

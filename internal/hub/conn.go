@@ -3,7 +3,6 @@ package hub
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -14,7 +13,8 @@ import (
 
 // Provenance: Server-initiated liveness probe. Mirrors the executor's own 20s ping cadence (see docs/discovery/recovery-params.md); the protocol-facing server value is executorPingWait = 25s.
 const (
-	pingInterval = 20 * time.Second
+	pingInterval     = 20 * time.Second
+	executorPingWait = 25 * time.Second
 )
 
 type HubCallback func(conn *ExecutorConn, msg protocol.Message)
@@ -29,10 +29,12 @@ type ExecutorConn struct {
 	metadata           []byte
 
 	conn *websocket.Conn
-	mu   sync.Mutex // Protects WriteMessage
 	mux  *Multiplexer
 
 	unregister func()
+
+	pingInterval time.Duration
+	pongTimeout  time.Duration
 }
 
 // NewExecutorConn creates a new executor connection.
@@ -54,7 +56,15 @@ func NewExecutorConn(
 		conn:               conn,
 		mux:                mux,
 		unregister:         unregister,
+		pingInterval:       pingInterval,
+		pongTimeout:        executorPingWait,
 	}
+}
+
+// SetPingPongTimeouts configures heartbeat intervals (useful in tests).
+func (c *ExecutorConn) SetPingPongTimeouts(interval, timeout time.Duration) {
+	c.pingInterval = interval
+	c.pongTimeout = timeout
 }
 
 // WriteMessage encodes and writes a protocol message to the connection safely.
@@ -63,9 +73,6 @@ func (c *ExecutorConn) WriteMessage(ctx context.Context, msg protocol.Message) e
 	if err != nil {
 		return fmt.Errorf("encode failed: %w", err)
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	return c.conn.Write(ctx, websocket.MessageText, data)
 }
@@ -106,18 +113,27 @@ func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 
 // HeartbeatPump runs the ping/pong loop for the connection.
 func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
-	ticker := time.NewTicker(pingInterval)
+	interval := c.pingInterval
+	if interval <= 0 {
+		interval = pingInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	defer func() { _ = c.Close() }()
+
+	timeout := c.pongTimeout
+	if timeout <= 0 {
+		timeout = executorPingWait
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c.mu.Lock()
-			err := c.conn.Ping(ctx)
-			c.mu.Unlock()
+			pingCtx, pingCancel := context.WithTimeout(ctx, timeout)
+			err := c.conn.Ping(pingCtx)
+			pingCancel()
 			if err != nil {
 				return
 			}

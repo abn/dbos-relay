@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -85,6 +86,8 @@ func TestMultiplexer_LateResponse(t *testing.T) {
 
 type mockHubStore struct {
 	memoryAuthStore
+	disconnected []gen.DisconnectExecutorParams
+	mu           sync.Mutex
 }
 
 func newMockHubStore() *mockHubStore {
@@ -100,6 +103,9 @@ func (m *mockHubStore) UpsertExecutor(ctx context.Context, arg gen.UpsertExecuto
 }
 
 func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.DisconnectExecutorParams) (gen.Executor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.disconnected = append(m.disconnected, arg)
 	return gen.Executor{}, nil
 }
 
@@ -458,5 +464,192 @@ func TestHub_ReadLimit_LargePayload(t *testing.T) {
 	}
 	if resolvedConn != execConn {
 		t.Fatalf("expected resolved connection to match original connection")
+	}
+}
+
+func TestHub_Heartbeat_PongTimeoutAndUnregister(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{
+		ExecutorDeadline: 50 * time.Millisecond,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+	// Configure fast ping interval (20ms) and pong timeout (40ms)
+	h.SetPingPongTimeouts(20*time.Millisecond, 40*time.Millisecond)
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Dial with OnPingReceived returning false (never pong)
+	dialOpts := &websocket.DialOptions{
+		OnPingReceived: func(ctx context.Context, payload []byte) bool {
+			return false // Do not auto-pong!
+		},
+	}
+	conn, resp, err := websocket.Dial(ctx, wsURL, dialOpts)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	// Read executor_info prompt from relay
+	typ, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("failed to read prompt: %v", err)
+	}
+	if typ != websocket.MessageText {
+		t.Fatalf("expected text message, got %v", typ)
+	}
+	msg, err := protocol.Decode(data)
+	if err != nil {
+		t.Fatalf("failed to decode prompt: %v", err)
+	}
+	infoReq, ok := msg.(*protocol.ExecutorInfoRequest)
+	if !ok {
+		t.Fatalf("expected *protocol.ExecutorInfoRequest, got %T", msg)
+	}
+
+	// Send executor_info response
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "unresponsive-peer-1",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, err := protocol.Encode(infoResp)
+	if err != nil {
+		t.Fatalf("failed to encode response: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+		t.Fatalf("failed to write response: %v", err)
+	}
+
+	// Wait for registration
+	time.Sleep(10 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+	execConn, err := h.registry.GetExecutorConn(appID, "unresponsive-peer-1")
+	if err != nil {
+		t.Fatalf("expected executor to be registered: %v", err)
+	}
+
+	// WriteMessage must not block forever when peer doesn't pong
+	writeCtx, writeCancel := context.WithTimeout(ctx, 30*time.Millisecond)
+	_ = execConn.WriteMessage(writeCtx, &protocol.RecoveryRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeRecovery,
+			RequestID: "test-write",
+		},
+		ExecutorIDs: []string{"unresponsive-peer-1"},
+	})
+	writeCancel()
+
+	// Wait for pingInterval + pongTimeout to elapse (20ms + 40ms = 60ms; wait 150ms)
+	time.Sleep(150 * time.Millisecond)
+
+	// Verify executor is unregistered from registry
+	_, err = h.registry.GetExecutorConn(appID, "unresponsive-peer-1")
+	if err == nil {
+		t.Fatalf("expected executor to be unregistered after pong timeout")
+	}
+
+	// Verify DisconnectExecutor was recorded in store
+	store.mu.Lock()
+	discCount := len(store.disconnected)
+	store.mu.Unlock()
+	if discCount == 0 {
+		t.Fatalf("expected DisconnectExecutor to be called, got 0")
+	}
+}
+
+func TestHub_Dispatch_TimeoutAndCancelledContext(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{
+		ExecutorDeadline: 50 * time.Millisecond,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	// Handshake
+	typ, data, err := conn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("read prompt failed: %v", err)
+	}
+	msg, _ := protocol.Decode(data)
+	infoReq := msg.(*protocol.ExecutorInfoRequest)
+
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "dispatch-test-exec",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, _ := protocol.Encode(infoResp)
+	_ = conn.Write(ctx, websocket.MessageText, respData)
+
+	time.Sleep(10 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+
+	// 1. Dispatch with an already-cancelled context returns immediately
+	cancelledCtx, cancelNow := context.WithCancel(ctx)
+	cancelNow()
+	_, err = h.Dispatch(cancelledCtx, appID, &protocol.RecoveryRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeRecovery,
+			RequestID: "req-cancelled",
+		},
+		ExecutorIDs: []string{"dispatch-test-exec"},
+	})
+	if err == nil {
+		t.Fatalf("expected error on cancelled context dispatch, got nil")
+	}
+
+	// 2. Dispatch to an executor that does not respond times out within ExecutorDeadline
+	start := time.Now()
+	_, err = h.Dispatch(ctx, appID, &protocol.RecoveryRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeRecovery,
+			RequestID: "req-silent",
+		},
+		ExecutorIDs: []string{"dispatch-test-exec"},
+	})
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatalf("expected dispatch timeout error, got nil")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("dispatch took too long: %v, expected ~50ms", elapsed)
 	}
 }
