@@ -119,6 +119,9 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					username = claims.Subject
 				}
 
+				_, err = server.store.GetUserBySubject(r.Context(), claims.Subject)
+				isNewUser := err != nil
+
 				user, err := server.store.UpsertUser(r.Context(), storegen.UpsertUserParams{
 					Subject:  claims.Subject,
 					Username: username,
@@ -129,7 +132,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					user, _ = server.store.GetUserBySubject(r.Context(), claims.Subject)
 				}
 
-				if claims.Email != "" && strings.Contains(claims.Email, "@") {
+				if isNewUser && claims.Email != "" && strings.Contains(claims.Email, "@") {
 					domain := strings.Split(claims.Email, "@")[1]
 					if dc, err := server.store.GetDomainClaim(r.Context(), domain); err == nil {
 						_, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{

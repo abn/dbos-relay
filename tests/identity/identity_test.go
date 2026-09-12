@@ -967,7 +967,7 @@ func TestIdentity_RolesLifecycle(t *testing.T) {
 		Username: "admin",
 		Email:    "admin@acme.corp",
 	})
-	store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
 		OrganisationID: org.ID,
 		UserID:         user.ID,
 		RoleName:       auth.RoleAdmin,
@@ -1043,7 +1043,7 @@ func TestIdentity_DomainClaimsLifecycle(t *testing.T) {
 		Username: "admin-sub",
 		Email:    "admin@acme.corp",
 	})
-	store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
 		OrganisationID: org.ID,
 		UserID:         user.ID,
 		RoleName:       auth.RoleAdmin,
@@ -1104,5 +1104,70 @@ func TestIdentity_DomainClaimsLifecycle(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("expected 204 No Content on ReleaseDomainClaim, got %d", resp.StatusCode)
+	}
+}
+func TestIdentity_WriteHandlers_EnforceAdmin(t *testing.T) {
+	idp := newMockIdP(t)
+	store := newMemoryStore()
+
+	org, _ := store.UpsertOrganisation(context.Background(), "acme")
+	user, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "viewer-sub",
+		Username: "viewer-sub",
+		Email:    "viewer@acme.corp",
+	})
+	// Grant them Viewer role
+	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+		OrganisationID: org.ID,
+		UserID:         user.ID,
+		RoleName:       auth.RoleViewer,
+	})
+
+	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
+	ts := setupServer(store, true, validator)
+	defer ts.Close()
+
+	token := idp.mintToken(t, map[string]any{
+		"sub": "viewer-sub",
+		"iss": idp.server.URL,
+		"aud": "relay-client",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	endpoints := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{"POST", "/v2/orgs/acme/roles", `{"name": "test-role"}`},
+		{"DELETE", "/v2/orgs/acme/roles/test-role", ""},
+		{"PUT", "/v2/orgs/acme/members/someuser/roles/operator", ""},
+		{"DELETE", "/v2/orgs/acme/members/someuser", ""},
+		{"PATCH", "/v2/orgs/acme", "{}"},
+		{"POST", "/v2/orgs/acme/secrets", "{}"},
+		{"POST", "/v2/orgs/acme/domain-claims", `{"domain": "foo.com"}`},
+		{"DELETE", "/v2/orgs/acme/domain-claims/foo.com", ""},
+	}
+
+	for _, ep := range endpoints {
+		var reqBody io.Reader
+		if ep.body != "" {
+			reqBody = bytes.NewReader([]byte(ep.body))
+		}
+		req, _ := http.NewRequest(ep.method, ts.URL+ep.path, reqBody)
+		req.Header.Set("Authorization", "Bearer "+token)
+		if ep.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("request failed for %s %s: %v", ep.method, ep.path, err)
+		}
+		_ = resp.Body.Close()
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("expected 403 Forbidden for %s %s, got %d", ep.method, ep.path, resp.StatusCode)
+		}
 	}
 }

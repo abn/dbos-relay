@@ -17,6 +17,17 @@ func isGlobalRole(name string) bool {
 	return name == auth.RoleAdmin || name == auth.RoleOperator || name == auth.RoleViewer
 }
 
+func isAdmin(ctx context.Context) bool {
+	identity, ok := auth.IdentityFromContext(ctx)
+	if !ok || identity == nil {
+		return false
+	}
+	if identity.IsAdmin {
+		return true
+	}
+	return identity.Role == auth.RoleAdmin
+}
+
 func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserRequestObject) (gen.GetCurrentUserResponseObject, error) {
 	identity, ok := auth.IdentityFromContext(ctx)
 	if !ok || identity == nil {
@@ -128,6 +139,13 @@ func (s *Server) handleGetOrg(ctx context.Context, request gen.GetOrgRequestObje
 }
 
 func (s *Server) handleUpdateOrg(ctx context.Context, request gen.UpdateOrgRequestObject) (gen.UpdateOrgResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.UpdateOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	_, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.UpdateOrgdefaultApplicationProblemPlusJSONResponse{
@@ -145,6 +163,21 @@ func (s *Server) handleJoinOrg(ctx context.Context, request gen.JoinOrgRequestOb
 		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", request.OrgName)),
+		}, nil
+	}
+
+	if request.Body == nil || request.Body.Secret == "" {
+		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Secret is required"),
+		}, nil
+	}
+
+	storedSecret, ok := s.orgSecrets.Load(org.Name)
+	if !ok || storedSecret.(string) != request.Body.Secret {
+		return gen.JoinOrgdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Invalid join secret"),
 		}, nil
 	}
 
@@ -180,7 +213,14 @@ func (s *Server) handleJoinOrg(ctx context.Context, request gen.JoinOrgRequestOb
 }
 
 func (s *Server) handleGenerateSecret(ctx context.Context, request gen.GenerateSecretRequestObject) (gen.GenerateSecretResponseObject, error) {
-	_, err := s.store.GetOrganisationByName(ctx, request.OrgName)
+	if !isAdmin(ctx) {
+		return gen.GenerateSecretdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
+	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.GenerateSecretdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
@@ -196,6 +236,8 @@ func (s *Server) handleGenerateSecret(ctx context.Context, request gen.GenerateS
 		}, nil
 	}
 	secret := base64.RawURLEncoding.EncodeToString(raw)
+
+	s.orgSecrets.Store(org.Name, secret)
 
 	return gen.GenerateSecret201JSONResponse{
 		Secret: secret,
@@ -247,6 +289,13 @@ func (s *Server) handleListMembers(ctx context.Context, request gen.ListMembersR
 }
 
 func (s *Server) handleRemoveMember(ctx context.Context, request gen.RemoveMemberRequestObject) (gen.RemoveMemberResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.RemoveMemberdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.RemoveMemberdefaultApplicationProblemPlusJSONResponse{
@@ -283,6 +332,13 @@ func (s *Server) handleRemoveMember(ctx context.Context, request gen.RemoveMembe
 }
 
 func (s *Server) handleGrantRole(ctx context.Context, request gen.GrantRoleRequestObject) (gen.GrantRoleResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.GrantRoledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.GrantRoledefaultApplicationProblemPlusJSONResponse{
@@ -344,6 +400,13 @@ func (s *Server) handleListRoles(ctx context.Context, request gen.ListRolesReque
 }
 
 func (s *Server) handleCreateRole(ctx context.Context, request gen.CreateRoleRequestObject) (gen.CreateRoleResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.CreateRoledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.CreateRoledefaultApplicationProblemPlusJSONResponse{
@@ -397,6 +460,13 @@ func (s *Server) handleCreateRole(ctx context.Context, request gen.CreateRoleReq
 }
 
 func (s *Server) handleDeleteRole(ctx context.Context, request gen.DeleteRoleRequestObject) (gen.DeleteRoleResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.DeleteRoledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.DeleteRoledefaultApplicationProblemPlusJSONResponse{
@@ -461,6 +531,13 @@ func (s *Server) handleListDomainClaims(ctx context.Context, request gen.ListDom
 }
 
 func (s *Server) handleRequestDomainClaim(ctx context.Context, request gen.RequestDomainClaimRequestObject) (gen.RequestDomainClaimResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.RequestDomainClaimdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.RequestDomainClaimdefaultApplicationProblemPlusJSONResponse{
@@ -487,17 +564,30 @@ func (s *Server) handleRequestDomainClaim(ctx context.Context, request gen.Reque
 		}, nil
 	}
 
+	identity, _ := auth.IdentityFromContext(ctx)
+	username := "user"
+	if identity != nil && identity.Username != "" {
+		username = identity.Username
+	}
+
 	return gen.RequestDomainClaim201JSONResponse{
 		Domain:      dc.Domain,
 		Id:          formatUUID(dc.ID),
 		OrgName:     request.OrgName,
 		Status:      gen.Approved,
 		RequestedAt: dc.CreatedAt.Time,
-		RequestedBy: "admin",
+		RequestedBy: username,
 	}, nil
 }
 
 func (s *Server) handleReleaseDomainClaim(ctx context.Context, request gen.ReleaseDomainClaimRequestObject) (gen.ReleaseDomainClaimResponseObject, error) {
+	if !isAdmin(ctx) {
+		return gen.ReleaseDomainClaimdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+		}, nil
+	}
+
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
 		return gen.ReleaseDomainClaimdefaultApplicationProblemPlusJSONResponse{

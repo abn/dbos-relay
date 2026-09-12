@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/router"
@@ -59,6 +60,7 @@ type Server struct {
 	logger      *slog.Logger
 	authEnabled bool
 	validator   any
+	orgSecrets  sync.Map
 }
 
 // NewServer creates a new API server instance.
