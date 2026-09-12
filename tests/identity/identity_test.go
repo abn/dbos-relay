@@ -967,11 +967,14 @@ func TestIdentity_RolesLifecycle(t *testing.T) {
 		Username: "admin",
 		Email:    "admin@acme.corp",
 	})
-	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+	_, err := store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
 		OrganisationID: org.ID,
 		UserID:         user.ID,
 		RoleName:       auth.RoleAdmin,
 	})
+	if err != nil {
+		t.Fatalf("failed to insert role: %v", err)
+	}
 
 	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
 	ts := setupServer(store, true, validator)
@@ -1043,11 +1046,14 @@ func TestIdentity_DomainClaimsLifecycle(t *testing.T) {
 		Username: "admin-sub",
 		Email:    "admin@acme.corp",
 	})
-	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+	_, err := store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
 		OrganisationID: org.ID,
 		UserID:         user.ID,
 		RoleName:       auth.RoleAdmin,
 	})
+	if err != nil {
+		t.Fatalf("failed to insert role: %v", err)
+	}
 
 	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
 	ts := setupServer(store, true, validator)
@@ -1117,11 +1123,14 @@ func TestIdentity_WriteHandlers_EnforceAdmin(t *testing.T) {
 		Email:    "viewer@acme.corp",
 	})
 	// Grant them Viewer role
-	_, _ = store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+	_, err := store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
 		OrganisationID: org.ID,
 		UserID:         user.ID,
 		RoleName:       auth.RoleViewer,
 	})
+	if err != nil {
+		t.Fatalf("failed to insert role: %v", err)
+	}
 
 	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
 	ts := setupServer(store, true, validator)
@@ -1170,4 +1179,8 @@ func TestIdentity_WriteHandlers_EnforceAdmin(t *testing.T) {
 			t.Errorf("expected 403 Forbidden for %s %s, got %d", ep.method, ep.path, resp.StatusCode)
 		}
 	}
+}
+
+func (m *memoryStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	return nil
 }

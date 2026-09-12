@@ -499,3 +499,7 @@ func TestDashboard_EndToEndWithFakeExecutor(t *testing.T) {
 		t.Errorf("exec-dash-1 not found in executor list")
 	}
 }
+
+func (m *dashboardTestStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	return nil
+}

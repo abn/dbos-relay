@@ -77,6 +77,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					return
 				}
 
+				_ = server.store.TouchAPIKeyLastUsed(r.Context(), keyRec.ID)
+
 				identity = &auth.UserIdentity{
 					Subject:          keyRec.Lookup,
 					Username:         keyRec.Name,
@@ -154,6 +156,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						})
 					}
 				}
+
 
 				identity = &auth.UserIdentity{
 					Subject:  claims.Subject,

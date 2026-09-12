@@ -419,6 +419,9 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 			var rawKey string
 			var record auth.KeyRecord
 			if envKey := os.Getenv("RELAY_API_KEY"); envKey != "" {
+				if len(envKey) < 32 {
+					return nil, fmt.Errorf("RELAY_API_KEY must be at least 32 characters long")
+				}
 				rawKey = envKey
 				record = auth.KeyRecord{
 					Lookup: auth.Lookup(rawKey),

@@ -174,11 +174,12 @@ func (v *OIDCValidator) Validate(ctx context.Context, rawToken string) (*Claims,
 	}
 
 	now := time.Now().Unix()
-	if claims.ExpiresAt > 0 && now > claims.ExpiresAt {
+	const leeway = 5 * 60 // 5 minutes leeway for clock skew
+	if claims.ExpiresAt > 0 && now > claims.ExpiresAt+leeway {
 		return nil, ErrTokenExpired
 	}
 
-	if claims.NotBefore > 0 && now < claims.NotBefore {
+	if claims.NotBefore > 0 && now+leeway < claims.NotBefore {
 		return nil, ErrTokenNotYetValid
 	}
 
@@ -218,6 +219,9 @@ func (v *OIDCValidator) getKey(ctx context.Context, kid string) (*rsa.PublicKey,
 	v.mu.RUnlock()
 
 	if exists && fresh {
+		if key == nil {
+			return nil, fmt.Errorf("%w: kid %q (negative cache)", ErrUnknownKey, kid)
+		}
 		return key, nil
 	}
 
@@ -227,6 +231,9 @@ func (v *OIDCValidator) getKey(ctx context.Context, kid string) (*rsa.PublicKey,
 
 	// Double check after acquire
 	if key, exists := v.keys[kid]; exists && time.Since(v.fetchedAt) < v.cacheTTL {
+		if key == nil {
+			return nil, fmt.Errorf("%w: kid %q (negative cache)", ErrUnknownKey, kid)
+		}
 		return key, nil
 	}
 
@@ -234,9 +241,12 @@ func (v *OIDCValidator) getKey(ctx context.Context, kid string) (*rsa.PublicKey,
 		return nil, fmt.Errorf("%w: %w", ErrKeySetUnavailable, err)
 	}
 
-	if key, exists := v.keys[kid]; exists {
+	if key, exists := v.keys[kid]; exists && key != nil {
 		return key, nil
 	}
+
+	// Negative cache
+	v.keys[kid] = nil
 
 	return nil, fmt.Errorf("%w: kid %q", ErrUnknownKey, kid)
 }
@@ -278,11 +288,13 @@ func (v *OIDCValidator) refreshKeySetLocked(ctx context.Context) error {
 
 	resp, err := v.httpClient.Do(req)
 	if err != nil {
+		v.jwksURI = "" // Clear to force rediscovery
 		return fmt.Errorf("jwks request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		v.jwksURI = "" // Clear to force rediscovery
 		return fmt.Errorf("jwks endpoint returned %s", resp.Status)
 	}
 

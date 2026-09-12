@@ -19,6 +19,7 @@ type AuthStore interface {
 	GetAPIKeyByLookup(ctx context.Context, lookup string) (gen.ApiKey, error)
 	GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error)
 	CreateApplication(ctx context.Context, arg gen.CreateApplicationParams) (gen.Application, error)
+	TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error)
 	UpsertOrganisation(ctx context.Context, name string) (gen.Organisation, error)
 }
@@ -51,7 +52,9 @@ func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string
 			return pgtype.UUID{}, err
 		}
 
-		if !auth.Verify(conductorKey, keyRecord.KeyHash) {
+			_ = q.TouchAPIKeyLastUsed(ctx, keyRecord.ID)
+
+	if !auth.Verify(conductorKey, keyRecord.KeyHash) {
 			return pgtype.UUID{}, errors.New("invalid conductor key")
 		}
 

@@ -62,7 +62,19 @@ func Load(getenv func(string) string) (*Config, error) {
 	var problems []error
 
 	if cfg.DatabaseURL == "" {
+
+	if cfg.OIDCIssuer != "" && cfg.OIDCAudience == "" {
+		problems = append(problems, errors.New("RELAY_OIDC_AUDIENCE is required when RELAY_OIDC_ISSUER is set"))
+	}
 		problems = append(problems, errors.New("RELAY_DATABASE_URL is required"))
+
+	if cfg.OIDCIssuer != "" && cfg.OIDCAudience == "" {
+		problems = append(problems, errors.New("RELAY_OIDC_AUDIENCE is required when RELAY_OIDC_ISSUER is set"))
+	}
+	}
+
+	if cfg.OIDCIssuer != "" && cfg.OIDCAudience == "" {
+		problems = append(problems, errors.New("RELAY_OIDC_AUDIENCE is required when RELAY_OIDC_ISSUER is set"))
 	}
 
 	if cfg.InternalSecret == "" {

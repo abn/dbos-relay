@@ -841,3 +841,7 @@ func TestConformance_InvalidJSONReturnsProblem400(t *testing.T) {
 		t.Errorf("problem status = %d, want 400", prob.Status)
 	}
 }
+
+func (m *inMemoryStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	return nil
+}

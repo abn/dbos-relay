@@ -543,3 +543,22 @@ func TestChaos_LiveDatabase_ExecutorFailureAndWorkflowRecovery(t *testing.T) {
 		}
 	}
 }
+
+
+func (m *memoryStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	return nil
+}
+
+func (m *memoryStore) UpsertOrganisation(ctx context.Context, name string) (gen.Organisation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if org, ok := m.orgs[name]; ok {
+		return org, nil
+	}
+	org := gen.Organisation{
+		ID:   pgtype.UUID{Bytes: [16]byte{0, 0, 0, byte(len(m.orgs) + 1)}, Valid: true},
+		Name: name,
+	}
+	m.orgs[name] = org
+	return org, nil
+}

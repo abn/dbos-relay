@@ -733,6 +733,14 @@ func sanitizeAlertMetadata(meta any) any {
 				newDMap["routing_key"] = "[REDACTED]"
 			}
 		}
+
+		t, _ := newDMap["type"].(string)
+		if u, ok := newDMap["url"].(string); ok && u != "" {
+			if t == "slack" || t == "pagerduty" {
+				newDMap["url"] = "[REDACTED]"
+			}
+		}
+
 		delete(newDMap, "secret_from")
 		sanitizedDests = append(sanitizedDests, newDMap)
 	}

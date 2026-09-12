@@ -253,3 +253,7 @@ func TestGetNeedsAttention(t *testing.T) {
 		t.Errorf("expected total 5 needs-attention items, got %d", report.TotalNeedsAttention)
 	}
 }
+
+func (m *mockAttentionStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	return nil
+}

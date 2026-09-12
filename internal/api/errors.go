@@ -10,6 +10,9 @@ import (
 
 // MakeErrorModel constructs a standard RFC 9457 ErrorModel.
 func MakeErrorModel(status int, title, detail string) gen.ErrorModel {
+	if detail == "no rows in result set" {
+		detail = title
+	}
 	status64 := int64(status)
 	typ := "about:blank"
 	return gen.ErrorModel{

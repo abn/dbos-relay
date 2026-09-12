@@ -50,6 +50,7 @@ type StoreReader interface {
 	CreateDomainClaim(ctx context.Context, arg storegen.CreateDomainClaimParams) (storegen.DomainClaim, error)
 	DeleteDomainClaim(ctx context.Context, arg storegen.DeleteDomainClaimParams) (storegen.DomainClaim, error)
 	CreateAuditLog(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
+	TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	ListAuditLogs(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
 }
 

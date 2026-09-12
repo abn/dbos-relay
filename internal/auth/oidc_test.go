@@ -169,7 +169,7 @@ func TestOIDCValidator_RejectsExpiredToken(t *testing.T) {
 		"sub": "user-123",
 		"iss": mock.server.URL,
 		"aud": "test-audience",
-		"exp": time.Now().Add(-1 * time.Minute).Unix(),
+		"exp": time.Now().Add(-10 * time.Minute).Unix(),
 	})
 
 	_, err := validator.Validate(context.Background(), token)
