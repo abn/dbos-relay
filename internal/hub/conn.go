@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -99,7 +100,13 @@ func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 			continue
 		}
 
-		msg, err := protocol.Decode(data)
+		var msg protocol.Message
+		reqID := peekRequestID(data)
+		if reqID != "" && c.mux.IsPending(reqID) {
+			msg, err = protocol.DecodeResponse(data)
+		} else {
+			msg, err = protocol.Decode(data)
+		}
 		if err != nil {
 			continue // Or log it
 		}
@@ -118,6 +125,14 @@ func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 			onMessage(c, msg)
 		}
 	}
+}
+
+func peekRequestID(data []byte) string {
+	var raw struct {
+		RequestID string `json:"request_id"`
+	}
+	_ = json.Unmarshal(data, &raw)
+	return raw.RequestID
 }
 
 // HeartbeatPump runs the ping/pong loop for the connection.
