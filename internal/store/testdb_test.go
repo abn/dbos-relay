@@ -2,17 +2,15 @@ package store
 
 import (
 	"context"
-	"os"
 	"testing"
+
+	"github.com/abn/relay/internal/testdb"
 )
 
 func testStore(t *testing.T) *Store {
 	t.Helper()
 
-	url := os.Getenv("RELAY_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("RELAY_TEST_DATABASE_URL is not set")
-	}
+	url := testdb.OpenStore(t, "store")
 
 	ctx := context.Background()
 	s, err := Open(ctx, url)
@@ -35,10 +33,7 @@ func testStore(t *testing.T) *Store {
 }
 
 func TestLiveDatabase_Reachable(t *testing.T) {
-	url := os.Getenv("RELAY_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("RELAY_TEST_DATABASE_URL is not set")
-	}
+	url := testdb.OpenStore(t, "store")
 
 	ctx := context.Background()
 	s, err := Open(ctx, url)

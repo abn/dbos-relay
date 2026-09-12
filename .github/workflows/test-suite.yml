@@ -17,6 +17,7 @@ jobs:
       postgres:
         image: postgres:16
         env:
+          POSTGRES_USER: relay
           POSTGRES_DB: relay
           POSTGRES_PASSWORD: relay
         ports:
