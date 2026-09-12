@@ -1,138 +1,62 @@
 ---
-title: Executor WebSocket Protocol
+title: Conductor Protocol (WebSocket)
 type: Reference
 ---
-# Executor WebSocket Protocol
+# Conductor Protocol (WebSocket)
 
-## Connection
+The Executor WebSocket protocol defines the communication between the Relay router and registered Conductor executors.
 
-The Conductor WebSocket URL is constructed by removing any trailing slashes from the base URL and appending `/websocket/{appName}/{conductorKey}`.
-* Python SDK (`dbos-transact-py`, commit `833794f7a1138bacf75ff6d88647a33eb5e35e52`)
-* TypeScript SDK (`dbos-transact-ts`, commit `d8c4974cca6cc84b296f3b8edfbbb41627ddd47e`)
-* Go SDK (`dbos-transact-go`, commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`)
-* Java SDK (`dbos-transact-java`, commit `1248174f393bd97f9973ec83cbc6e42b6e319ed1`)
+## Envelope
 
-The API key is transmitted in the URL path (`{conductorKey}`).
+All messages share a common JSON envelope:
+- `type`: The message type string.
+- `request_id`: A unique identifier for the request, used to correlate responses.
+- `error_message`: (Optional) Present only if the message is a response and an error occurred.
 
-## Registration / Executor Info
+> [!NOTE]
+> `error` and `payload` fields are not part of the standard envelope.
 
-The `executor_info` message is the first sent after connection. The `executor_id` is typically derived from `DBOS__VMID` if present, else a generated UUID/hostname combination.
+## Idempotence
 
-```json
-{
-  "type": "executor_info",
-  "request_id": "req-uuid",
-  "executor_id": "...",
-  "app_version": "...",
-  "hostname": "...",
-  "language": "typescript|python|go|java",
-  "dbos_version": "...",
-  "metadata": {}
-}
-```
+Relay inherits the exact idempotence guarantees of the upstream SDK implementation. All retries and duplicates are handled according to the official semantics.
 
-## Message Envelope
+## Implemented Message Types
 
-Common fields across all messages:
-* `type` (string): The message type discriminator.
-* `request_id` (string): A unique identifier for the request.
-* `error` (string, optional): An error message, if any.
-* `payload` (object, optional): Additional data.
+The following 32 message types are fully supported:
 
-JSON fields use `snake_case`.
+- `executor_info`: `{"type": "executor_info", "request_id": "req-1", "application_version": "1.0.0", "executor_metadata": {}}`
+- `recovery`
+- `cancel`
+- `resume`
+- `list_workflows`
+- `list_steps`
+- `get_workflow`
+- `fork_workflow`
+- `fork_from_failure`
+- `exist_pending_workflows`
+- `retention`
+- `get_metrics`
+- `export_workflow`
+- `import_workflow`
+- `delete`
+- `alert`: `{"type": "alert", "request_id": "req-1", "name": "alert1"}`
+- `list_schedules`
+- `get_schedule`
+- `pause_schedule`
+- `resume_schedule`
+- `backfill_schedule`
+- `trigger_schedule`
+- `get_workflow_events`
+- `get_workflow_notifications`
+- `get_workflow_streams`
+- `get_workflow_aggregates`
+- `get_step_aggregates`
+- `list_application_versions`
+- `set_latest_application_version`
+- `list_queues`
+- `get_queue`
+- `list_queued_workflows`
 
-## Complete Message Catalogue
+## Unimplemented
 
-* `executor_info`: Connect handshake and executor registration.
-* `recovery`: Recover workflows across executor restart. Payload: `executor_ids`.
-* `list_workflows`: Fetch workflow status.
-* `list_queued_workflows`: Fetch queued workflows.
-* `get_workflow`: Get a single workflow by ID.
-* `list_steps`: List step information.
-* `cancel`: Cancel a workflow execution.
-* `resume`: Resume a suspended workflow.
-* `delete`: Delete workflow history.
-* `restart`: Restart a failed workflow.
-* `exist_pending_workflows`: Check if workflows are pending.
-* Events, notifications, streams, retention: Addressed via SDK-specific extensions.
-
-## Liveness & Timeout
-
-* Ping interval: 20s (TypeScript), varies slightly by SDK.
-* Ping timeout: 15s.
-* Reconnect backoff: Delay scaling from 1s up to maximum thresholds on repeated disconnects.
-
-## Recovery Semantics
-
-Relay monitors executor connectivity and coordinates workflow recovery across peer instances.
-
-### Lifecycle State Machine
-
-Each executor registration transitions through four discrete states:
-
-1. **Connected (`HEALTHY`)**: The executor maintains an active WebSocket connection and responds to heartbeats.
-2. **Disconnected (`DISCONNECTED`)**: The WebSocket connection closed or timed out. Relay starts a per-application grace period timer. If the executor reconnects with the same `executor_id` before the timer expires, it returns to `Connected` and the timer is cancelled.
-3. **Dead (`DEAD`)**: The grace period timer expired without reconnection. Relay marks the executor dead and triggers workflow recovery dispatch.
-4. **Deleted**: Following successful recovery acknowledgment by a healthy peer, the dead executor record is removed from the registry.
-
-### Timing and Grace Periods
-
-* Default grace period: 60 seconds (cited from DBOS public documentation `/production/workflow-recovery`).
-* Per-application override: Configurable via the `executorTimeoutSecs` key in application settings (Conductor OpenAPI `Application` and `PatchAppInputBody`).
-* Server ping interval: 20 seconds.
-* Read/pong deadline: 25 seconds.
-
-### Recovery Failover and Peer Selection
-
-When an executor transitions to `Dead`:
-
-1. Relay queries connected peers within the same application.
-2. Cross-application or cross-organisation recovery is strictly rejected.
-3. If multiple peers exist, candidates with a matching `application_version` are prioritized to avoid workflow version skew.
-4. Relay dispatches a `recovery` message containing `executor_ids: [dead_executor_id]`.
-5. If the chosen peer disconnects or fails to respond within the dispatch deadline, Relay fails over sequentially to the next healthy candidate.
-6. Upon receiving a response with `success: true`, Relay deletes the dead executor record from the control plane database.
-7. If no healthy peers are currently connected, the dead executor record remains in `DEAD` status until a new peer connects.
-
-### Idempotence Guarantees
-
-* Step executions are at-least-once.
-* Workflow outcomes are exactly-once.
-* Recovery dispatch is idempotent; multiple dispatches for the same dead executor do not corrupt execution state.
-
-## Alert Notifications
-
-Relay supports alerting rules evaluated against application and workflow metrics.
-When a configured rule condition fires, Relay dispatches an `alert` message to connected executors registered under the configured receiving application:
-
-```json
-{
-  "type": "alert",
-  "request_id": "alert-uuid",
-  "rule_type": "RULE_TYPE",
-  "rule_metadata": "{\"metric_name\":\"...\",\"threshold\":...}",
-  "application_id": "target-app-id"
-}
-```
-
-Receiving executors process alerts via registered SDK alert handlers (`@DBOS.alert_handler` in Python, `DBOS.setAlertHandler` in TypeScript, and conductor protocol handler in Go).
-
-## High Availability and Peer Forwarding
-
-In multi-instance deployments, Relay instances coordinate state through the control plane database:
-
-1. **Instance Registration**: Each Relay instance registers its unique ID, advertise address, and port in the `instances` table and maintains a periodic heartbeat.
-2. **Executor Lease Ownership**: Executors connecting via WebSocket are assigned to the receiving Relay instance with a lease. If an instance crashes or disconnects, surviving instances adopt expired leases upon heartbeat timeout.
-3. **Cross-Instance Peer Forwarding**: When an API request targets an application whose connected executors reside on a peer Relay instance, the receiving instance signs the request payload using HMAC-SHA256 and forwards it over HTTP to `/internal/v1/forward/{appID}` on the target peer.
-4. **Loop Prevention and Drift Check**: Forwarded requests carry an `X-Relay-Forward-Hop` header. Requests with `hop >= 1` are rejected with HTTP 409 Conflict to strictly prohibit multi-hop forwarding loops. Forward signatures include Unix timestamps with a maximum allowed drift of 30 seconds.
-
-## SDK Differences Matrix
-
-| Field | TypeScript | Python | Go | Java |
-|---|---|---|---|---|
-| `metadata` | Yes | Yes | Yes | Yes |
-| `cancel_children` | Yes | Yes | No | No |
-
-## Version Skew Policy
-
-The conductor expects SDKs to match the current protocol version, logging warnings for unrecognized fields.
+- `restart`: Currently unimplemented.
