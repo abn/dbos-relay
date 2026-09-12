@@ -127,6 +127,9 @@ func newServeCommand() *cobra.Command {
 			apiServer := api.NewServer(r, s.Queries(), logger)
 			if cfg.AuthEnabled() {
 				val := auth.NewOIDCValidator(cfg.OIDCIssuer, cfg.OIDCAudience, nil)
+				if err := val.Init(ctx); err != nil {
+					return fmt.Errorf("failed to initialize OIDC validator: %w", err)
+				}
 				apiServer.WithAuth(true, val)
 			}
 			handler := api.NewHandler(s, apiServer)
@@ -139,7 +142,7 @@ func newServeCommand() *cobra.Command {
 			mux.Handle("/", dashHandler)
 			mux.Handle("/websocket/", h)
 			mux.Handle("/internal/v1/forward/", forwardHandler)
-			mux.Handle("/v1/metrics", metrics.NewHandler(s.Queries()))
+			mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metrics.NewHandler(s.Queries())))
 
 			server := &http.Server{
 				Addr:              cfg.ListenAddr,

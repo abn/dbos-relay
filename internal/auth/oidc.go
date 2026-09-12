@@ -91,12 +91,19 @@ func NewOIDCValidator(issuer, audience string, hc *http.Client) *OIDCValidator {
 		hc = &http.Client{Timeout: 10 * time.Second}
 	}
 	return &OIDCValidator{
-		issuer:     strings.TrimRight(issuer, "/"),
+		issuer:     issuer,
 		audience:   audience,
 		httpClient: hc,
 		keys:       make(map[string]*rsa.PublicKey),
 		cacheTTL:   10 * time.Minute,
 	}
+}
+
+// Init fetches the JWKS immediately, returning an error if it fails.
+func (v *OIDCValidator) Init(ctx context.Context) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.refreshKeySetLocked(ctx)
 }
 
 // SetCacheTTL adjusts the key cache expiration time (useful in tests).
@@ -124,6 +131,10 @@ func (v *OIDCValidator) Validate(ctx context.Context, rawToken string) (*Claims,
 	}
 	if err := json.Unmarshal(headerJSON, &header); err != nil {
 		return nil, fmt.Errorf("%w: unmarshaling header: %w", ErrInvalidToken, err)
+	}
+
+	if header.Alg == "" || strings.ToLower(header.Alg) == "none" {
+		return nil, fmt.Errorf("%w: 'none' algorithm is not allowed", ErrInvalidToken)
 	}
 
 	key, err := v.getKey(ctx, header.Kid)
@@ -154,11 +165,11 @@ func (v *OIDCValidator) Validate(ctx context.Context, rawToken string) (*Claims,
 	}
 
 	// Validate claims
-	if strings.TrimRight(claims.Issuer, "/") != v.issuer {
+	if claims.Issuer != v.issuer {
 		return nil, fmt.Errorf("%w: got %q, want %q", ErrIssuerMismatch, claims.Issuer, v.issuer)
 	}
 
-	if v.audience != "" && !claims.Audience.Contains(v.audience) {
+	if v.audience == "" || !claims.Audience.Contains(v.audience) {
 		return nil, fmt.Errorf("%w: audience %q not found in %+v", ErrAudienceMismatch, v.audience, claims.Audience)
 	}
 
@@ -278,6 +289,7 @@ func (v *OIDCValidator) refreshKeySetLocked(ctx context.Context) error {
 	var jwks struct {
 		Keys []struct {
 			Kty string `json:"kty"`
+			Alg string `json:"alg"`
 			Kid string `json:"kid"`
 			N   string `json:"n"`
 			E   string `json:"e"`
@@ -291,6 +303,10 @@ func (v *OIDCValidator) refreshKeySetLocked(ctx context.Context) error {
 	newKeys := make(map[string]*rsa.PublicKey)
 	for _, k := range jwks.Keys {
 		if k.Kty != "RSA" || k.Kid == "" || k.N == "" || k.E == "" {
+			continue
+		}
+
+		if k.Alg != "" && k.Alg != "RS256" && k.Alg != "RS384" && k.Alg != "RS512" {
 			continue
 		}
 
