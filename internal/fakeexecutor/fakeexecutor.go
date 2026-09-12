@@ -88,6 +88,7 @@ func (fe *FakeExecutor) Connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to dial: %w", err)
 	}
+	conn.SetReadLimit(32 * 1024 * 1024)
 	fe.conn = conn
 
 	reqID := generateUUID()

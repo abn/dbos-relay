@@ -39,6 +39,7 @@ type Hub struct {
 	logger           *slog.Logger
 	liveness         LivenessTracker
 	handshakeTimeout time.Duration
+	readLimit        int64
 	wg               sync.WaitGroup
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -58,6 +59,7 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 		config:           cfg,
 		logger:           logger,
 		handshakeTimeout: 5 * time.Second,
+		readLimit:        32 * 1024 * 1024,
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -66,6 +68,11 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 // SetHandshakeTimeout sets the handshake timeout (useful in tests).
 func (h *Hub) SetHandshakeTimeout(d time.Duration) {
 	h.handshakeTimeout = d
+}
+
+// SetReadLimit sets the websocket message read limit (default 32 MiB).
+func (h *Hub) SetReadLimit(limit int64) {
+	h.readLimit = limit
 }
 
 // SetLivenessTracker sets the liveness manager to receive executor lifecycle events.
@@ -98,6 +105,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("websocket accept failed", "error", err)
 		return
 	}
+	limit := h.readLimit
+	if limit <= 0 {
+		limit = 32 * 1024 * 1024
+	}
+	conn.SetReadLimit(limit)
 
 	timeout := h.handshakeTimeout
 	if timeout <= 0 {

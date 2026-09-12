@@ -337,3 +337,126 @@ func TestHub_HandshakeRejection(t *testing.T) {
 		})
 	})
 }
+
+func TestHub_ReadLimit_LargePayload(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	// Read executor_info prompt from relay
+	typ, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("failed to read prompt: %v", err)
+	}
+	if typ != websocket.MessageText {
+		t.Fatalf("expected text message, got %v", typ)
+	}
+	msg, err := protocol.Decode(data)
+	if err != nil {
+		t.Fatalf("failed to decode prompt: %v", err)
+	}
+	infoReq, ok := msg.(*protocol.ExecutorInfoRequest)
+	if !ok {
+		t.Fatalf("expected *protocol.ExecutorInfoRequest, got %T", msg)
+	}
+
+	// Send executor_info response
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "large-payload-exec",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, err := protocol.Encode(infoResp)
+	if err != nil {
+		t.Fatalf("failed to encode response: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+		t.Fatalf("failed to write response: %v", err)
+	}
+
+	// Wait for executor to register
+	time.Sleep(100 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+	execConn, err := h.registry.GetExecutorConn(appID, "large-payload-exec")
+	if err != nil {
+		t.Fatalf("expected executor to be registered: %v", err)
+	}
+
+	// Register a request ID in the executor conn multiplexer
+	reqID := "req-large-payload-1"
+	ch, unreg := execConn.mux.Register(reqID)
+	defer unreg()
+
+	// Construct a >32 KiB (64 KiB) response payload
+	largeInput := strings.Repeat("A", 64*1024)
+	largeMsg := &protocol.ListWorkflowsResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeListWorkflows,
+			RequestID: reqID,
+		},
+		Output: []protocol.ListWorkflowsResponseBody{
+			{
+				WorkflowUUID: "wf-large-1",
+				Input:        &largeInput,
+			},
+		},
+	}
+	largeData, err := protocol.Encode(largeMsg)
+	if err != nil {
+		t.Fatalf("failed to encode large message: %v", err)
+	}
+	if len(largeData) <= 32768 {
+		t.Fatalf("test payload must be > 32 KiB, got %d bytes", len(largeData))
+	}
+
+	// Client sends large frame across websocket
+	if err := conn.Write(ctx, websocket.MessageText, largeData); err != nil {
+		t.Fatalf("failed to write large payload: %v", err)
+	}
+
+	// Wait for multiplexer to receive the response intact
+	select {
+	case receivedMsg := <-ch:
+		listResp, ok := receivedMsg.(*protocol.ListWorkflowsResponse)
+		if !ok {
+			t.Fatalf("expected *protocol.ListWorkflowsResponse, got %T", receivedMsg)
+		}
+		if len(listResp.Output) != 1 || listResp.Output[0].Input == nil || len(*listResp.Output[0].Input) != 64*1024 {
+			t.Fatalf("payload was corrupted or incomplete")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("timed out waiting for large message to be routed through multiplexer")
+	}
+
+	// Assert connection is still registered and resolves
+	resolvedConn, err := h.registry.GetExecutorConn(appID, "large-payload-exec")
+	if err != nil {
+		t.Fatalf("expected connection to still be registered after reading >32 KiB message: %v", err)
+	}
+	if resolvedConn != execConn {
+		t.Fatalf("expected resolved connection to match original connection")
+	}
+}
