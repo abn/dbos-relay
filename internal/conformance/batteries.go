@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -81,7 +82,6 @@ func (r *Runner) waitForExecutorUnhealthy(ctx context.Context, executorID string
 				var execs []map[string]any
 				if err := json.NewDecoder(resp.Body).Decode(&execs); err == nil {
 					_ = resp.Body.Close()
-					healthy := false
 					for _, e := range execs {
 						var id string
 						if s, ok := e["executorId"].(string); ok {
@@ -90,14 +90,10 @@ func (r *Runner) waitForExecutorUnhealthy(ctx context.Context, executorID string
 							id = s
 						}
 						if id == executorID {
-							if status, ok := e["status"].(string); ok && status == "HEALTHY" {
-								healthy = true
-								break
+							if status, ok := e["status"].(string); ok && (status == "DISCONNECTED" || status == "DEAD") {
+								return nil
 							}
 						}
-					}
-					if !healthy {
-						return nil
 					}
 				} else {
 					_ = resp.Body.Close()
@@ -311,6 +307,17 @@ func (r *Runner) runBattery2Handshake(ctx context.Context) BatteryResult {
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusUnauthorized {
 			return fmt.Errorf("expected status 401 Unauthorized, got %d", resp.StatusCode)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.HasPrefix(ct, "application/problem+json") {
+			return fmt.Errorf("expected Content-Type application/problem+json, got %q", ct)
+		}
+		var prob map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&prob); err != nil {
+			return fmt.Errorf("invalid problem json: %w", err)
+		}
+		if prob["title"] == nil || prob["status"] == nil {
+			return fmt.Errorf("problem details missing required RFC 9457 fields: %v", prob)
 		}
 		return nil
 	}))
@@ -579,11 +586,21 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		Hostname:           "ctrl-host",
 	})
 
+	var (
+		mu          sync.Mutex
+		cancelledID string
+		resumedID   string
+		forkedReq   *protocol.ForkWorkflowRequest
+	)
+
 	fe.SetHandler(protocol.MessageTypeCancel, func(msg protocol.Message) (protocol.Message, error) {
 		req, ok := msg.(*protocol.CancelWorkflowRequest)
 		if !ok || req.WorkflowID == "" {
 			return nil, errors.New("invalid cancel request frame")
 		}
+		mu.Lock()
+		cancelledID = req.WorkflowID
+		mu.Unlock()
 		return &protocol.CancelWorkflowResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypeCancel,
@@ -598,6 +615,9 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		if !ok || req.WorkflowID == "" {
 			return nil, errors.New("invalid resume request frame")
 		}
+		mu.Lock()
+		resumedID = req.WorkflowID
+		mu.Unlock()
 		return &protocol.ResumeWorkflowResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypeResume,
@@ -612,6 +632,9 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		if !ok || req.Body.WorkflowID == "" {
 			return nil, errors.New("invalid fork request frame")
 		}
+		mu.Lock()
+		forkedReq = req
+		mu.Unlock()
 		newID := req.Body.WorkflowID + "-forked"
 		return &protocol.ForkWorkflowResponse{
 			Envelope: protocol.Envelope{
@@ -662,11 +685,11 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
-				return fmt.Errorf("invalid workflowId in response")
-			}
+		mu.Lock()
+		gotID := cancelledID
+		mu.Unlock()
+		if gotID != "wf-conf-1" {
+			return fmt.Errorf("executor did not receive cancel frame for wf-conf-1, got %q", gotID)
 		}
 		return nil
 	}))
@@ -690,11 +713,11 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
-				return fmt.Errorf("invalid workflowId in response")
-			}
+		mu.Lock()
+		gotID := resumedID
+		mu.Unlock()
+		if gotID != "wf-conf-1" {
+			return fmt.Errorf("executor did not receive resume frame for wf-conf-1, got %q", gotID)
 		}
 		return nil
 	}))
@@ -702,7 +725,7 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 	// Check 4.3: Restart (Fork) Workflow
 	checks = append(checks, executeCheck("4.3 Restart (Fork) Workflow Mutation", func() error {
 		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/wf-conf-1/fork", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"start_step": 0}`))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"newWorkflowId": "wf-conf-1-forked", "startStep": 0}`))
 		if err != nil {
 			return err
 		}
@@ -720,10 +743,18 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 			return fmt.Errorf("expected status 200 or 201, got %d", resp.StatusCode)
 		}
 		var body map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-			if wf, ok := body["workflowId"].(string); !ok || wf == "" {
-				return fmt.Errorf("missing workflowId in fork response")
-			}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			return fmt.Errorf("invalid json in fork response: %w", err)
+		}
+		wf, ok := body["workflowId"].(string)
+		if !ok || wf != "wf-conf-1-forked" {
+			return fmt.Errorf("expected workflowId %q, got %q", "wf-conf-1-forked", wf)
+		}
+		mu.Lock()
+		gotFork := forkedReq
+		mu.Unlock()
+		if gotFork == nil || gotFork.Body.WorkflowID != "wf-conf-1" {
+			return fmt.Errorf("executor did not receive fork frame for wf-conf-1")
 		}
 		return nil
 	}))
@@ -743,6 +774,12 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 		Language:           "python",
 		Hostname:           "qs-host",
 	})
+
+	var (
+		mu              sync.Mutex
+		pausedSchedule  string
+		resumedSchedule string
+	)
 
 	fe.SetHandler(protocol.MessageTypeListQueues, func(msg protocol.Message) (protocol.Message, error) {
 		req, _ := msg.(*protocol.ListQueuesRequest)
@@ -779,6 +816,18 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 
 	fe.SetHandler(protocol.MessageTypePauseSchedule, func(msg protocol.Message) (protocol.Message, error) {
 		req, _ := msg.(*protocol.PauseScheduleRequest)
+		if req == nil || req.ScheduleName != "hourly_sync" {
+			return &protocol.PauseScheduleResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypePauseSchedule,
+					RequestID: req.RequestID,
+				},
+				Success: false,
+			}, nil
+		}
+		mu.Lock()
+		pausedSchedule = req.ScheduleName
+		mu.Unlock()
 		return &protocol.PauseScheduleResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypePauseSchedule,
@@ -790,6 +839,18 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 
 	fe.SetHandler(protocol.MessageTypeResumeSchedule, func(msg protocol.Message) (protocol.Message, error) {
 		req, _ := msg.(*protocol.ResumeScheduleRequest)
+		if req == nil || req.ScheduleName != "hourly_sync" {
+			return &protocol.ResumeScheduleResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeResumeSchedule,
+					RequestID: req.RequestID,
+				},
+				Success: false,
+			}, nil
+		}
+		mu.Lock()
+		resumedSchedule = req.ScheduleName
+		mu.Unlock()
 		return &protocol.ResumeScheduleResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypeResumeSchedule,
@@ -843,8 +904,13 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 		if err := json.NewDecoder(resp.Body).Decode(&q); err != nil {
 			return fmt.Errorf("invalid json: %w", err)
 		}
-		if len(q) == 0 {
-			return errors.New("expected at least 1 queue returned")
+		if len(q) < 2 {
+			return fmt.Errorf("expected at least 2 queues returned, got %d", len(q))
+		}
+		name0, _ := q[0]["name"].(string)
+		name1, _ := q[1]["name"].(string)
+		if name0 != "default_queue" || name1 != "high_priority" {
+			return fmt.Errorf("unexpected queue names: %q, %q", name0, name1)
 		}
 		return nil
 	}))
@@ -875,6 +941,22 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 		if len(s) == 0 {
 			return errors.New("expected at least 1 schedule returned")
 		}
+		sched := s[0]
+		if id, _ := sched["scheduleId"].(string); id != "s1" {
+			return fmt.Errorf("expected scheduleId %q, got %q", "s1", id)
+		}
+		if name, _ := sched["scheduleName"].(string); name != "hourly_sync" {
+			return fmt.Errorf("expected scheduleName %q, got %q", "hourly_sync", name)
+		}
+		if wf, _ := sched["workflowName"].(string); wf != "sync_flow" {
+			return fmt.Errorf("expected workflowName %q, got %q", "sync_flow", wf)
+		}
+		if cron, _ := sched["cronExpression"].(string); cron != "* * * * *" {
+			return fmt.Errorf("expected cronExpression %q, got %q", "* * * * *", cron)
+		}
+		if st, _ := sched["status"].(string); st != "ACTIVE" {
+			return fmt.Errorf("expected status %q, got %q", "ACTIVE", st)
+		}
 		return nil
 	}))
 
@@ -897,11 +979,11 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
-				return fmt.Errorf("invalid workflowId in response")
-			}
+		mu.Lock()
+		got := pausedSchedule
+		mu.Unlock()
+		if got != "hourly_sync" {
+			return fmt.Errorf("executor did not receive pause frame for hourly_sync, got %q", got)
 		}
 		return nil
 	}))
@@ -925,11 +1007,11 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
-				return fmt.Errorf("invalid workflowId in response")
-			}
+		mu.Lock()
+		got := resumedSchedule
+		mu.Unlock()
+		if got != "hourly_sync" {
+			return fmt.Errorf("executor did not receive resume frame for hourly_sync, got %q", got)
 		}
 		return nil
 	}))
@@ -991,13 +1073,28 @@ func (r *Runner) runBattery6Recovery(ctx context.Context) BatteryResult {
 			return fmt.Errorf("invalid json: %w", err)
 		}
 
+		found := false
 		for _, ex := range execs {
-			if id, ok := ex["executorId"].(string); ok && id == "conformance-rec-dead" {
+			var id string
+			if s, ok := ex["executorId"].(string); ok {
+				id = s
+			} else if s, ok := ex["executor_id"].(string); ok {
+				id = s
+			}
+			if id == "conformance-rec-dead" {
+				found = true
 				status, _ := ex["status"].(string)
 				if status == "HEALTHY" {
 					return errors.New("closed executor still reported as HEALTHY")
 				}
+				if status != "DISCONNECTED" && status != "DEAD" {
+					return fmt.Errorf("expected closed executor status DISCONNECTED or DEAD, got %q", status)
+				}
+				break
 			}
+		}
+		if !found {
+			return errors.New("closed executor conformance-rec-dead not found in fleet list")
 		}
 		return nil
 	}))
@@ -1113,6 +1210,17 @@ func (r *Runner) runBattery7Alerting(ctx context.Context) BatteryResult {
 			ruleID = id
 		} else if id, ok := created["ruleId"].(string); ok && id != "" {
 			ruleID = id
+		} else if id, ok := created["rule_id"].(string); ok && id != "" {
+			ruleID = id
+		}
+		if ruleID == "" {
+			return errors.New("alerting rule created but no ID returned in response")
+		}
+		if rt, ok := created["ruleType"].(string); ok {
+			cleanRT := strings.ToLower(strings.ReplaceAll(rt, "_", ""))
+			if cleanRT != "workflowfailure" {
+				return fmt.Errorf("expected ruleType 'WorkflowFailure', got %q", rt)
+			}
 		}
 		return nil
 	}))
@@ -1143,6 +1251,30 @@ func (r *Runner) runBattery7Alerting(ctx context.Context) BatteryResult {
 		if len(rules) == 0 {
 			return errors.New("expected at least 1 alerting rule")
 		}
+		found := false
+		for _, r := range rules {
+			var id string
+			if s, ok := r["id"].(string); ok {
+				id = s
+			} else if s, ok := r["ruleId"].(string); ok {
+				id = s
+			} else if s, ok := r["rule_id"].(string); ok {
+				id = s
+			}
+			if id == ruleID {
+				found = true
+				if rt, ok := r["ruleType"].(string); ok {
+					cleanRT := strings.ToLower(strings.ReplaceAll(rt, "_", ""))
+					if cleanRT != "workflowfailure" {
+						return fmt.Errorf("expected ruleType 'WorkflowFailure', got %q", rt)
+					}
+				}
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("created rule ID %q not found in rules list", ruleID)
+		}
 		return nil
 	}))
 
@@ -1168,10 +1300,37 @@ func (r *Runner) runBattery7Alerting(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
-		var body map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
-			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
-				return fmt.Errorf("invalid workflowId in response")
+
+		// Verify deletion took effect by querying rules list
+		listURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/alerting-rules", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+		listReq, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.cfg.ConductorKey != "" {
+			listReq.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		}
+		listResp, err := r.client.Do(listReq)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = listResp.Body.Close() }()
+		if listResp.StatusCode == http.StatusOK {
+			var rules []map[string]any
+			if err := json.NewDecoder(listResp.Body).Decode(&rules); err == nil {
+				for _, r := range rules {
+					var id string
+					if s, ok := r["id"].(string); ok {
+						id = s
+					} else if s, ok := r["ruleId"].(string); ok {
+						id = s
+					} else if s, ok := r["rule_id"].(string); ok {
+						id = s
+					}
+					if id == ruleID {
+						return fmt.Errorf("deleted rule ID %q still present in rules list", ruleID)
+					}
+				}
 			}
 		}
 		return nil
