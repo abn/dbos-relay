@@ -544,6 +544,7 @@ func TestChaos_LiveDatabase_FakeExecutorFailureDispatchesRecovery(t *testing.T) 
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	time.Sleep(50 * time.Millisecond)
 
 	// 4. Advance virtual clock past grace period
 	clock.Advance(61 * time.Second)

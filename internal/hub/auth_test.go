@@ -181,11 +181,12 @@ func TestAuthenticate_ScopeAndValidation(t *testing.T) {
 			errContains: "missing app name or conductor key",
 		},
 		{
-			name:        "no-auth mode succeeds unconditionally",
+			name:        "unknown key in no-auth mode rejected",
 			appName:     "any-app",
 			key:         "any-key",
 			authEnabled: false,
-			wantErr:     false,
+			wantErr:     true,
+			errContains: "invalid conductor key",
 		},
 	}
 

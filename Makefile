@@ -37,6 +37,9 @@ dashboard/check: ## Validate dashboard production bundle syntax
 
 test: ## Run the test suite
 	go test -p 1 ./...
+	@if [ -n "$$RELAY_TEST_DATABASE_URL" ]; then \
+		go test -v ./tests/conformance/... ./tests/chaos/...; \
+	fi
 
 test/conformance: ## Run the end-to-end conformance test suite
 	go test -v ./tests/conformance/...

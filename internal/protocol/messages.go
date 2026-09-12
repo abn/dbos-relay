@@ -678,7 +678,7 @@ type MetricData struct {
 	MetricType string  `json:"metric_type"`
 	Value      float64 `json:"value"`
 
-	// Deprecated fields retained for compatibility with internal/api until milestone refinement
+	// Deprecated fields retained for compatibility with internal/api
 	MetricValue float64        `json:"metric_value,omitempty"`
 	Timestamp   int64          `json:"timestamp,omitempty"`
 	Tags        map[string]any `json:"tags,omitempty"`

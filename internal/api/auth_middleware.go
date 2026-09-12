@@ -17,7 +17,7 @@ import (
 func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if server == nil || !server.authEnabled {
+			if (server == nil || !server.authEnabled) && r.URL.Path != "/v1/metrics" {
 				// No-auth mode: implicit local identity
 				ctx := auth.WithIdentity(r.Context(), &auth.UserIdentity{
 					Subject:  "local",

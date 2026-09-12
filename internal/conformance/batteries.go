@@ -36,7 +36,13 @@ func (r *Runner) waitForExecutorHealthy(ctx context.Context, executorID string) 
 				if err := json.NewDecoder(resp.Body).Decode(&execs); err == nil {
 					_ = resp.Body.Close()
 					for _, e := range execs {
-						if id, ok := e["executor_id"].(string); ok && id == executorID {
+						var id string
+						if s, ok := e["executorId"].(string); ok {
+							id = s
+						} else if s, ok := e["executor_id"].(string); ok {
+							id = s
+						}
+						if id == executorID {
 							if status, ok := e["status"].(string); ok && status == "HEALTHY" {
 								return nil
 							}
@@ -77,7 +83,13 @@ func (r *Runner) waitForExecutorUnhealthy(ctx context.Context, executorID string
 					_ = resp.Body.Close()
 					healthy := false
 					for _, e := range execs {
-						if id, ok := e["executor_id"].(string); ok && id == executorID {
+						var id string
+						if s, ok := e["executorId"].(string); ok {
+							id = s
+						} else if s, ok := e["executor_id"].(string); ok {
+							id = s
+						}
+						if id == executorID {
 							if status, ok := e["status"].(string); ok && status == "HEALTHY" {
 								healthy = true
 								break
@@ -1020,7 +1032,7 @@ func (r *Runner) runBattery6Recovery(ctx context.Context) BatteryResult {
 		}
 		go func() { _ = fe.Run(ctx) }()
 		defer func() { _ = fe.Close() }()
-		if err := r.waitForExecutorHealthy(ctx, "conformance-rec-survivor"); err != nil {
+		if err := r.waitForExecutorHealthy(ctx, "conformance-rec-alive"); err != nil {
 			return err
 		}
 

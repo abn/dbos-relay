@@ -32,52 +32,41 @@ func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string
 
 	var orgID pgtype.UUID
 
-	if !authEnabled {
-		if q == nil {
-			return pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, nil
-		}
-		// No-auth mode: key is accepted unconditionally
-		org, err := q.GetOrganisationByName(ctx, "local")
-		if err != nil {
-			org, err = q.UpsertOrganisation(ctx, "local")
-			if err != nil {
-				return pgtype.UUID{}, err
-			}
-		}
-		orgID = org.ID
-	} else {
-		lookup := auth.Lookup(conductorKey)
-		keyRecord, err := q.GetAPIKeyByLookup(ctx, lookup)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return pgtype.UUID{}, errors.New("invalid conductor key")
-			}
-			return pgtype.UUID{}, err
-		}
+	if q == nil {
+		return pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, nil
+	}
 
-			_ = q.TouchAPIKeyLastUsed(ctx, keyRecord.ID)
-
-	if !auth.Verify(conductorKey, keyRecord.KeyHash) {
+	lookup := auth.Lookup(conductorKey)
+	keyRecord, err := q.GetAPIKeyByLookup(ctx, lookup)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return pgtype.UUID{}, errors.New("invalid conductor key")
 		}
+		return pgtype.UUID{}, err
+	}
 
-		// Validate scope: application_names empty means all apps.
-		allowed := false
-		if len(keyRecord.ApplicationNames) == 0 {
-			allowed = true
-		} else {
-			for _, name := range keyRecord.ApplicationNames {
-				if name == appName {
-					allowed = true
-					break
-				}
+	if !auth.Verify(conductorKey, keyRecord.KeyHash) {
+		return pgtype.UUID{}, errors.New("invalid conductor key")
+	}
+
+	_ = q.TouchAPIKeyLastUsed(ctx, keyRecord.ID)
+
+	// Validate scope: application_names empty means all apps.
+	allowed := false
+	if len(keyRecord.ApplicationNames) == 0 {
+		allowed = true
+	} else {
+		for _, name := range keyRecord.ApplicationNames {
+			if name == appName {
+				allowed = true
+				break
 			}
 		}
-		if !allowed {
-			return pgtype.UUID{}, errors.New("key does not have access to this application")
-		}
-		orgID = keyRecord.OrganisationID
 	}
+	if !allowed {
+		return pgtype.UUID{}, errors.New("key does not have access to this application")
+	}
+	orgID = keyRecord.OrganisationID
 
 	// Resolve application ID.
 	app, err := q.GetApplicationByName(ctx, gen.GetApplicationByNameParams{

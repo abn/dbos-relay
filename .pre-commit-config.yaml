@@ -75,6 +75,12 @@ repos:
         args: [-i]
         stages: [commit-msg]
 
+      - id: no-process-leaks-msg
+        name: reject process leaks in the commit message
+        entry: '(?i)\b(wave[- ]?[0-9]+|lane|refinement|F[0-9]+)\b'
+        language: pygrep
+        stages: [commit-msg]
+
       - id: okf-bundle
         name: validate the OKF v0.2 docs bundle
         entry: ./.agents/scripts/check-okf.py

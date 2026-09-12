@@ -40,8 +40,6 @@ func NewManager(factory ClientFactory) *DefaultManager {
 
 // RegisterApp configures and activates data-plane connectivity for an application.
 func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
-	m.mu.Lock()
-
 	if cfg.DatabaseURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
@@ -54,6 +52,8 @@ func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	if cfg.StatementTimeout <= 0 {
 		cfg.StatementTimeout = 5 * time.Second
 	}
+
+	m.mu.Lock()
 
 	// If a client was previously active for this app, close it first.
 	if existing, ok := m.clients[cfg.ApplicationID]; ok {

@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/store/gen"
@@ -179,9 +180,18 @@ type mockHubStore struct {
 }
 
 func newMockHubStore() *mockHubStore {
-	return &mockHubStore{
+	store := &mockHubStore{
 		memoryAuthStore: *newMemoryAuthStore(),
 	}
+	lookup := auth.Lookup("test-key")
+	store.keys[lookup] = gen.ApiKey{
+		ID:               pgtype.UUID{Bytes: [16]byte{1, 1, 1, 1}, Valid: true},
+		OrganisationID:   pgtype.UUID{Bytes: [16]byte{9, 9, 9, 9}, Valid: true},
+		Lookup:           lookup,
+		KeyHash:          auth.Hash("test-key"),
+		ApplicationNames: []string{},
+	}
+	return store
 }
 
 func (m *mockHubStore) UpsertExecutor(ctx context.Context, arg gen.UpsertExecutorParams) (gen.Executor, error) {

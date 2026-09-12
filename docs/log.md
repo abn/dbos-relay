@@ -5,7 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-12
 
-* **Update**: Sanitized internal process vocabulary, phase numbering, and SPEC ticket identifiers (`D3`-`D8`) across all documentation and discovery references, renaming discovery documents to topic-only paths (`rest-surface.md`, `authz.md`, `client-behaviour.md`, `dashboard-reuse.md`, `recovery-params.md`, `metrics-alerting.md`).
+* **Update**: Sanitized internal process vocabulary, phase numbering, and legacy document prefix identifiers across all documentation and discovery references, renaming discovery documents to topic-only paths (`rest-surface.md`, `authz.md`, `client-behaviour.md`, `dashboard-reuse.md`, `recovery-params.md`, `metrics-alerting.md`).
 * **Update**: Aligned project status, architecture components, and recovery documentation with shipped Go implementation, removing pre-implementation disclaimers and defining executor liveness parameters against [Conductor WebSocket protocol](protocol/executor-ws.md).
 * **Update**: Reconciled overview and goals documentation with ADR 0004 data-plane architecture, noting read-by-default SDK client database fallback access and removing outdated database boundary claims.
 * **Creation**: Added [ADR 0009](adr/0009-dashboard-web-stack.md) recording the zero-dependency vanilla JS dashboard architecture, bespoke SVG step graph renderer, and manual OpenAPI model maintenance.
