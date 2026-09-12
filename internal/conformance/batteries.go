@@ -473,7 +473,10 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 	})
 
 	fe.SetHandler(protocol.MessageTypeCancel, func(msg protocol.Message) (protocol.Message, error) {
-		req, _ := msg.(*protocol.CancelWorkflowRequest)
+		req, ok := msg.(*protocol.CancelWorkflowRequest)
+		if !ok || req.WorkflowID == "" {
+			return nil, errors.New("invalid cancel request frame")
+		}
 		return &protocol.CancelWorkflowResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypeCancel,
@@ -484,7 +487,10 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 	})
 
 	fe.SetHandler(protocol.MessageTypeResume, func(msg protocol.Message) (protocol.Message, error) {
-		req, _ := msg.(*protocol.ResumeWorkflowRequest)
+		req, ok := msg.(*protocol.ResumeWorkflowRequest)
+		if !ok || req.WorkflowID == "" {
+			return nil, errors.New("invalid resume request frame")
+		}
 		return &protocol.ResumeWorkflowResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypeResume,
@@ -495,7 +501,10 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 	})
 
 	fe.SetHandler(protocol.MessageTypeForkWorkflow, func(msg protocol.Message) (protocol.Message, error) {
-		req, _ := msg.(*protocol.ForkWorkflowRequest)
+		req, ok := msg.(*protocol.ForkWorkflowRequest)
+		if !ok || req.Body.WorkflowID == "" {
+			return nil, errors.New("invalid fork request frame")
+		}
 		newID := req.Body.WorkflowID + "-forked"
 		return &protocol.ForkWorkflowResponse{
 			Envelope: protocol.Envelope{
@@ -539,6 +548,12 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
+				return fmt.Errorf("invalid workflowId in response")
+			}
+		}
 		return nil
 	}))
 
@@ -560,6 +575,12 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
+				return fmt.Errorf("invalid workflowId in response")
+			}
 		}
 		return nil
 	}))
@@ -583,6 +604,12 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 			return fmt.Errorf("expected status 200 or 201, got %d", resp.StatusCode)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			if wf, ok := body["workflowId"].(string); !ok || wf == "" {
+				return fmt.Errorf("missing workflowId in fork response")
+			}
 		}
 		return nil
 	}))
@@ -749,6 +776,12 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
 		}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
+				return fmt.Errorf("invalid workflowId in response")
+			}
+		}
 		return nil
 	}))
 
@@ -770,6 +803,12 @@ func (r *Runner) runBattery5QueuesSchedules(ctx context.Context) BatteryResult {
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
+				return fmt.Errorf("invalid workflowId in response")
+			}
 		}
 		return nil
 	}))
@@ -818,8 +857,13 @@ func (r *Runner) runBattery6Recovery(ctx context.Context) BatteryResult {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
 		var execs []map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&execs)
+		if err := json.NewDecoder(resp.Body).Decode(&execs); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
 
 		for _, ex := range execs {
 			if id, ok := ex["executorId"].(string); ok && id == "conformance-rec-dead" {
@@ -878,8 +922,13 @@ func (r *Runner) runBattery6Recovery(ctx context.Context) BatteryResult {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
 		var execs []map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&execs)
+		if err := json.NewDecoder(resp.Body).Decode(&execs); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
 
 		found := false
 		for _, ex := range execs {
@@ -972,7 +1021,7 @@ func (r *Runner) runBattery7Alerting(ctx context.Context) BatteryResult {
 	// Check 7.3: Delete Alerting Rule
 	checks = append(checks, executeCheck("7.3 Delete Alerting Rule", func() error {
 		if ruleID == "" {
-			return nil // Skip if create didn't return an ID
+			return errors.New("cannot delete rule: ruleID is empty")
 		}
 		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/alerting-rules/%s", r.httpURL, r.cfg.OrgName, r.cfg.AppName, ruleID)
 		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
@@ -990,6 +1039,12 @@ func (r *Runner) runBattery7Alerting(ctx context.Context) BatteryResult {
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			if wf, ok := body["workflowId"].(string); !ok || wf != "wf-conf-1" {
+				return fmt.Errorf("invalid workflowId in response")
+			}
 		}
 		return nil
 	}))
