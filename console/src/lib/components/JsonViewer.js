@@ -27,7 +27,7 @@ export function renderJsonViewer(data, title = "") {
     <div class="json-viewer" id="${id}">
       <div class="json-header">
         <span class="json-title">${escapeHtml(title)}</span>
-        <button class="btn btn-xs btn-secondary copy-btn" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(raw)}')).then(() => { this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 1500); })">Copy</button>
+        <button class="btn btn-xs btn-secondary copy-btn" data-copy="${escapeHtml(raw)}">Copy</button>
       </div>
       <pre class="json-content"><code>${formatted}</code></pre>
     </div>

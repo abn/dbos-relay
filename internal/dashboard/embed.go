@@ -53,6 +53,12 @@ func Handler(apiHandler http.Handler) http.Handler {
 			stat, err := f.Stat()
 			_ = f.Close()
 			if err == nil && !stat.IsDir() {
+				// Defense-in-depth security headers
+				w.Header().Set("X-Content-Type-Options", "nosniff")
+				w.Header().Set("X-Frame-Options", "DENY")
+				w.Header().Set("Referrer-Policy", "no-referrer")
+				w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'")
+
 				// Set caching headers
 				if cleanPath == "index.html" {
 					w.Header().Set("Cache-Control", "no-cache, must-revalidate")
@@ -71,6 +77,10 @@ func Handler(apiHandler http.Handler) http.Handler {
 		}
 
 		// SPA fallback: non-API route without an extension serves index.html
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		w.WriteHeader(http.StatusOK)

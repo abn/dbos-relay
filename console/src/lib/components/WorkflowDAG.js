@@ -75,7 +75,7 @@ export function renderWorkflowDAG(steps, onSelectStepCallbackName = "window.sele
     const stepJson = encodeURIComponent(JSON.stringify(step));
 
     nodesSvg += `
-      <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})" onclick="${onSelectStepCallbackName}('${stepJson}')" cursor="pointer">
+      <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})" data-step-json="${escapeHtml(JSON.stringify(step))}" cursor="pointer">
         <rect width="${nodeWidth}" height="${nodeHeight}" rx="8" class="node-bg" />
         <rect width="4" height="${nodeHeight}" rx="2" class="node-stripe" fill="${statusColor}" />
 

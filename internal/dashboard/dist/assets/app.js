@@ -259,7 +259,7 @@
     <div class="json-viewer" id="${id}">
       <div class="json-header">
         <span class="json-title">${escapeHtml2(title)}</span>
-        <button class="btn btn-xs btn-secondary copy-btn" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(raw)}')).then(() => { this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 1500); })">Copy</button>
+        <button class="btn btn-xs btn-secondary copy-btn" data-copy="${escapeHtml2(raw)}">Copy</button>
       </div>
       <pre class="json-content"><code>${formatted}</code></pre>
     </div>
@@ -351,7 +351,7 @@
       }
       const stepJson = encodeURIComponent(JSON.stringify(step));
       nodesSvg += `
-      <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})" onclick="${onSelectStepCallbackName}('${stepJson}')" cursor="pointer">
+      <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})" data-step-json="${escapeHtml3(JSON.stringify(step))}" cursor="pointer">
         <rect width="${nodeWidth}" height="${nodeHeight}" rx="8" class="node-bg" />
         <rect width="4" height="${nodeHeight}" rx="2" class="node-stripe" fill="${statusColor}" />
 
@@ -489,7 +489,7 @@
         <nav class="sidebar-nav">
           ${navItems.map((item) => `
             <a class="nav-item ${this.currentRoute === item.id || this.currentRoute === "workflow-detail" && item.id === "workflows" ? "active" : ""}"
-               onclick="window.app.navigate('${item.id}')">
+               data-navigate='${item.id}'>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 ${item.icon}
               </svg>
@@ -499,7 +499,7 @@
         </nav>
         <div class="sidebar-footer">
           <span>Relay Control Plane</span>
-          <button class="btn btn-xs btn-secondary" onclick="window.app.toggleTheme()">
+          <button class="btn btn-xs btn-secondary" data-action="toggleTheme">
             ${this.theme === "dark" ? "\u2600\uFE0F Light" : "\u{1F319} Dark"}
           </button>
         </div>
@@ -515,12 +515,12 @@
         <div class="header-right">
           <div class="selector-group">
             <label class="form-label" style="margin:0;">App:</label>
-            <select class="select-sm" onchange="window.app.onAppChange(this.value)">
+            <select class="select-sm" data-change="app">
               ${this.apps.map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
               ${this.apps.length === 0 ? `<option value="">No applications</option>` : ""}
             </select>
           </div>
-          <button class="btn btn-xs btn-secondary" onclick="window.app.renderContentView()">\u21BB Refresh</button>
+          <button class="btn btn-xs btn-secondary" data-action="refresh">\u21BB Refresh</button>
         </div>
       </header>
     `;
@@ -653,7 +653,7 @@
               </thead>
               <tbody>
                 ${this.apps.map((a) => `
-                  <tr class="clickable" onclick="window.app.onAppChange('${escapeHtml4(a.name)}')">
+                  <tr class="clickable" data-app-change='${escapeHtml4(a.name)}'>
                     <td><strong>${escapeHtml4(a.name)}</strong></td>
                     <td>${renderStatusPill(a.status)}</td>
                     <td>${a.executorTimeoutSecs || 60}s</td>
@@ -677,8 +677,8 @@
         el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." oninput="window.app.filterWorkflowsTable(this.value)">
-            <select id="filter-status" class="select-sm" onchange="window.app.filterWorkflowsStatus(this.value)">
+            <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." data-input="wfTable">
+            <select id="filter-status" class="select-sm" data-change="wfStatus">
               <option value="">All Statuses</option>
               <option value="SUCCESS">SUCCESS</option>
               <option value="PENDING">PENDING</option>
@@ -708,7 +708,7 @@
               </thead>
               <tbody>
                 ${workflows.length > 0 ? workflows.map((wf) => `
-                  <tr class="clickable" onclick="window.app.navigate('workflow/${encodeURIComponent(wf.workflowId)}')">
+                  <tr class="clickable" data-navigate='workflow/${encodeURIComponent(wf.workflowId)}'>
                     <td><code>${escapeHtml4(wf.workflowId)}</code></td>
                     <td>${renderStatusPill(wf.status)}</td>
                     <td><strong>${escapeHtml4(wf.workflowName || "unnamed")}</strong></td>
@@ -754,7 +754,7 @@
         const steps = await this.client.listSteps(this.orgName, this.appName, this.selectedWorkflowId);
         el.innerHTML = `
         <div style="margin-bottom: 16px;">
-          <a class="btn btn-xs btn-secondary" onclick="window.app.navigate('workflows')">\u2190 Back to workflows</a>
+          <a class="btn btn-xs btn-secondary" data-navigate='workflows'>\u2190 Back to workflows</a>
         </div>
 
         <div class="card">
@@ -765,13 +765,13 @@
             </div>
             <div style="display:flex; gap:8px;">
               ${wf.status === "PENDING" || wf.status === "ENQUEUED" ? `
-                <button class="btn btn-sm btn-danger" onclick="window.app.cancelWorkflow('${escapeHtml4(wf.workflowId)}')">Cancel</button>
+                <button class="btn btn-sm btn-danger" data-cancel-wf='${escapeHtml4(wf.workflowId)}'>Cancel</button>
               ` : ""}
               ${wf.status === "CANCELLED" ? `
-                <button class="btn btn-sm btn-primary" onclick="window.app.resumeWorkflow('${escapeHtml4(wf.workflowId)}')">Resume</button>
+                <button class="btn btn-sm btn-primary" data-resume-wf='${escapeHtml4(wf.workflowId)}'>Resume</button>
               ` : ""}
               ${wf.status === "ERROR" ? `
-                <button class="btn btn-sm btn-primary" onclick="window.app.restartWorkflow('${escapeHtml4(wf.workflowId)}')">Restart</button>
+                <button class="btn btn-sm btn-primary" data-restart-wf='${escapeHtml4(wf.workflowId)}'>Restart</button>
               ` : ""}
             </div>
           </div>
@@ -809,9 +809,9 @@
 
         <div class="card">
           <div class="tab-list">
-            <button class="tab-btn active" id="tab-btn-io" onclick="window.app.switchWfTab('io')">Inputs & Outputs</button>
-            <button class="tab-btn" id="tab-btn-events" onclick="window.app.switchWfTab('events')">Events</button>
-            <button class="tab-btn" id="tab-btn-notifications" onclick="window.app.switchWfTab('notifications')">Notifications</button>
+            <button class="tab-btn active" id="tab-btn-io" data-wf-tab='io'>Inputs & Outputs</button>
+            <button class="tab-btn" id="tab-btn-events" data-wf-tab='events'>Events</button>
+            <button class="tab-btn" id="tab-btn-notifications" data-wf-tab='notifications'>Notifications</button>
           </div>
           <div class="card-body" id="wf-tab-content">
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -914,11 +914,11 @@
       const root = document.getElementById("modal-root");
       if (!root) return;
       root.innerHTML = `
-      <div class="modal-overlay" onclick="if(event.target === this) window.app.closeModal()">
+      <div class="modal-overlay" data-action="closeModalOverlay">
         <div class="modal-dialog">
           <div class="modal-header">
             <span>Step #${step.stepId}: ${escapeHtml4(step.stepName)}</span>
-            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal">\u2715</button>
           </div>
           <div class="modal-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -954,7 +954,7 @@
             ` : ""}
           </div>
           <div class="modal-footer">
-            <button class="btn btn-sm btn-secondary" onclick="window.app.closeModal()">Close</button>
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Close</button>
           </div>
         </div>
       </div>
@@ -1039,11 +1039,11 @@
                     <td>
                       <div style="display:flex; gap:4px;">
                         ${s.status === "ACTIVE" ? `
-                          <button class="btn btn-xs btn-secondary" onclick="window.app.pauseSchedule('${escapeHtml4(s.scheduleName)}')">Pause</button>
+                          <button class="btn btn-xs btn-secondary" data-pause-schedule='${escapeHtml4(s.scheduleName)}'>Pause</button>
                         ` : `
-                          <button class="btn btn-xs btn-secondary" onclick="window.app.resumeSchedule('${escapeHtml4(s.scheduleName)}')">Resume</button>
+                          <button class="btn btn-xs btn-secondary" data-resume-schedule='${escapeHtml4(s.scheduleName)}'>Resume</button>
                         `}
-                        <button class="btn btn-xs btn-primary" onclick="window.app.triggerSchedule('${escapeHtml4(s.scheduleName)}')">Trigger Now</button>
+                        <button class="btn btn-xs btn-primary" data-trigger-schedule='${escapeHtml4(s.scheduleName)}'>Trigger Now</button>
                       </div>
                     </td>
                   </tr>
@@ -1093,7 +1093,7 @@
             <span class="text-secondary" style="font-size:12px;">Active Alert Rules</span>
           </div>
           <div>
-            <button class="btn btn-sm btn-primary" onclick="window.app.openCreateAlertModal()">+ New Alert Rule</button>
+            <button class="btn btn-sm btn-primary" data-action="openCreateAlert">+ New Alert Rule</button>
           </div>
         </div>
 
@@ -1119,7 +1119,7 @@
                     <td><code>${escapeHtml4(JSON.stringify(r.ruleMetadata || {}))}</code></td>
                     <td>${formatTimestamp(r.lastFiredAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" onclick="window.app.deleteAlertRule('${escapeHtml4(r.id)}')">Delete</button>
+                      <button class="btn btn-xs btn-danger" data-delete-rule='${escapeHtml4(r.id)}'>Delete</button>
                     </td>
                   </tr>
                 `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No alerting rules configured.</td></tr>`}
@@ -1136,11 +1136,11 @@
       const root = document.getElementById("modal-root");
       if (!root) return;
       root.innerHTML = `
-      <div class="modal-overlay" onclick="if(event.target === this) window.app.closeModal()">
+      <div class="modal-overlay" data-action="closeModalOverlay">
         <div class="modal-dialog">
           <div class="modal-header">
             <span>Create Alert Rule</span>
-            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal">\u2715</button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1161,8 +1161,8 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-sm btn-secondary" onclick="window.app.closeModal()">Cancel</button>
-            <button class="btn btn-sm btn-primary" onclick="window.app.submitCreateAlert()">Create Rule</button>
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Cancel</button>
+            <button class="btn btn-sm btn-primary" data-action="submitCreateAlert">Create Rule</button>
           </div>
         </div>
       </div>
@@ -1210,7 +1210,7 @@
             <span class="text-secondary" style="font-size:12px;">Organization API Keys (${this.orgName})</span>
           </div>
           <div>
-            <button class="btn btn-sm btn-primary" onclick="window.app.openCreateKeyModal()">+ Mint API Key</button>
+            <button class="btn btn-sm btn-primary" data-action="openCreateKey">+ Mint API Key</button>
           </div>
         </div>
 
@@ -1234,7 +1234,7 @@
                     <td>${k.applicationNames && k.applicationNames.length > 0 ? escapeHtml4(k.applicationNames.join(", ")) : "All Applications"}</td>
                     <td>${formatTimestamp(k.createdAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" onclick="window.app.revokeKey('${escapeHtml4(k.name || k.id)}')">Revoke</button>
+                      <button class="btn btn-xs btn-danger" data-revoke-key='${escapeHtml4(k.name || k.id)}'>Revoke</button>
                     </td>
                   </tr>
                 `).join("") : `<tr><td colspan="5" style="text-align:center; color:var(--text-tertiary);">No API keys found.</td></tr>`}
@@ -1251,11 +1251,11 @@
       const root = document.getElementById("modal-root");
       if (!root) return;
       root.innerHTML = `
-      <div class="modal-overlay" onclick="if(event.target === this) window.app.closeModal()">
+      <div class="modal-overlay" data-action="closeModalOverlay">
         <div class="modal-dialog">
           <div class="modal-header">
             <span>Mint Scoped API Key</span>
-            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal">\u2715</button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1271,8 +1271,8 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-sm btn-secondary" onclick="window.app.closeModal()">Cancel</button>
-            <button class="btn btn-sm btn-primary" onclick="window.app.submitCreateKey()">Mint Key</button>
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Cancel</button>
+            <button class="btn btn-sm btn-primary" data-action="submitCreateKey">Mint Key</button>
           </div>
         </div>
       </div>
@@ -1311,7 +1311,7 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText('${escapeHtml4(token)}').then(() => { window.app.closeModal(); window.app.renderContentView(); })">Copy & Done</button>
+            <button class="btn btn-sm btn-primary" data-copy-and-close='${escapeHtml4(token)}'>Copy & Done</button>
           </div>
         </div>
       </div>
@@ -1362,5 +1362,61 @@
   window.addEventListener("DOMContentLoaded", () => {
     window.app = new DashboardApp();
     window.app.init();
+  });
+  document.addEventListener("click", (e) => {
+    let target = e.target.closest("[data-navigate], [data-app-change], [data-action], [data-cancel-wf], [data-resume-wf], [data-restart-wf], [data-wf-tab], [data-pause-schedule], [data-resume-schedule], [data-trigger-schedule], [data-delete-rule], [data-revoke-key], [data-copy-and-close]");
+    if (!target) {
+      if (e.target.hasAttribute("data-action") && e.target.getAttribute("data-action") === "closeModalOverlay") {
+        window.app.closeModal();
+      }
+      let dagNode = e.target.closest("[data-step-json]");
+      if (dagNode) {
+        window.selectStep(dagNode.getAttribute("data-step-json"));
+      }
+      let copyBtn = e.target.closest("[data-copy]");
+      if (copyBtn) {
+        navigator.clipboard.writeText(decodeURIComponent(copyBtn.getAttribute("data-copy"))).then(() => {
+          copyBtn.innerText = "Copied!";
+          setTimeout(() => copyBtn.innerText = "Copy", 1500);
+        });
+      }
+      return;
+    }
+    if (target.dataset.navigate) window.app.navigate(target.dataset.navigate.replace(/'/g, ""));
+    else if (target.dataset.appChange) window.app.onAppChange(target.dataset.appChange.replace(/'/g, ""));
+    else if (target.dataset.action === "refresh") window.app.renderContentView();
+    else if (target.dataset.action === "toggleTheme") window.app.toggleTheme();
+    else if (target.dataset.action === "closeModal") window.app.closeModal();
+    else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""));
+    else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ""));
+    else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ""));
+    else if (target.dataset.wfTab) window.app.switchWfTab(target.dataset.wfTab.replace(/'/g, ""));
+    else if (target.dataset.pauseSchedule) window.app.pauseSchedule(target.dataset.pauseSchedule.replace(/'/g, ""));
+    else if (target.dataset.resumeSchedule) window.app.resumeSchedule(target.dataset.resumeSchedule.replace(/'/g, ""));
+    else if (target.dataset.triggerSchedule) window.app.triggerSchedule(target.dataset.triggerSchedule.replace(/'/g, ""));
+    else if (target.dataset.action === "openCreateAlert") window.app.openCreateAlertModal();
+    else if (target.dataset.action === "submitCreateAlert") window.app.submitCreateAlert();
+    else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ""));
+    else if (target.dataset.action === "openCreateKey") window.app.openCreateKeyModal();
+    else if (target.dataset.action === "submitCreateKey") window.app.submitCreateKey();
+    else if (target.dataset.revokeKey) window.app.revokeKey(target.dataset.revokeKey.replace(/'/g, ""));
+    else if (target.dataset.copyAndClose) {
+      let text = target.dataset.copyAndClose;
+      navigator.clipboard.writeText(text).then(() => {
+        window.app.closeModal();
+        window.app.renderContentView();
+      });
+    }
+  });
+  document.addEventListener("change", (e) => {
+    let target = e.target.closest("[data-change]");
+    if (!target) return;
+    if (target.dataset.change === "app") window.app.onAppChange(target.value);
+    else if (target.dataset.change === "wfStatus") window.app.filterWorkflowsStatus(target.value);
+  });
+  document.addEventListener("input", (e) => {
+    let target = e.target.closest("[data-input]");
+    if (!target) return;
+    if (target.dataset.input === "wfTable") window.app.filterWorkflowsTable(target.value);
   });
 })();
