@@ -338,18 +338,37 @@ func (q *Queries) GetUserPrimaryOrganisation(ctx context.Context, userID pgtype.
 const listAuditLogs = `-- name: ListAuditLogs :many
 SELECT id, organisation_id, user_id, username, action, details, created_at FROM audit_logs
 WHERE organisation_id = $1
+AND ($2::timestamptz IS NULL OR created_at >= $2)
+AND ($3::timestamptz IS NULL OR created_at <= $3)
+AND ($4::text IS NULL OR action = $4)
+AND ($5::text IS NULL OR username = $5)
+AND ($6::text IS NULL OR details->>'target' = $6)
 ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
+LIMIT $8::bigint OFFSET $7::bigint
 `
 
 type ListAuditLogsParams struct {
 	OrganisationID pgtype.UUID
-	Limit          int32
-	Offset         int32
+	StartTime      pgtype.Timestamptz
+	EndTime        pgtype.Timestamptz
+	Operation      *string
+	Subject        *string
+	Target         *string
+	Offset         int64
+	Limit          int64
 }
 
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
-	rows, err := q.db.Query(ctx, listAuditLogs, arg.OrganisationID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listAuditLogs,
+		arg.OrganisationID,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Operation,
+		arg.Subject,
+		arg.Target,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

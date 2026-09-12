@@ -11,6 +11,7 @@ import (
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/auth"
 	storegen "github.com/abn/relay/internal/store/gen"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func isGlobalRole(name string) bool {
@@ -619,17 +620,30 @@ func (s *Server) handleListAuditLogs(ctx context.Context, request gen.ListAuditL
 		}, nil
 	}
 
-	limit := int32(50)
+	limit := int64(50)
 	if request.Params.Limit != nil && *request.Params.Limit > 0 {
-		limit = int32(*request.Params.Limit)
+		limit = *request.Params.Limit
 	}
-	offset := int32(0)
+	offset := int64(0)
 	if request.Params.Offset != nil && *request.Params.Offset > 0 {
-		offset = int32(*request.Params.Offset)
+		offset = *request.Params.Offset
+	}
+
+	var startTime, endTime pgtype.Timestamptz
+	if request.Params.StartTime != nil {
+		startTime = pgtype.Timestamptz{Time: *request.Params.StartTime, Valid: true}
+	}
+	if request.Params.EndTime != nil {
+		endTime = pgtype.Timestamptz{Time: *request.Params.EndTime, Valid: true}
 	}
 
 	logs, err := s.store.ListAuditLogs(ctx, storegen.ListAuditLogsParams{
 		OrganisationID: org.ID,
+		StartTime:      startTime,
+		EndTime:        endTime,
+		Operation:      request.Params.Operation,
+		Subject:        request.Params.Subject,
+		Target:         request.Params.Target,
 		Limit:          limit,
 		Offset:         offset,
 	})

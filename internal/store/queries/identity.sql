@@ -102,6 +102,11 @@ RETURNING *;
 
 -- name: ListAuditLogs :many
 SELECT * FROM audit_logs
-WHERE organisation_id = $1
+WHERE organisation_id = sqlc.arg('organisation_id')
+AND (sqlc.narg('start_time')::timestamptz IS NULL OR created_at >= sqlc.narg('start_time'))
+AND (sqlc.narg('end_time')::timestamptz IS NULL OR created_at <= sqlc.narg('end_time'))
+AND (sqlc.narg('operation')::text IS NULL OR action = sqlc.narg('operation'))
+AND (sqlc.narg('subject')::text IS NULL OR username = sqlc.narg('subject'))
+AND (sqlc.narg('target')::text IS NULL OR details->>'target' = sqlc.narg('target'))
 ORDER BY created_at DESC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;

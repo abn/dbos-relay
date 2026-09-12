@@ -4,6 +4,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -328,7 +329,8 @@ func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta m
 							dest.RoutingKey = rk
 						}
 						if err := e.channelDispatch.Dispatch(ctx, dest, notif); err != nil {
-							e.logger.Warn("failed to dispatch to external channel", "type", dest.Type, "error", err)
+							sanitizedErr := strings.ReplaceAll(err.Error(), dest.URL, "[REDACTED]")
+							e.logger.Warn("failed to dispatch to external channel", "type", dest.Type, "error", sanitizedErr)
 						}
 					}
 				}
