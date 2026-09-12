@@ -5,6 +5,17 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-12
 
+* **Update**: Sanitized internal process vocabulary, phase numbering, and SPEC ticket identifiers (`D3`-`D8`) across all documentation and discovery references, renaming discovery documents to topic-only paths (`rest-surface.md`, `authz.md`, `client-behaviour.md`, `dashboard-reuse.md`, `recovery-params.md`, `metrics-alerting.md`).
+* **Update**: Aligned project status, architecture components, and recovery documentation with shipped Go implementation, removing pre-implementation disclaimers and defining executor liveness parameters against [Conductor WebSocket protocol](protocol/executor-ws.md).
+* **Update**: Reconciled overview and goals documentation with ADR 0004 data-plane architecture, noting read-by-default SDK client database fallback access and removing outdated database boundary claims.
+* **Creation**: Added [ADR 0009](adr/0009-dashboard-web-stack.md) recording the zero-dependency vanilla JS dashboard architecture, bespoke SVG step graph renderer, and manual OpenAPI model maintenance.
+* **Update**: Corrected quickstart guide environment variable usage (`DBOS__CONDUCTOR_URL`, `DBOS_URL`, `DBOS_TOKEN`), clarified sample app `RELAY_URL` wiring, and aligned Go prerequisite floor with `go.mod`.
+* **Creation**: Added [Operations and migrations](usage/operations.md) documenting startup auto-migration, rolling upgrade expand/contract schema evolution, and database restore rollback procedures.
+* **Update**: Documented declarative configuration secret indirection via environment variable expansion, runtime timing overrides, `--env-out` flag, and repository gitignore refusal checks.
+* **Update**: Regenerated client command endpoints and acceptance checklists in [Client behaviour](discovery/client-behaviour.md) to match upstream `dbos-ctl` client and OpenAPI specifications.
+* **Creation**: Added `THIRD-PARTY-LICENSES.md` providing comprehensive attribution and license notices for MIT, BSD-3-Clause, and Apache-2.0 dependencies, including the DBOS Go SDK.
+* **Update**: Enhanced `.agents/scripts/check-okf.py` with automated validation for internal ticket prefixes, scratch paths, and minified JSON line citations.
+* **Update**: Corrected provenance ledger description in [Clean-room rules](contribution/clean-room.md) as a permitted source register, and replaced minified JSON line citations with standard JSON pointer paths in discovery documentation.
 * **Update**: Aligned multi-SDK verification matrix documentation in [Multi-SDK verification matrix](testing/verify-sdk.md) with genuine REST endpoint probes rather than unexercised client CLI binaries, and specified verbatim payload byte preservation rather than unmodelled serialization tags.
 * **Update**: Enforced WebSocket read limits, handshake timeouts, and error message rejections in connection hub.
 * **Update**: Implemented heartbeat pong deadlines, write mutex decoupling, and executor lease ownership renewal.
