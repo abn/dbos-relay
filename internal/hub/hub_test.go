@@ -1,19 +1,52 @@
 package hub
 
 import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/abn/relay/internal/protocol"
 )
 
-func TestHub(t *testing.T) {
-	// Skip for now, need a mock store or an actual test DB to run properly.
-	// But according to the instructions, we should write unit tests covering:
-	// - Auth failure on invalid key returns 401.
-	// - Auth failure on wrong app returns 403.
-	// - Connection upgrade, handshake registration, request/response multiplexing.
-	// - Late response arriving after timeout (must not panic or write to closed channel).
-	// - Clean shutdown and disconnect.
+func TestHandleAuthError(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{
+			name:       "invalid conductor key",
+			err:        errors.New("invalid conductor key"),
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "missing app name or conductor key",
+			err:        errors.New("missing app name or conductor key"),
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "key does not have access to this application",
+			err:        errors.New("key does not have access to this application"),
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "generic error",
+			err:        errors.New("some unexpected database error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			HandleAuthError(rec, req, tt.err)
+			if rec.Code != tt.wantStatus {
+				t.Errorf("expected status %d, got %d", tt.wantStatus, rec.Code)
+			}
+		})
+	}
 }
 
 func TestMultiplexer_LateResponse(t *testing.T) {
@@ -38,11 +71,4 @@ func TestMultiplexer_LateResponse(t *testing.T) {
 	default:
 		t.Error("expected channel to be closed")
 	}
-}
-
-func TestHub_Auth(t *testing.T) {
-	// Since we need to test auth 401 and 403, and the store interacts with a DB,
-	// usually dbos-relay tests use internal/store testdb_test.go to get a real DB.
-	// Let's implement full integration tests if testdb is available.
-	// For now, these are placeholder structures to show it compiles and runs.
 }
