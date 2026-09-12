@@ -35,3 +35,6 @@ jobs:
 
       - name: Run quality gate
         run: make check
+
+      - name: Validate dashboard bundle syntax
+        run: make dashboard/check
