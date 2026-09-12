@@ -148,6 +148,16 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var metadata []byte
 
 	if infoRes, isRes := msg.(*protocol.ExecutorInfoResponse); isRes {
+		if infoRes.ErrorMessage != nil {
+			h.logger.Error("executor reported error during handshake", "app_name", appName, "error", *infoRes.ErrorMessage)
+			_ = conn.Close(websocket.StatusPolicyViolation, "executor reported error during handshake")
+			return
+		}
+		if infoRes.ExecutorID == "" {
+			h.logger.Warn("executor connected with empty executor_id", "app_name", appName)
+			_ = conn.Close(websocket.StatusPolicyViolation, "missing executor id")
+			return
+		}
 		executorID = infoRes.ExecutorID
 		appVersion = infoRes.ApplicationVersion
 		if infoRes.Hostname != nil {

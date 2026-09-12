@@ -239,3 +239,101 @@ func TestHub_HandshakeTimeout(t *testing.T) {
 		t.Errorf("expected no lingering Hub.ServeHTTP goroutines, but found in stack: %s", stack)
 	}
 }
+
+func TestHub_HandshakeRejection(t *testing.T) {
+	runTest := func(t *testing.T, respModifier func(req *protocol.ExecutorInfoRequest) *protocol.ExecutorInfoResponse) {
+		store := newMockHubStore()
+		cfg := &config.Config{}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		h := New(store, cfg, logger)
+		defer func() { _ = h.Close() }()
+
+		server := httptest.NewServer(h)
+		defer server.Close()
+
+		wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+		if err != nil {
+			t.Fatalf("failed to dial websocket: %v", err)
+		}
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+		// Read executor_info prompt from relay
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("failed to read prompt: %v", err)
+		}
+		if typ != websocket.MessageText {
+			t.Fatalf("expected text message, got %v", typ)
+		}
+		msg, err := protocol.Decode(data)
+		if err != nil {
+			t.Fatalf("failed to decode prompt: %v", err)
+		}
+		infoReq, ok := msg.(*protocol.ExecutorInfoRequest)
+		if !ok {
+			t.Fatalf("expected *protocol.ExecutorInfoRequest, got %T", msg)
+		}
+
+		errResp := respModifier(infoReq)
+		respData, err := protocol.Encode(errResp)
+		if err != nil {
+			t.Fatalf("failed to encode response: %v", err)
+		}
+		if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+
+		// Connection must be closed by server with policy violation
+		_, _, err = conn.Read(ctx)
+		if err == nil {
+			t.Fatalf("expected connection to be closed by server, but read succeeded")
+		}
+		var closeErr websocket.CloseError
+		if errors.As(err, &closeErr) {
+			if closeErr.Code != websocket.StatusPolicyViolation {
+				t.Errorf("expected close code StatusPolicyViolation (%d), got %d", websocket.StatusPolicyViolation, closeErr.Code)
+			}
+		} else if !strings.Contains(err.Error(), "StatusPolicyViolation") && !strings.Contains(err.Error(), "1008") {
+			t.Errorf("expected StatusPolicyViolation or code 1008 in error, got: %v", err)
+		}
+
+		// Verify no executors registered in hub
+		connected := h.registry.ListConnected(store.apps["test-app"].ID)
+		if len(connected) != 0 {
+			t.Errorf("expected 0 connected executors, got %d", len(connected))
+		}
+	}
+
+	t.Run("error_message rejected", func(t *testing.T) {
+		errMsg := "boom"
+		runTest(t, func(req *protocol.ExecutorInfoRequest) *protocol.ExecutorInfoResponse {
+			return &protocol.ExecutorInfoResponse{
+				Envelope: protocol.Envelope{
+					Type:         protocol.MessageTypeExecutorInfo,
+					RequestID:    req.RequestID,
+					ErrorMessage: &errMsg,
+				},
+			}
+		})
+	})
+
+	t.Run("empty_executor_id rejected", func(t *testing.T) {
+		runTest(t, func(req *protocol.ExecutorInfoRequest) *protocol.ExecutorInfoResponse {
+			return &protocol.ExecutorInfoResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeExecutorInfo,
+					RequestID: req.RequestID,
+				},
+				ExecutorID: "",
+			}
+		})
+	})
+}
