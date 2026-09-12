@@ -6,6 +6,13 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Unified authorization middleware, enforced tenant path and application scoping across REST endpoints, and implemented cross-tenant isolation testing.
+* **Update**: Hardened peer-forward endpoint with random cluster secret fallback, replay protection windows, and pre-allocation signature verification.
+* **Update**: Enforced role-based access control on identity mutation handlers, organisation secret validation on join, and grantable permission catalogues.
+* **Update**: Enforced OIDC audience validation, negative caching for unknown keys, and clock-skew leeway.
+* **Update**: Authenticated metrics scrape endpoints under auth mode and sanitized application labels against multi-tenant leakage.
+* **Update**: Implemented audit log capture middleware recording client IP, request status, and query filters.
+* **Update**: Added webhook SSRF destination validation, secret redaction on alerting rule listings, database error sanitization on health endpoints, and API key usage tracking.
 * **Update**: Added per-package test database helper in `internal/testdb` and serialized test execution in Makefile to isolate concurrent database access.
 * **Update**: Configured PostgreSQL service user in test-suite workflow to match test connection credentials.
 * **Update**: Added `RELAY_VERIFY_SDK=1` environment gate and full cluster container checks to multi-SDK verification matrix.
