@@ -5,8 +5,37 @@ import (
 	"fmt"
 )
 
+// DecodeRequest parses the JSON payload into the corresponding concrete Message request type.
+func DecodeRequest(data []byte) (Message, error) {
+	return decodeWithDirection(data, false)
+}
+
+// DecodeResponse parses the JSON payload into the corresponding concrete Message response type.
+func DecodeResponse(data []byte) (Message, error) {
+	return decodeWithDirection(data, true)
+}
+
 // Decode parses the JSON payload into the corresponding concrete Message type.
+// Deprecated: Use DecodeRequest or DecodeResponse instead.
 func Decode(data []byte) (Message, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("malformed message: %w", err)
+	}
+	isResponse := false
+	if _, ok := raw["error_message"]; ok {
+		isResponse = true
+	} else if _, ok := raw["success"]; ok {
+		isResponse = true
+	} else if _, ok := raw["output"]; ok {
+		isResponse = true
+	} else if _, ok := raw["executor_id"]; ok {
+		isResponse = true
+	}
+	return decodeWithDirection(data, isResponse)
+}
+
+func decodeWithDirection(data []byte, isResponse bool) (Message, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("malformed message: %w", err)
@@ -22,69 +51,6 @@ func Decode(data []byte) (Message, error) {
 	}
 
 	msgType := MessageType(typeStr)
-
-	// Determine if this is a request or a response
-	isResponse := false
-	if _, ok := raw["error_message"]; ok {
-		isResponse = true
-	} else if _, ok := raw["success"]; ok {
-		isResponse = true
-	} else if _, ok := raw["output"]; ok {
-		isResponse = true
-	} else {
-		switch msgType {
-		case MessageTypeExecutorInfo:
-			if _, ok := raw["executor_id"]; ok {
-				isResponse = true
-			}
-		case MessageTypeForkWorkflow:
-			if _, ok := raw["new_workflow_id"]; ok {
-				if _, hasBody := raw["body"]; !hasBody {
-					isResponse = true
-				}
-			}
-		case MessageTypeForkFromFailure:
-			if _, ok := raw["forked_workflow_ids"]; ok {
-				isResponse = true
-			}
-		case MessageTypeExistPendingWorkflows:
-			if _, ok := raw["exist"]; ok {
-				isResponse = true
-			}
-		case MessageTypeGetMetrics:
-			if _, ok := raw["metrics"]; ok {
-				isResponse = true
-			}
-		case MessageTypeExportWorkflow:
-			if _, ok := raw["serialized_workflow"]; ok {
-				if _, hasExport := raw["export_children"]; !hasExport {
-					isResponse = true
-				}
-			}
-		case MessageTypeBackfillSchedule:
-			if _, ok := raw["workflow_ids"]; ok {
-				isResponse = true
-			}
-		case MessageTypeTriggerSchedule:
-			if _, ok := raw["workflow_id"]; ok {
-				if _, hasSched := raw["schedule_name"]; !hasSched {
-					isResponse = true
-				}
-			}
-		case MessageTypeGetWorkflowEvents:
-			if _, ok := raw["events"]; ok {
-				isResponse = true
-			}
-		case MessageTypeGetWorkflowNotifications:
-			if _, ok := raw["notifications"]; ok {
-				isResponse = true
-			}
-		case MessageTypeGetWorkflowStreams:
-			if _, ok := raw["streams"]; ok {
-				isResponse = true
-			}
-		}
-	}
 
 	var msg Message
 	if isResponse {
