@@ -52,6 +52,9 @@ Two rules follow from that and are enforced rather than trusted:
   even though MIT permits it. The protocol is written down as a specification
   first, and the implementation follows the specification. Small constants
   such as message type strings and field names are expected.
+  Wire-type declarations (like those in `messages.go`) are transliterations
+  from the MIT-licensed SDK, and this is permitted as long as no functional
+  logic or behaviour is copied.
 
 When a fact is only obtainable from a forbidden source, the gap is surfaced
 and a fallback is designed. Relay accepts a superset or degrades gracefully
