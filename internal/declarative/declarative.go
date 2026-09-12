@@ -264,6 +264,12 @@ func Validate(cfg *Config) error {
 		if rule.App == "" {
 			return errors.New("alert rule missing required field 'app'")
 		}
+		if !appSet[rule.App] {
+			return fmt.Errorf("alert rule refers to unknown application %q", rule.App)
+		}
+		if rule.ReceivingApp != "" && !appSet[rule.ReceivingApp] {
+			return fmt.Errorf("alert rule receiving_app %q not found in configuration", rule.ReceivingApp)
+		}
 		switch rule.RuleType {
 		case "UnresponsiveApplication", "WorkflowFailure", "SlowQueue", "RecoveryFlapping", "StrandedVersion":
 			// valid
@@ -347,6 +353,21 @@ func Diff(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 			continue
 		}
 
+		recvAppID := app.ID
+		if rule.ReceivingApp != "" && rule.ReceivingApp != rule.App {
+			recvApp, recvExists := existingApps[rule.ReceivingApp]
+			if !recvExists {
+				items = append(items, DiffItem{
+					Action:  ActionCreate,
+					Kind:    "AlertRule",
+					Name:    fmt.Sprintf("%s/%s", rule.App, rule.RuleType),
+					Details: fmt.Sprintf("receiving application %s not yet created", rule.ReceivingApp),
+				})
+				continue
+			}
+			recvAppID = recvApp.ID
+		}
+
 		rules, err := s.Queries().ListAlertingRulesByApplication(ctx, app.ID)
 		if err != nil {
 			return nil, fmt.Errorf("listing rules for %s: %w", rule.App, err)
@@ -354,7 +375,7 @@ func Diff(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 
 		found := false
 		for _, r := range rules {
-			if r.RuleType == rule.RuleType {
+			if r.RuleType == rule.RuleType && r.ReceivingApplicationID == recvAppID {
 				found = true
 				break
 			}
@@ -396,189 +417,203 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 	var items []DiffItem
 	generatedKeys := make(map[string]string)
 
-	orgName := cfg.Organisation
-	org, err := s.Queries().GetOrganisationByName(ctx, orgName)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			org, err = s.Queries().CreateOrganisation(ctx, orgName)
-			if err != nil {
-				return nil, fmt.Errorf("creating organisation %s: %w", orgName, err)
-			}
-			items = append(items, DiffItem{Action: ActionCreate, Kind: "Organisation", Name: orgName})
-		} else {
-			return nil, fmt.Errorf("getting organisation %s: %w", orgName, err)
-		}
-	} else {
-		items = append(items, DiffItem{Action: ActionUnchanged, Kind: "Organisation", Name: orgName})
-	}
-
-	// Ensure default API key exists for conductor WebSocket connections
-	if org.ID.Valid {
-		keys, err := s.Queries().ListAPIKeys(ctx, org.ID)
-		if err == nil && len(keys) == 0 {
-			var rawKey string
-			var record auth.KeyRecord
-			if envKey := os.Getenv("RELAY_API_KEY"); envKey != "" {
-				if len(envKey) < 32 {
-					return nil, fmt.Errorf("RELAY_API_KEY must be at least 32 characters long")
-				}
-				rawKey = envKey
-				record = auth.KeyRecord{
-					Lookup: auth.Lookup(rawKey),
-					Hash:   auth.Hash(rawKey),
-				}
-			} else {
-				var mintErr error
-				rawKey, record, mintErr = auth.Mint()
-				if mintErr != nil {
-					return nil, fmt.Errorf("minting default api key: %w", mintErr)
-				}
-			}
-			_, err = s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
-				OrganisationID:   org.ID,
-				Name:             "default-conductor-key",
-				Lookup:           record.Lookup,
-				KeyHash:          record.Hash,
-				ApplicationNames: []string{},
-				Permissions:      []string{"application.read", "application.write", "websocket.connect"},
-			})
-			if err != nil {
-				return nil, fmt.Errorf("creating default api key: %w", err)
-			}
-			generatedKeys["default-conductor-key"] = rawKey
-			items = append(items, DiffItem{
-				Action:  ActionCreate,
-				Kind:    "APIKey",
-				Name:    "default-conductor-key",
-				Details: fmt.Sprintf("minted key %s", auth.Lookup(rawKey)+"***"),
-			})
-		}
-	}
-
-	apps, err := s.Queries().ListApplicationsByOrganisation(ctx, org.ID)
-	if err != nil {
-		return nil, fmt.Errorf("listing applications: %w", err)
-	}
-	appMap := make(map[string]gen.Application)
-	for _, a := range apps {
-		appMap[a.Name] = a
-	}
-
-	for _, app := range cfg.Applications {
-		settingsMap := make(map[string]any)
-		if app.Description != "" {
-			settingsMap["description"] = app.Description
-		}
-		if app.StuckSLASecs > 0 {
-			settingsMap["stuck_sla_secs"] = app.StuckSLASecs
-		}
-		if app.ExecutorTimeoutSecs > 0 {
-			settingsMap["executorTimeoutSecs"] = app.ExecutorTimeoutSecs
-		}
-		settingsJSON, _ := json.Marshal(settingsMap)
-
-		if _, exists := appMap[app.Name]; exists {
-			updated, err := s.Queries().UpdateApplicationSettings(ctx, gen.UpdateApplicationSettingsParams{
-				OrganisationID: org.ID,
-				Name:           app.Name,
-				Settings:       settingsJSON,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("updating application settings %s: %w", app.Name, err)
-			}
-			appMap[app.Name] = updated
-			items = append(items, DiffItem{Action: ActionUnchanged, Kind: "Application", Name: app.Name})
-		} else {
-			created, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
-				OrganisationID: org.ID,
-				Name:           app.Name,
-				Settings:       settingsJSON,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("creating application %s: %w", app.Name, err)
-			}
-			appMap[app.Name] = created
-			items = append(items, DiffItem{Action: ActionCreate, Kind: "Application", Name: app.Name})
-		}
-	}
-
-	for _, rule := range cfg.AlertRules {
-		app, exists := appMap[rule.App]
-		if !exists {
-			return nil, fmt.Errorf("rule refers to non-existent application %q", rule.App)
-		}
-
-		recvAppID := app.ID
-		if rule.ReceivingApp != "" && rule.ReceivingApp != rule.App {
-			recvApp, exists := appMap[rule.ReceivingApp]
-			if !exists {
-				return nil, fmt.Errorf("rule receiving_app %q not found", rule.ReceivingApp)
-			}
-			recvAppID = recvApp.ID
-		}
-
-		existingRules, err := s.Queries().ListAlertingRulesByApplication(ctx, app.ID)
+	err := s.InTx(ctx, func(tx *gen.Queries) error {
+		orgName := cfg.Organisation
+		org, err := tx.GetOrganisationByName(ctx, orgName)
 		if err != nil {
-			return nil, fmt.Errorf("listing rules for %s: %w", rule.App, err)
-		}
-
-		var matchingRule *gen.AlertingRule
-		for _, r := range existingRules {
-			if r.RuleType == rule.RuleType && r.ReceivingApplicationID == recvAppID {
-				matchingRule = &r
-				break
+			if errors.Is(err, pgx.ErrNoRows) {
+				org, err = tx.CreateOrganisation(ctx, orgName)
+				if err != nil {
+					return fmt.Errorf("creating organisation %s: %w", orgName, err)
+				}
+				items = append(items, DiffItem{Action: ActionCreate, Kind: "Organisation", Name: orgName})
+			} else {
+				return fmt.Errorf("getting organisation %s: %w", orgName, err)
 			}
-		}
-
-		if matchingRule != nil {
-			items = append(items, DiffItem{
-				Action: ActionUnchanged,
-				Kind:   "AlertRule",
-				Name:   fmt.Sprintf("%s/%s", rule.App, rule.RuleType),
-			})
 		} else {
-			metaBytes := []byte("{}")
-			metaMap, err := resolveDestinations(rule.Metadata)
+			items = append(items, DiffItem{Action: ActionUnchanged, Kind: "Organisation", Name: orgName})
+		}
+
+		apps, err := tx.ListApplicationsByOrganisation(ctx, org.ID)
+		if err != nil {
+			return fmt.Errorf("listing applications: %w", err)
+		}
+		appMap := make(map[string]gen.Application)
+		for _, a := range apps {
+			appMap[a.Name] = a
+		}
+
+		for _, app := range cfg.Applications {
+			var existingSettings map[string]any
+			if existing, exists := appMap[app.Name]; exists && len(existing.Settings) > 0 {
+				_ = json.Unmarshal(existing.Settings, &existingSettings)
+			}
+			if existingSettings == nil {
+				existingSettings = make(map[string]any)
+			}
+			if app.Description != "" {
+				existingSettings["description"] = app.Description
+			}
+			if app.StuckSLASecs > 0 {
+				existingSettings["stuck_sla_secs"] = app.StuckSLASecs
+			}
+			if app.ExecutorTimeoutSecs > 0 {
+				existingSettings["executorTimeoutSecs"] = app.ExecutorTimeoutSecs
+			}
+			settingsJSON, _ := json.Marshal(existingSettings)
+
+			if _, exists := appMap[app.Name]; exists {
+				updated, err := tx.UpdateApplicationSettings(ctx, gen.UpdateApplicationSettingsParams{
+					OrganisationID: org.ID,
+					Name:           app.Name,
+					Settings:       settingsJSON,
+				})
+				if err != nil {
+					return fmt.Errorf("updating application settings %s: %w", app.Name, err)
+				}
+				appMap[app.Name] = updated
+				items = append(items, DiffItem{Action: ActionUnchanged, Kind: "Application", Name: app.Name})
+			} else {
+				created, err := tx.CreateApplication(ctx, gen.CreateApplicationParams{
+					OrganisationID: org.ID,
+					Name:           app.Name,
+					Settings:       settingsJSON,
+				})
+				if err != nil {
+					return fmt.Errorf("creating application %s: %w", app.Name, err)
+				}
+				appMap[app.Name] = created
+				items = append(items, DiffItem{Action: ActionCreate, Kind: "Application", Name: app.Name})
+			}
+		}
+
+		for _, rule := range cfg.AlertRules {
+			app, exists := appMap[rule.App]
+			if !exists {
+				return fmt.Errorf("rule refers to non-existent application %q", rule.App)
+			}
+
+			recvAppID := app.ID
+			if rule.ReceivingApp != "" && rule.ReceivingApp != rule.App {
+				recvApp, exists := appMap[rule.ReceivingApp]
+				if !exists {
+					return fmt.Errorf("rule receiving_app %q not found", rule.ReceivingApp)
+				}
+				recvAppID = recvApp.ID
+			}
+
+			existingRules, err := tx.ListAlertingRulesByApplication(ctx, app.ID)
 			if err != nil {
-				return nil, fmt.Errorf("resolving rule destinations for %s: %w", rule.RuleType, err)
+				return fmt.Errorf("listing rules for %s: %w", rule.App, err)
 			}
-			if len(metaMap) > 0 {
-				metaBytes, _ = json.Marshal(metaMap)
+
+			var matchingRule *gen.AlertingRule
+			for _, r := range existingRules {
+				if r.RuleType == rule.RuleType && r.ReceivingApplicationID == recvAppID {
+					matchingRule = &r
+					break
+				}
 			}
-			var minInterval *int32
-			if rule.MinIntervalSecs > 0 {
-				minInterval = &rule.MinIntervalSecs
+
+			if matchingRule != nil {
+				items = append(items, DiffItem{
+					Action: ActionUnchanged,
+					Kind:   "AlertRule",
+					Name:   fmt.Sprintf("%s/%s", rule.App, rule.RuleType),
+				})
+			} else {
+				metaBytes := []byte("{}")
+				metaMap, err := resolveDestinations(rule.Metadata)
+				if err != nil {
+					return fmt.Errorf("resolving rule destinations for %s: %w", rule.RuleType, err)
+				}
+				if len(metaMap) > 0 {
+					metaBytes, _ = json.Marshal(metaMap)
+				}
+				var minInterval *int32
+				if rule.MinIntervalSecs > 0 {
+					minInterval = &rule.MinIntervalSecs
+				}
+				var createErr error
+				_, createErr = tx.CreateAlertingRule(ctx, gen.CreateAlertingRuleParams{
+					ApplicationID:          app.ID,
+					ReceivingApplicationID: recvAppID,
+					RuleType:               rule.RuleType,
+					RuleMetadata:           metaBytes,
+					MinIntervalSecs:        minInterval,
+				})
+				if createErr != nil {
+					return fmt.Errorf("creating rule %s: %w", rule.RuleType, createErr)
+				}
+				items = append(items, DiffItem{
+					Action: ActionCreate,
+					Kind:   "AlertRule",
+					Name:   fmt.Sprintf("%s/%s", rule.App, rule.RuleType),
+				})
 			}
-			var createErr error
-			_, createErr = s.Queries().CreateAlertingRule(ctx, gen.CreateAlertingRuleParams{
-				ApplicationID:          app.ID,
-				ReceivingApplicationID: recvAppID,
-				RuleType:               rule.RuleType,
-				RuleMetadata:           metaBytes,
-				MinIntervalSecs:        minInterval,
-			})
-			if createErr != nil {
-				return nil, fmt.Errorf("creating rule %s: %w", rule.RuleType, createErr)
+		}
+
+		for appName, dp := range cfg.DataPlanes {
+			mode := dp.Mode
+			if mode == "" {
+				mode = "read"
 			}
 			items = append(items, DiffItem{
-				Action: ActionCreate,
-				Kind:   "AlertRule",
-				Name:   fmt.Sprintf("%s/%s", rule.App, rule.RuleType),
+				Action:  ActionUnchanged,
+				Kind:    "DataPlane",
+				Name:    appName,
+				Details: fmt.Sprintf("mode=%s", mode),
 			})
 		}
-	}
 
-	for appName, dp := range cfg.DataPlanes {
-		mode := dp.Mode
-		if mode == "" {
-			mode = "read"
+		// Ensure default API key exists for conductor WebSocket connections
+		if org.ID.Valid {
+			keys, err := tx.ListAPIKeys(ctx, org.ID)
+			if err == nil && len(keys) == 0 {
+				var rawKey string
+				var record auth.KeyRecord
+				if envKey := os.Getenv("RELAY_API_KEY"); envKey != "" {
+					if len(envKey) < 32 {
+						return fmt.Errorf("RELAY_API_KEY must be at least 32 characters long")
+					}
+					rawKey = envKey
+					record = auth.KeyRecord{
+						Lookup: auth.Lookup(rawKey),
+						Hash:   auth.Hash(rawKey),
+					}
+				} else {
+					var mintErr error
+					rawKey, record, mintErr = auth.Mint()
+					if mintErr != nil {
+						return fmt.Errorf("minting default api key: %w", mintErr)
+					}
+				}
+				_, err = tx.CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+					OrganisationID:   org.ID,
+					Name:             "default-conductor-key",
+					Lookup:           record.Lookup,
+					KeyHash:          record.Hash,
+					ApplicationNames: []string{},
+					Permissions:      []string{"application.read", "application.write", "websocket.connect"},
+				})
+				if err != nil {
+					return fmt.Errorf("creating default api key: %w", err)
+				}
+				generatedKeys["default-conductor-key"] = rawKey
+				items = append(items, DiffItem{
+					Action:  ActionCreate,
+					Kind:    "APIKey",
+					Name:    "default-conductor-key",
+					Details: fmt.Sprintf("minted key %s", auth.Lookup(rawKey)+"***"),
+				})
+			}
 		}
-		items = append(items, DiffItem{
-			Action:  ActionUnchanged,
-			Kind:    "DataPlane",
-			Name:    appName,
-			Details: fmt.Sprintf("mode=%s", mode),
-		})
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return &Plan{Items: items, GeneratedKeys: generatedKeys}, nil
