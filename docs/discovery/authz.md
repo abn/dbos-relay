@@ -25,13 +25,13 @@ All specifications in this document are derived from permitted sources:
   * Client transport: `internal/client/client.go` (lines 28-32, 54-60)
   * Configuration resolution: `internal/config/resolve.go` (lines 103-109)
   * OAuth-gated operation registry: `internal/api/oauth_gated.go` (lines 9-26)
-  * OpenAPI schemas and routes: `internal/api/openapi-3.1.json`
-    * Schemas: `Token` (lines 1833-1863), `TokenCreated` (lines 1864-1888),
-      `CreateTokenInputBody` (lines 612-645), `RoleOutput` (lines 1556-1578),
-      `CreateRoleInputBody` (lines 551-583), `CreateRoleOutputBody` (lines 584-611)
-    * Paths: `/v2/orgs/{orgName}/permissions` (lines 5929-5975),
-      `/v2/orgs/{orgName}/tokens` (lines 6200-6250),
-      `/v2/orgs/{orgName}/roles` (lines 5976-6085)
+  * OpenAPI schemas and routes: `api/spec/openapi.json`
+    * Schemas: `Token` (`#/components/schemas/Token`), `TokenCreated` (`#/components/schemas/TokenCreated`),
+      `CreateTokenInputBody` (`#/components/schemas/CreateTokenInputBody`), `RoleOutput` (`#/components/schemas/RoleOutput`),
+      `CreateRoleInputBody` (`#/components/schemas/CreateRoleInputBody`), `CreateRoleOutputBody` (`#/components/schemas/CreateRoleOutputBody`)
+    * Paths: `#/paths/~1v2~1orgs~1{orgName}~1permissions`,
+      `#/paths/~1v2~1orgs~1{orgName}~1tokens`,
+      `#/paths/~1v2~1orgs~1{orgName}~1roles`
   * Conformance tests: `internal/cli/apikey_test.go` (lines 16-35, 78-134),
     `internal/cli/permission_test.go` (lines 45-61, 79-97),
     `internal/cli/integration_test.go` (lines 133-174, 403-429)

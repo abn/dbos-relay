@@ -49,10 +49,10 @@ its source: a repository, path, and commit, or a URL and a fetch date. A fact
 without a citation is a guess, and is labelled as one until it is tested.
 Vendored artefacts record their checksum and fetch date alongside the file.
 
-Those citations collect in the **provenance ledger**, a page created during
-discovery that lists every protocol and API fact the project relies on
-together with the permitted source it came from. Until that page exists, the
-wiki marks the individual claims that are still unconfirmed.
+Those permitted origins collect in the **provenance ledger**, a permitted source register of
+public sources the project relies on. Detailed fact-level citations (commit hash,
+file path, and line or pointer references) are recorded in the provenance and
+clean-room citation sections of individual discovery documents.
 
 ## Derivation
 

@@ -4,7 +4,8 @@ type: Reference
 
 # Provenance ledger
 
-Every fact and protocol detail Relay relies on, with its permitted source.
+Register of permitted public sources for Relay protocol and API specifications.
+Fact-level citations are tracked in individual discovery documents.
 No claim is derived from proprietary binaries or non-public materials.
 
 | Fact | Where used | Source | Date confirmed |

@@ -3,7 +3,7 @@
 Discovery outputs. Each page answers one question that code depends on, and
 cites the permitted source for every claim it makes.
 
-* [Provenance ledger](provenance.md) - every fact and where it came from
+* [Provenance ledger](provenance.md) - permitted source register
 * [REST surface](rest-surface.md) - HTTP operations and OpenAPI inventory
 * [Authorization and key format](authz.md) - permissions, roles, and key structure
 * [Client behaviour](client-behaviour.md) - dbosctl command reference and conformance

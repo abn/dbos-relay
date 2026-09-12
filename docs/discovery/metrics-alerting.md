@@ -22,8 +22,8 @@ All specifications in this document are derived from permitted public sources:
   * Self-hosting Conductor guide: `https://docs.dbos.dev/production/hosting-conductor` (confirmed 2026-09-08)
 * **Vendored Conductor OpenAPI Specification**:
   * Specification file: `api/spec/openapi.json` (OpenAPI 3.1.0, SHA256: `b5dc31eb29686a84fe0390a7446b5acdbc0dd05846cc94a746de649b92880722`)
-  * Schemas: `Metric` (lines 1420-1453), `AlertingRule` (lines 351-396), `CreateAlertInputBody` (lines 452-479)
-  * Paths: `/v2/orgs/{orgName}/apps/{appName}/metrics` (lines 4639-4694), `/v2/orgs/{orgName}/apps/{appName}/alerting-rules` (lines 4381-4475), `/v2/orgs/{orgName}/apps/{appName}/alerting-rules/{ruleId}` (lines 4476-4523)
+  * Schemas: `Metric` (`#/components/schemas/Metric`), `AlertingRule` (`#/components/schemas/AlertingRule`), `CreateAlertInputBody` (`#/components/schemas/CreateAlertInputBody`)
+  * Paths: `#/paths/~1v2~1orgs~1{orgName}~1apps~1{appName}~1metrics`, `#/paths/~1v2~1orgs~1{orgName}~1apps~1{appName}~1alerting-rules`, `#/paths/~1v2~1orgs~1{orgName}~1apps~1{appName}~1alerting-rules~1{ruleId}`
 * **DBOS Transact SDKs**:
   * Go SDK (`https://github.com/dbos-inc/dbos-transact-go`, commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`):
     * `dbos/conductor_protocol.go`: `alertMessage` ("alert"), `getMetricsMessage` ("get_metrics"), `alertRequest`, `alertConductorResponse`, `getMetricsConductorRequest`, `getMetricsConductorResponse`

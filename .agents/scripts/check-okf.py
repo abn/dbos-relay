@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Validate the docs bundle against Open Knowledge Format v0.2.
 
-Checks bundle structure, root frontmatter, per-concept frontmatter, and the
-link hygiene the wiki depends on to stay portable and public-ready.
+Checks bundle structure, root frontmatter, per-concept frontmatter, link
+hygiene, and basic privacy/cleanliness constraints (ticket prefixes, scratch
+paths, and minified file line citations). Open-ended internal names and
+codenames remain a review concern.
 """
 
 from __future__ import annotations
@@ -21,6 +23,13 @@ FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[ \t]*$", re.M | re.S)
 CODE_SPAN = re.compile(r"`[^`\n]*`")
 TYPE = re.compile(r"^type:[ \t]*\S", re.M)
 OKF_VERSION = re.compile(r'^okf_version:\s*["\']?0\.2["\']?[ \t]*$', re.M)
+TICKET_PREFIX = re.compile(r"^D\d+[-_]")
+SCRATCH_PATH = re.compile(r"\.agents/brain\b")
+ALLOWED_SCRATCH_DOCS = {
+    DOCS / "contribution" / "guide.md",
+    DOCS / "contribution" / "maintainers.md",
+}
+MINIFIED_LINE_CITE = re.compile(r"api/spec/openapi\.json[^\n]*\blines?\s+\d+", re.I)
 
 
 def frontmatter(text: str) -> str | None:
@@ -90,6 +99,15 @@ def main() -> int:
         text = path.read_text(encoding="utf-8")
         meta = frontmatter(text)
 
+        if TICKET_PREFIX.match(path.name):
+            errors.append(f"{path}: filename contains internal ticket prefix ({path.name})")
+
+        if SCRATCH_PATH.search(text) and path not in ALLOWED_SCRATCH_DOCS:
+            errors.append(f"{path}: contains internal scratch path reference (.agents/brain)")
+
+        if MINIFIED_LINE_CITE.search(text):
+            errors.append(f"{path}: cites line numbers into minified JSON; use JSON pointers instead")
+
         if rel != "index.md" and meta is not None and "okf_version:" in meta:
             errors.append(f"{path}: only the bundle root may carry okf_version")
 
@@ -102,6 +120,8 @@ def main() -> int:
         check_links(path, text, errors)
 
     for section in sorted(p for p in DOCS.rglob("*") if p.is_dir()):
+        if TICKET_PREFIX.match(section.name):
+            errors.append(f"{section}: directory name contains internal ticket prefix ({section.name})")
         if not (section / "index.md").is_file():
             errors.append(f"{section}: section has no index.md")
 
