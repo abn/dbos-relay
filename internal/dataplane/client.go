@@ -224,8 +224,20 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		}, nil
 
 	case *protocol.CancelWorkflowRequest:
-		if err := cli.CancelWorkflow(cli, req.WorkflowID); err != nil {
-			return nil, fmt.Errorf("failed to cancel workflow %s: %w", req.WorkflowID, err)
+		var opts []dbos.CancelWorkflowOption
+		if req.CancelChildren {
+			opts = append(opts, dbos.WithCancelChildren())
+		}
+		if len(req.WorkflowIDs) > 0 {
+			if err := cli.CancelWorkflows(cli, req.WorkflowIDs, opts...); err != nil {
+				return nil, fmt.Errorf("failed to cancel workflows: %w", err)
+			}
+		} else if req.WorkflowID != "" {
+			if err := cli.CancelWorkflow(cli, req.WorkflowID, opts...); err != nil {
+				return nil, fmt.Errorf("failed to cancel workflow %s: %w", req.WorkflowID, err)
+			}
+		} else {
+			return nil, fmt.Errorf("missing workflow ID(s) in cancel request")
 		}
 		return &protocol.CancelWorkflowResponse{
 			Envelope: protocol.Envelope{
@@ -236,8 +248,20 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		}, nil
 
 	case *protocol.ResumeWorkflowRequest:
-		if _, err := cli.ResumeWorkflow(cli, req.WorkflowID); err != nil {
-			return nil, fmt.Errorf("failed to resume workflow %s: %w", req.WorkflowID, err)
+		var opts []dbos.ResumeWorkflowOption
+		if req.QueueName != nil {
+			opts = append(opts, dbos.WithResumeQueue(*req.QueueName))
+		}
+		if len(req.WorkflowIDs) > 0 {
+			if _, err := cli.ResumeWorkflows(cli, req.WorkflowIDs, opts...); err != nil {
+				return nil, fmt.Errorf("failed to resume workflows: %w", err)
+			}
+		} else if req.WorkflowID != "" {
+			if _, err := cli.ResumeWorkflow(cli, req.WorkflowID, opts...); err != nil {
+				return nil, fmt.Errorf("failed to resume workflow %s: %w", req.WorkflowID, err)
+			}
+		} else {
+			return nil, fmt.Errorf("missing workflow ID(s) in resume request")
 		}
 		return &protocol.ResumeWorkflowResponse{
 			Envelope: protocol.Envelope{
