@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -32,6 +33,7 @@ type ExecutorConn struct {
 	mux  *Multiplexer
 
 	unregister func()
+	closeOnce  sync.Once
 
 	pingInterval time.Duration
 	pongTimeout  time.Duration
@@ -143,9 +145,13 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 
 // Close gracefully closes the connection.
 func (c *ExecutorConn) Close() error {
-	c.mux.CancelAll(fmt.Errorf("connection closed"))
-	if c.unregister != nil {
-		c.unregister()
-	}
-	return c.conn.Close(websocket.StatusNormalClosure, "disconnecting")
+	var err error
+	c.closeOnce.Do(func() {
+		c.mux.CancelAll(fmt.Errorf("connection closed"))
+		if c.unregister != nil {
+			c.unregister()
+		}
+		err = c.conn.Close(websocket.StatusNormalClosure, "disconnecting")
+	})
+	return err
 }

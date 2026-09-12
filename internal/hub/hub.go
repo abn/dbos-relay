@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/coder/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -90,6 +91,21 @@ func (h *Hub) SetLivenessTracker(l LivenessTracker) {
 	h.liveness = l
 }
 
+
+func isValidIdentifier(s string, allowEmpty bool) bool {
+	if s == "" {
+		return allowEmpty
+	}
+	if len(s) > 255 {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) || !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
+}
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Simple path routing /websocket/{appName}/{conductorKey}
@@ -175,14 +191,19 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = conn.Close(websocket.StatusPolicyViolation, "executor reported error during handshake")
 			return
 		}
-		if infoRes.ExecutorID == "" {
-			h.logger.Warn("executor connected with empty executor_id", "app_name", appName)
-			_ = conn.Close(websocket.StatusPolicyViolation, "missing executor id")
+		if !isValidIdentifier(infoRes.ExecutorID, false) {
+			h.logger.Warn("executor connected with invalid executor_id", "app_name", appName)
+			_ = conn.Close(websocket.StatusPolicyViolation, "invalid executor id")
 			return
 		}
 		executorID = infoRes.ExecutorID
 		appVersion = infoRes.ApplicationVersion
 		if infoRes.Hostname != nil {
+			if !isValidIdentifier(*infoRes.Hostname, true) {
+				h.logger.Warn("executor connected with invalid hostname", "app_name", appName)
+				_ = conn.Close(websocket.StatusPolicyViolation, "invalid hostname")
+				return
+			}
 			hostname = *infoRes.Hostname
 		}
 		md := make(map[string]any)
@@ -226,9 +247,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var execConn *ExecutorConn
 	unregister := func() {
-		h.registry.Unregister(h.ctx, appID, executorID)
-		if h.liveness != nil {
-			h.liveness.OnDisconnect(h.ctx, appID, executorID)
+		if execConn != nil && h.registry.Unregister(h.ctx, execConn) {
+			if h.liveness != nil {
+				h.liveness.OnDisconnect(h.ctx, appID, executorID)
+			}
 		}
 	}
 

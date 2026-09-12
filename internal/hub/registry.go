@@ -51,23 +51,37 @@ func (r *Registry) Register(conn *ExecutorConn) {
 	appMap[conn.executorID] = conn
 }
 
-// Unregister removes connection and updates database.
-func (r *Registry) Unregister(ctx context.Context, appID pgtype.UUID, executorID string) {
+// Unregister removes connection if it matches the currently registered instance and updates database.
+// Returns true if the connection was actively registered and successfully unregistered.
+func (r *Registry) Unregister(ctx context.Context, conn *ExecutorConn) bool {
+	if conn == nil {
+		return false
+	}
 	r.mu.Lock()
-	if appMap, ok := r.byApp[appID]; ok {
-		delete(appMap, executorID)
-		if len(appMap) == 0 {
-			delete(r.byApp, appID)
-		}
+	appMap, ok := r.byApp[conn.appID]
+	if !ok {
+		r.mu.Unlock()
+		return false
+	}
+	current, exists := appMap[conn.executorID]
+	if !exists || current != conn {
+		r.mu.Unlock()
+		return false
+	}
+
+	delete(appMap, conn.executorID)
+	if len(appMap) == 0 {
+		delete(r.byApp, conn.appID)
 	}
 	r.mu.Unlock()
 
 	if r.q != nil {
 		_, _ = r.q.DisconnectExecutor(ctx, gen.DisconnectExecutorParams{
-			ApplicationID: appID,
-			ExecutorID:    executorID,
+			ApplicationID: conn.appID,
+			ExecutorID:    conn.executorID,
 		})
 	}
+	return true
 }
 
 // SelectExecutor returns an active executor connection for dispatch.

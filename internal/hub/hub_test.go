@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/protocol"
@@ -651,5 +652,251 @@ func TestHub_Dispatch_TimeoutAndCancelledContext(t *testing.T) {
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("dispatch took too long: %v, expected ~50ms", elapsed)
+	}
+}
+
+func TestHub_Reconnect_EvictionPrevention(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	connectExecutor := func(id string) *websocket.Conn {
+		conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+		if err != nil {
+			t.Fatalf("failed to dial: %v", err)
+		}
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+
+		typ, data, err := conn.Read(ctx)
+		if err != nil || typ != websocket.MessageText {
+			t.Fatalf("failed to read prompt: %v", err)
+		}
+		msg, _ := protocol.Decode(data)
+		infoReq := msg.(*protocol.ExecutorInfoRequest)
+
+		infoResp := &protocol.ExecutorInfoResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeExecutorInfo,
+				RequestID: infoReq.RequestID,
+			},
+			ExecutorID:         id,
+			ApplicationVersion: "v1.0.0",
+		}
+		respData, _ := protocol.Encode(infoResp)
+		if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+			t.Fatalf("failed to write info response: %v", err)
+		}
+		return conn
+	}
+
+	// 1. Connect Executor A
+	connA := connectExecutor("exec-reconnect-1")
+	defer func() { _ = connA.Close(websocket.StatusNormalClosure, "done") }()
+
+	time.Sleep(50 * time.Millisecond)
+	appID := store.apps["test-app"].ID
+	initialConn, err := h.registry.GetExecutorConn(appID, "exec-reconnect-1")
+	if err != nil {
+		t.Fatalf("expected executor A to be registered: %v", err)
+	}
+
+	// 2. Connect Executor B with same executorID
+	connB := connectExecutor("exec-reconnect-1")
+	defer func() { _ = connB.Close(websocket.StatusNormalClosure, "done") }()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Close Executor A
+	_ = connA.Close(websocket.StatusNormalClosure, "replaced")
+	time.Sleep(50 * time.Millisecond)
+
+	// 3. Verify B is still registered and active in the registry
+	currentConn, err := h.registry.GetExecutorConn(appID, "exec-reconnect-1")
+	if err != nil {
+		t.Fatalf("expected executor B to still be registered after A closed: %v", err)
+	}
+	if currentConn == initialConn {
+		t.Fatalf("expected current connection to be B, not initial connection A")
+	}
+
+	connected := h.registry.ListConnected(appID)
+	if len(connected) != 1 {
+		t.Fatalf("expected exactly 1 connected executor, got %d", len(connected))
+	}
+
+	// 4. Verify DisconnectExecutor was NOT called for the active executor
+	store.mu.Lock()
+	discCalls := len(store.disconnected)
+	store.mu.Unlock()
+	if discCalls != 0 {
+		t.Fatalf("expected DisconnectExecutor not to be called for active executor, got %d calls", discCalls)
+	}
+}
+
+func TestExecutorConn_Close_Idempotent(t *testing.T) {
+	unregCount := 0
+	var mu sync.Mutex
+	unreg := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		unregCount++
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	clientConn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = clientConn.Close(websocket.StatusNormalClosure, "") }()
+
+	execConn := NewExecutorConn(clientConn, pgtype.UUID{}, "exec-1", "app-1", "v1", "host-1", nil, NewMultiplexer(), unreg)
+
+	// Call Close concurrently 10 times
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = execConn.Close()
+		}()
+	}
+	wg.Wait()
+
+	mu.Lock()
+	calls := unregCount
+	mu.Unlock()
+
+	if calls != 1 {
+		t.Fatalf("expected unregister to be called exactly once, got %d", calls)
+	}
+}
+
+func TestHub_Handshake_InvalidIdentifiers(t *testing.T) {
+	testCases := []struct {
+		name       string
+		executorID string
+		hostname   *string
+	}{
+		{
+			name:       "executor_id with newline control character",
+			executorID: "exec\nid",
+		},
+		{
+			name:       "executor_id with null byte",
+			executorID: "exec\x00id",
+		},
+		{
+			name:       "executor_id over 255 chars",
+			executorID: strings.Repeat("x", 256),
+		},
+		{
+			name:       "hostname with control character",
+			executorID: "valid-exec-id",
+			hostname: func() *string {
+				s := "host\x01name"
+				return &s
+			}(),
+		},
+		{
+			name:       "hostname over 255 chars",
+			executorID: "valid-exec-id",
+			hostname: func() *string {
+				s := strings.Repeat("h", 256)
+				return &s
+			}(),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newMockHubStore()
+			cfg := &config.Config{}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			h := New(store, cfg, logger)
+			defer func() { _ = h.Close() }()
+
+			server := httptest.NewServer(h)
+			defer server.Close()
+
+			wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+			if err != nil {
+				t.Fatalf("failed to dial websocket: %v", err)
+			}
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+			// Read prompt
+			typ, data, err := conn.Read(ctx)
+			if err != nil || typ != websocket.MessageText {
+				t.Fatalf("failed to read prompt: %v", err)
+			}
+			msg, _ := protocol.Decode(data)
+			infoReq := msg.(*protocol.ExecutorInfoRequest)
+
+			infoResp := &protocol.ExecutorInfoResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeExecutorInfo,
+					RequestID: infoReq.RequestID,
+				},
+				ExecutorID:         tc.executorID,
+				ApplicationVersion: "v1.0.0",
+				Hostname:           tc.hostname,
+			}
+			respData, _ := protocol.Encode(infoResp)
+			_ = conn.Write(ctx, websocket.MessageText, respData)
+
+			// Server must close with StatusPolicyViolation
+			_, _, err = conn.Read(ctx)
+			if err == nil {
+				t.Fatalf("expected server to close connection, but read succeeded")
+			}
+			var closeErr websocket.CloseError
+			if errors.As(err, &closeErr) {
+				if closeErr.Code != websocket.StatusPolicyViolation {
+					t.Errorf("expected StatusPolicyViolation (%d), got %d", websocket.StatusPolicyViolation, closeErr.Code)
+				}
+			} else if !strings.Contains(err.Error(), "StatusPolicyViolation") && !strings.Contains(err.Error(), "1008") {
+				t.Errorf("expected StatusPolicyViolation or code 1008, got: %v", err)
+			}
+		})
 	}
 }
