@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -202,4 +203,131 @@ func TestZeroValueResponses(t *testing.T) {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+func TestSpecCoversAllMessageTypes(t *testing.T) {
+	docBytes, err := os.ReadFile("../../docs/protocol/executor-ws.md")
+	if err != nil {
+		t.Fatalf("failed to read executor-ws.md: %v", err)
+	}
+	doc := string(docBytes)
+
+	messageTypes := []MessageType{
+		MessageTypeExecutorInfo,
+		MessageTypeRecovery,
+		MessageTypeCancel,
+		MessageTypeResume,
+		MessageTypeListWorkflows,
+		MessageTypeListQueuedWorkflows,
+		MessageTypeListSteps,
+		MessageTypeGetWorkflow,
+		MessageTypeForkWorkflow,
+		MessageTypeForkFromFailure,
+		MessageTypeExistPendingWorkflows,
+		MessageTypeRetention,
+		MessageTypeGetMetrics,
+		MessageTypeExportWorkflow,
+		MessageTypeImportWorkflow,
+		MessageTypeDelete,
+		MessageTypeAlert,
+		MessageTypeListSchedules,
+		MessageTypeGetSchedule,
+		MessageTypePauseSchedule,
+		MessageTypeResumeSchedule,
+		MessageTypeBackfillSchedule,
+		MessageTypeTriggerSchedule,
+		MessageTypeGetWorkflowEvents,
+		MessageTypeGetWorkflowNotifications,
+		MessageTypeGetWorkflowStreams,
+		MessageTypeGetWorkflowAggregates,
+		MessageTypeGetStepAggregates,
+		MessageTypeListApplicationVersions,
+		MessageTypeSetLatestApplicationVersion,
+		MessageTypeListQueues,
+		MessageTypeGetQueue,
+	}
+
+	for _, mt := range messageTypes {
+		if !strings.Contains(doc, string(mt)) {
+			t.Errorf("expected doc to mention message type %q", mt)
+		}
+	}
+}
+
+func TestAggregateFrameDecoding(t *testing.T) {
+	wfFrame := []byte(`{
+		"type": "get_workflow_aggregates",
+		"request_id": "req-agg-1",
+		"output": [
+			{
+				"group": {"status": "SUCCESS"},
+				"count": 42,
+				"min_created_at": 1756713600000,
+				"max_queue_wait_ms": 150,
+				"max_total_latency_ms": 500
+			}
+		]
+	}`)
+
+	msg, err := DecodeResponse(wfFrame)
+	if err != nil {
+		t.Fatalf("DecodeResponse for workflow aggregate failed: %v", err)
+	}
+	wfResp, ok := msg.(*GetWorkflowAggregatesResponse)
+	if !ok {
+		t.Fatalf("expected *GetWorkflowAggregatesResponse, got %T", msg)
+	}
+	if len(wfResp.Output) != 1 {
+		t.Fatalf("expected 1 output row, got %d", len(wfResp.Output))
+	}
+	row := wfResp.Output[0]
+	if row.Count == nil || *row.Count != 42 {
+		t.Errorf("expected count 42, got %v", row.Count)
+	}
+	if row.Group["status"] == nil || *row.Group["status"] != "SUCCESS" {
+		t.Errorf("expected group status SUCCESS, got %v", row.Group["status"])
+	}
+	if row.MinCreatedAt == nil || *row.MinCreatedAt != 1756713600000 {
+		t.Errorf("expected min_created_at 1756713600000, got %v", row.MinCreatedAt)
+	}
+	if row.MaxQueueWaitMs == nil || *row.MaxQueueWaitMs != 150 {
+		t.Errorf("expected max_queue_wait_ms 150, got %v", row.MaxQueueWaitMs)
+	}
+	if row.MaxTotalLatencyMs == nil || *row.MaxTotalLatencyMs != 500 {
+		t.Errorf("expected max_total_latency_ms 500, got %v", row.MaxTotalLatencyMs)
+	}
+
+	stepFrame := []byte(`{
+		"type": "get_step_aggregates",
+		"request_id": "req-agg-2",
+		"output": [
+			{
+				"group": {"function_name": "processStep"},
+				"count": 10,
+				"max_duration_ms": 120
+			}
+		]
+	}`)
+
+	stepMsg, err := DecodeResponse(stepFrame)
+	if err != nil {
+		t.Fatalf("DecodeResponse for step aggregate failed: %v", err)
+	}
+	stepResp, ok := stepMsg.(*GetStepAggregatesResponse)
+	if !ok {
+		t.Fatalf("expected *GetStepAggregatesResponse, got %T", stepMsg)
+	}
+	if len(stepResp.Output) != 1 {
+		t.Fatalf("expected 1 output row, got %d", len(stepResp.Output))
+	}
+	sRow := stepResp.Output[0]
+	if sRow.Count == nil || *sRow.Count != 10 {
+		t.Errorf("expected count 10, got %v", sRow.Count)
+	}
+	if sRow.MaxDurationMs == nil || *sRow.MaxDurationMs != 120 {
+		t.Errorf("expected max_duration_ms 120, got %v", sRow.MaxDurationMs)
+	}
+	if sRow.Group["function_name"] == nil || *sRow.Group["function_name"] != "processStep" {
+		t.Errorf("expected group function_name processStep, got %v", sRow.Group["function_name"])
+	}
 }
