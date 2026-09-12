@@ -14,7 +14,6 @@ var (
 	ErrNoDataPlaneConfigured = errors.New("no data-plane configured for application")
 	ErrReadOnlyMode          = errors.New("data-plane is in read-only mode")
 	ErrUnsupportedOperation  = errors.New("operation not supported by data-plane")
-	ErrRateLimitExceeded     = errors.New("data-plane rate limit exceeded")
 )
 
 // Mode defines the access mode for an application's data plane connection.
@@ -30,11 +29,9 @@ type AppConfig struct {
 	ApplicationID    pgtype.UUID
 	ApplicationName  string
 	DatabaseURL      string
-	ReadReplicaURL   string
 	Mode             Mode
 	MaxConnections   int
 	StatementTimeout time.Duration
-	RateLimitRPS     float64
 }
 
 // Client represents the data-plane interface to an application's system database.

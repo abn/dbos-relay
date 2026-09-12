@@ -510,17 +510,15 @@ func mapWorkflowStatus(s dbos.WorkflowStatus) protocol.ListWorkflowsResponseBody
 		str := strconv.FormatInt(s.Deadline.UnixMilli(), 10)
 		body.WorkflowDeadlineEpochMS = &str
 	}
-	if !s.StartedAt.IsZero() {
+	if s.Status == dbos.WorkflowStatusPending && !s.StartedAt.IsZero() {
 		str := strconv.FormatInt(s.StartedAt.UnixMilli(), 10)
 		body.DequeuedAt = &str
 	}
 	if s.DeduplicationID != "" {
 		body.DeduplicationID = &s.DeduplicationID
 	}
-	if s.Priority != 0 {
-		str := strconv.Itoa(s.Priority)
-		body.Priority = &str
-	}
+	priorityStr := strconv.Itoa(s.Priority)
+	body.Priority = &priorityStr
 	if s.QueuePartitionKey != "" {
 		body.QueuePartitionKey = &s.QueuePartitionKey
 	}

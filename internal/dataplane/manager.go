@@ -62,8 +62,11 @@ func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	}
 
 	m.configs[cfg.ApplicationID] = cfg
-	appMu := &sync.Mutex{}
-	m.initMu[cfg.ApplicationID] = appMu
+	appMu, ok := m.initMu[cfg.ApplicationID]
+	if !ok {
+		appMu = &sync.Mutex{}
+		m.initMu[cfg.ApplicationID] = appMu
+	}
 	delete(m.lastInitErr, cfg.ApplicationID)
 	m.mu.Unlock()
 
