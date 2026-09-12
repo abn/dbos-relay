@@ -15,8 +15,8 @@ Relay decouples HTTP clients from live executors through an internal router. The
 Incoming REST search parameters map to `ListWorkflowsRequest` body:
 * `workflowIds` -> `WorkflowUUID` (list or string)
 * `workflowName` -> `WorkflowName`
-* `workflowClass` -> `WorkflowClassName`
-* `workflowConfig` -> `WorkflowConfigName`
+* `workflow_class` -> `WorkflowClassName`
+* `workflow_config` -> `WorkflowConfigName`
 * `status` -> `Status` (list or string)
 * `user` -> `AuthenticatedUser`
 * `startTime` / `endTime` -> `StartTime` / `EndTime`
@@ -26,8 +26,8 @@ Wire `ListWorkflowsResponseBody` maps to OpenAPI `#/components/schemas/Workflow`
 * `WorkflowUUID` -> `workflowId`
 * `Status` -> `status`
 * `WorkflowName` -> `workflowName` (null if absent)
-* `WorkflowClassName` -> `workflowClass` (null if absent)
-* `WorkflowConfigName` -> `workflowConfig` (null if absent)
+* `WorkflowClassName` -> `workflow_class` (null if absent)
+* `WorkflowConfigName` -> `workflow_config` (null if absent)
 * `AuthenticatedUser` -> `user` (null if absent)
 * `AssumedRole` -> `assumedRole` (null if absent)
 * `AuthenticatedRoles` -> `roles` (null if absent)
@@ -80,7 +80,7 @@ Wire `ScheduleOutput` maps to OpenAPI `#/components/schemas/Schedule`:
 * `ScheduleID` -> `id`
 * `ScheduleName` -> `name`
 * `WorkflowName` -> `workflowName`
-* `WorkflowClassName` -> `workflowClassName`
+* `WorkflowClassName` -> `workflow_className`
 * `Schedule` -> `schedule`
 * `Status` -> `status`
 * `Context` -> `context`
@@ -95,5 +95,5 @@ All REST API errors map to RFC 9457 Problem Details (`application/problem+json`)
 * `router.ErrAppNotFound` -> HTTP 404 Problem Details
 * `router.ErrNoLiveExecutor` -> HTTP 503 Problem Details (service unavailable)
 * `router.ErrExecutorTimeout` -> HTTP 504 Problem Details (gateway timeout)
-* `router.ErrExecutorError` -> HTTP 400 or HTTP 502 Problem Details
+* `router.ErrExecutorError` -> HTTP 400 or HTTP 400 Problem Details
 * Malformed JSON or validation errors -> HTTP 400 Problem Details

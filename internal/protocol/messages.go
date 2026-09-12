@@ -593,7 +593,7 @@ type GetWorkflowAggregatesRequest struct {
 // GetWorkflowAggregatesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
 type GetWorkflowAggregatesResponse struct {
 	Envelope
-	Output []map[string]any `json:"output"`
+	Output []WorkflowAggregateRow `json:"output"`
 }
 
 // GetStepAggregatesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
@@ -620,7 +620,7 @@ type GetStepAggregatesRequest struct {
 // GetStepAggregatesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
 type GetStepAggregatesResponse struct {
 	Envelope
-	Output []map[string]any `json:"output"`
+	Output []WorkflowAggregateRow `json:"output"`
 }
 
 // ApplicationVersionOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)

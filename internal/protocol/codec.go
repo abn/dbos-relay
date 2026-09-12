@@ -35,6 +35,8 @@ func Decode(data []byte) (Message, error) {
 	return decodeWithDirection(data, isResponse)
 }
 
+import "bytes"
+
 func decodeWithDirection(data []byte, isResponse bool) (Message, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -189,7 +191,7 @@ func decodeWithDirection(data []byte, isResponse bool) (Message, error) {
 		}
 	}
 
-	if err := json.Unmarshal(data, msg); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(data)).Decode(msg); err != nil {
 		return nil, fmt.Errorf("malformed payload for type %q: %w", msgType, err)
 	}
 
