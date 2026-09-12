@@ -12,8 +12,9 @@ import (
 	"github.com/abn/relay/internal/protocol"
 )
 
+// Provenance: Server-initiated liveness probe. Mirrors the executor's own 20s ping cadence (see docs/discovery/recovery-params.md); the protocol-facing server value is executorPingWait = 25s.
 const (
-	_PING_INTERVAL = 20 * time.Second
+	pingInterval = 20 * time.Second
 )
 
 type HubCallback func(conn *ExecutorConn, msg protocol.Message)
@@ -105,7 +106,7 @@ func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 
 // HeartbeatPump runs the ping/pong loop for the connection.
 func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
-	ticker := time.NewTicker(_PING_INTERVAL)
+	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 	defer func() { _ = c.Close() }()
 
