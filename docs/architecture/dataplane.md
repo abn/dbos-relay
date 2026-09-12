@@ -51,10 +51,10 @@ executor or applied directly through the SDK client data plane.
 
 ### Cancellation semantics
 
-WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update. The abridged SQL below illustrates the status transition (source: `dbos/internal/sysdb/system_database.go` `CancelWorkflows`):
+WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update. The abridged SQL below illustrates the status transition (source: `https://github.com/dbos-inc/dbos-transact-go` commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`, `dbos/internal/sysdb/system_database.go` `CancelWorkflows` lines 2005-2071):
 
 ```sql
--- Abridged illustration (source: dbos/internal/sysdb/system_database.go)
+-- Abridged illustration (source: dbos/internal/sysdb/system_database.go lines 2005-2071, commit ab56911)
 UPDATE dbos.workflow_status
 SET status = 'CANCELLED'
 WHERE workflow_uuid = $1
@@ -75,10 +75,10 @@ and safety guarantees as live WebSocket cancellations.
 
 ### Resume semantics
 
-WebSocket resume requests and data-plane resume calls transition workflows back into the queue table. The abridged SQL below illustrates the transition (source: `dbos/internal/sysdb/system_database.go` `ResumeWorkflows`):
+WebSocket resume requests and data-plane resume calls transition workflows back into the queue table. The abridged SQL below illustrates the transition (source: `https://github.com/dbos-inc/dbos-transact-go` commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`, `dbos/internal/sysdb/system_database.go` `ResumeWorkflows` lines 2440-2498):
 
 ```sql
--- Abridged illustration (source: dbos/internal/sysdb/system_database.go)
+-- Abridged illustration (source: dbos/internal/sysdb/system_database.go lines 2440-2498, commit ab56911)
 UPDATE dbos.workflow_status
 SET status = 'ENQUEUED',
     queue_name = '_dbos_internal_queue',
@@ -115,18 +115,19 @@ or waiting on an event message (`recv`):
 
 Internal routing tracks request dispatch attribution (`internal/router.ServedFromTracker`)
 between live WebSocket executors and data-plane fallback reads. Surfacing `served_from`
-in HTTP response headers and export metrics is planned for an observability update.
+in external HTTP response headers (`X-Relay-Served-From`) and Prometheus metrics
+(`relay_requests_served_total`) is planned for the subsequent Scale and Observability tier.
 
 ## Operational metrics and alerting
 
 Under the planned observability specification, Relay records the source that fulfilled each request
 in the `relay_requests_served_total` metric with the `served_from` label (`executor` or `database`).
-
-If the ratio of requests served via database fallback exceeds 50% over a 5-minute window,
-the `RelayHighDatabaseFallbackRatio` Prometheus alert rule is designed to fire:
+In the initial release, the metrics endpoint emits `dbos_conductor_v1_executor_count`;
+fallback ratio alert rules (such as `RelayHighDatabaseFallbackRatio`) are designed for the
+observability tier and will activate when the corresponding counter series is enabled:
 
 ```yaml
-# deploy/observability/prometheus/relay-alerts.yaml
+# deploy/observability/prometheus/relay-alerts.yaml (planned rule)
 - alert: RelayHighDatabaseFallbackRatio
   expr: sum(rate(relay_requests_served_total{served_from="database"}[5m])) / sum(rate(relay_requests_served_total[5m])) > 0.5
   for: 5m

@@ -97,8 +97,9 @@ The implementation follows these rules:
    are connected. When no healthy executor is available, requests fall back to
    the data-plane. Heavy fleet-wide aggregations prefer the data-plane when
    configured.
-9. **Observability markers**: Every response served via the data-plane carries
-   a `served_from: database` marker, allowing the console and API clients to
+9. **Observability markers**: External response headers (`X-Relay-Served-From`)
+   and Prometheus metrics (`relay_requests_served_total` with `served_from`
+   label) are planned for the Scale and Observability tier to allow clients to
    distinguish database reads from live executor reports.
 10. **Connection guardrails**: Data-plane pools enforce bounded connections,
     per-query statement timeouts, rate limits, and dedicated OpenMetrics counters

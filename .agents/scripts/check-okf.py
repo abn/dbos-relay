@@ -25,11 +25,17 @@ TYPE = re.compile(r"^type:[ \t]*\S", re.M)
 OKF_VERSION = re.compile(r'^okf_version:\s*["\']?0\.2["\']?[ \t]*$', re.M)
 TICKET_PREFIX = re.compile(r"^D\d+[-_]")
 SCRATCH_PATH = re.compile(r"\.agents/brain\b")
-ALLOWED_SCRATCH_DOCS = {
-    DOCS / "contribution" / "guide.md",
-    DOCS / "contribution" / "maintainers.md",
-}
-MINIFIED_LINE_CITE = re.compile(r"api/spec/openapi\.json[^\n]*\blines?\s+\d+", re.I)
+
+
+def check_minified_line_citations(path: Path, text: str, errors: list[str]) -> None:
+    for match in re.finditer(r"api/spec/openapi[^`\n]*`?([^\n]*\n(?:[ \t]*[*+-][^\n]*\n){0,5})", text, re.I):
+        block = match.group(0)
+        lines_match = re.search(r"\blines?\s+\d+", block, re.I)
+        if lines_match:
+            between = block[:lines_match.start()]
+            if not re.search(r"\b[\w-]+\.(?:go|py|ts|java|js)\b", between):
+                errors.append(f"{path}: cites line numbers into minified JSON; use JSON pointers instead")
+
 
 
 def frontmatter(text: str) -> str | None:
@@ -102,11 +108,10 @@ def main() -> int:
         if TICKET_PREFIX.match(path.name):
             errors.append(f"{path}: filename contains internal ticket prefix ({path.name})")
 
-        if SCRATCH_PATH.search(text) and path not in ALLOWED_SCRATCH_DOCS:
+        if SCRATCH_PATH.search(text):
             errors.append(f"{path}: contains internal scratch path reference (.agents/brain)")
 
-        if MINIFIED_LINE_CITE.search(text):
-            errors.append(f"{path}: cites line numbers into minified JSON; use JSON pointers instead")
+        check_minified_line_citations(path, text, errors)
 
         if rel != "index.md" and meta is not None and "okf_version:" in meta:
             errors.append(f"{path}: only the bundle root may carry okf_version")

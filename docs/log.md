@@ -25,6 +25,14 @@ page additions, deprecations, and structural refactors.
 * **Update**: Wired timeout configuration into conformance HTTP client and per-battery execution context.
 * **Update**: Hardened conformance test suite scoring logic and added workflow mutation identifier assertions.
 * **Update**: Removed duplicate clean-room source listings from agent governance references in favour of the canonical contribution guide.
+* **Update**: Updated [ADR 0009](adr/0009-dashboard-web-stack.md) and dashboard component reuse documentation to accurately describe esbuild asset bundling and vanilla JavaScript browser runtime architecture.
+* **Update**: Included NOTICE and THIRD-PARTY-LICENSES in release packaging configuration and container distribution images.
+* **Update**: Reconciled quickstart guide to use default local organization resolution across key creation and REST query examples.
+* **Update**: Documented executor liveness timeout and ping interval parameters directly in recovery architecture guide.
+* **Update**: Added exact permitted source citations for workflow status cancellation and resume SQL update semantics.
+* **Update**: Clarified data-plane fallback metrics and alert rules as planned observability tier features.
+* **Update**: Removed local scratch path references from contributor documentation and project rules.
+* **Update**: Strengthened automated OKF documentation bundle validation for minified specification line citation detection.
 
 * **Update**: Rebuilt [Conductor WebSocket protocol specification](protocol/executor-ws.md) covering all 32 implemented message types, normalized envelope definitions, aligned handshake and alert payloads, and added inline citations for idempotence guarantees.
 * **Update**: Resolved decoding direction heuristics in protocol codec and added exhaustive round-trip tests for zero-value response structures.

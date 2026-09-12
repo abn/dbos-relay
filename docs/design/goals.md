@@ -22,7 +22,7 @@ status: draft
   and searches workflows and their steps including the step graph, and can
   cancel, resume, and fork.
 - **One binary and a database.** A complete deployment is the binary plus a
-  Postgres URL. Container images: multi-architecture images are planned.
+  Postgres URL.
 - **Ready for more than one instance.** Executor ownership is recorded in
   Postgres from the first schema, so high availability is added without
   schema churn even though v0 runs a single instance.
@@ -35,6 +35,7 @@ status: draft
   model requires.
 - Day-one parity on every alerting, retention, and audit endpoint. These
   arrive by tier.
+- Automated publication of container images (multi-architecture images are planned for a subsequent release).
 - Support for pre-1.0 SDK protocol versions.
 
 ## Rules that constrain every feature

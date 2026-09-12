@@ -49,3 +49,8 @@ local repository directory is not the project name and does not constrain it.
   and a container image, and changing it after publication is expensive.
 - Prose in the wiki names the compatibility target directly, which is
   descriptive use and is deliberate. The project's own identity does not.
+- Relay links and redistributes third-party MIT, BSD, and Apache licensed code
+  (including the DBOS Go SDK). Upstream copyright notices and permission terms
+  must be retained across all distribution artifacts. Attribution notices are
+  maintained in `NOTICE` and `THIRD-PARTY-LICENSES.md`, included in release
+  archives via `.goreleaser.yaml`, and installed into container images.

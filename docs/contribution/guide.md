@@ -65,7 +65,7 @@ shims. It is idempotent, so re-run it whenever hooks or tooling change.
   Links are relative or rooted at the bundle; no `file://` and nothing
   pointing outside `docs/`. Wiki changes are recorded in [the log](../log.md).
 - **The scratch area is local.** Working notes, task breakdowns, and the
-  internal progress log live under `.agents/brain/` and are never committed.
+  internal progress log live in the gitignored scratch area and are never committed.
 
 ## Discovery before code
 
