@@ -29,6 +29,19 @@ const (
 	defaultDBURL = "postgres://relay:relay@localhost:5433/relay?sslmode=disable"
 )
 
+type CellStatus string
+
+const (
+	CellStatusPass CellStatus = "PASS"
+	CellStatusFail CellStatus = "FAIL"
+	CellStatusSkip CellStatus = "SKIP"
+)
+
+type CellResult struct {
+	Status CellStatus
+	Reason string
+}
+
 type containerInfo struct {
 	Name                   string
 	SecondaryName          string
@@ -576,6 +589,12 @@ func TestVerifySDK_Matrix(t *testing.T) {
 		t.Logf("[%s] Container %s launch log: %s", lang, info.Name, info.LaunchLog)
 	}
 
+	// Track dynamic per-cell, per-language results for REPORT.md
+	cellResults := make(map[int]map[string]CellResult)
+	for i := 1; i <= 7; i++ {
+		cellResults[i] = make(map[string]CellResult)
+	}
+
 	// -------------------------------------------------------------------------
 	// Cell 1: Socket connection, presence, migration table & native serialization
 	// -------------------------------------------------------------------------
@@ -583,6 +602,12 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_1_Socket_Connection_And_Presence", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
+				cellResults[1][lang] = CellResult{Status: CellStatusPass}
+				defer func() {
+					if t.Failed() {
+						cellResults[1][lang] = CellResult{Status: CellStatusFail}
+					}
+				}()
 				info := containers[lang]
 				dbConn := getAppDBConn(t, info.DBName)
 				defer func() { _ = dbConn.Close(context.Background()) }()
@@ -702,7 +727,14 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				report, err := conformance.Run(context.Background(), confCfg)
 				if err != nil {
+					cellResults[2][lang] = CellResult{Status: CellStatusFail, Reason: err.Error()}
 					t.Fatalf("[%s] Conformance runner failed: %v", lang, err)
+				}
+				if report.TotalFail > 0 {
+					cellResults[2][lang] = CellResult{Status: CellStatusFail, Reason: fmt.Sprintf("%d/%d batteries failed", report.TotalFail, len(report.Batteries))}
+					t.Errorf("[%s] Conformance battery failed: %d failed out of %d", lang, report.TotalFail, len(report.Batteries))
+				} else {
+					cellResults[2][lang] = CellResult{Status: CellStatusPass}
 				}
 
 				var passedNames, skippedNames []string
@@ -736,6 +768,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_3_Data_Plane_Read", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
+				defer func() {
+					if t.Failed() {
+						cellResults[3][lang] = CellResult{Status: CellStatusFail}
+					}
+				}()
 				info := containers[lang]
 				wfID := info.TriggeredWfID
 				if wfID == "" {
@@ -754,7 +791,9 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				t.Logf("[%s] Data plane read response (%d): %s", lang, resp.StatusCode, string(body))
 				if resp.StatusCode != http.StatusOK {
 					t.Errorf("expected status 200, got %d", resp.StatusCode)
+					return
 				}
+				cellResults[3][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
 	})
@@ -767,7 +806,16 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_4_Field_Parity", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
+				defer func() {
+					if t.Failed() {
+						cellResults[4][lang] = CellResult{Status: CellStatusFail}
+					}
+				}()
 				if lang == "Java" {
+					cellResults[4][lang] = CellResult{
+						Status: CellStatusSkip,
+						Reason: "upstream schema v19 vs v107",
+					}
 					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK client v1.3.0 (requires v107)")
 				}
 
@@ -801,7 +849,9 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				t.Logf("[%s] Field parity check: Relay API status=%s, SDK DB status=%s", lang, apiStatus, sdkStatus)
 				if apiStatus != sdkStatus {
 					t.Errorf("status mismatch: API=%s, SDK DB=%s", apiStatus, sdkStatus)
+					return
 				}
+				cellResults[4][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
 	})
@@ -814,6 +864,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_5_Chaos_Real_Timers_And_Recovery", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
+				defer func() {
+					if t.Failed() {
+						cellResults[5][lang] = CellResult{Status: CellStatusFail}
+					}
+				}()
 				primaryInfo := containers[lang]
 				primaryContainer := primaryInfo.Name
 				secondaryContainer := primaryInfo.SecondaryName
@@ -986,6 +1041,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				t.Logf("[%s] Outcome report: terminal_outcomes=%d, step1_executions=%d, step2_executions=%d, step_reexecutions_observed=%d",
 					lang, terminalOutcomes, step1Count, step2Count, stepReExecutions)
+				cellResults[5][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
 	})
@@ -998,7 +1054,16 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_6_Offline_Cancel_Resume", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
+				defer func() {
+					if t.Failed() {
+						cellResults[6][lang] = CellResult{Status: CellStatusFail}
+					}
+				}()
 				if lang == "Java" {
+					cellResults[6][lang] = CellResult{
+						Status: CellStatusSkip,
+						Reason: "upstream schema v19 vs v107",
+					}
 					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK data-plane fallback v1.3.0 (requires v107)")
 				}
 
@@ -1080,6 +1145,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				t.Logf("[%s] Cell 6 complete: restarted executor honoured cancel and resume in %v",
 					lang, info.Cell6Duration)
+				cellResults[6][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
 	})
@@ -1092,6 +1158,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	t.Run("Cell_7_Fork_Via_Data_Plane", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
+				defer func() {
+					if t.Failed() {
+						cellResults[7][lang] = CellResult{Status: CellStatusFail}
+					}
+				}()
 				cellLangStart := time.Now()
 				info := containers[lang]
 
@@ -1129,6 +1200,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				t.Logf("[%s] Forked workflow %s dequeued and executed to SUCCESS by executor %s in %v",
 					lang, forkedID, finalExecID, info.Cell7Duration)
+				cellResults[7][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
 	})
@@ -1136,13 +1208,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 	totalDuration := time.Since(matrixStartTime)
 
-	if t.Failed() {
-		t.Logf("Skipping REPORT.md generation because one or more assertions failed.")
-		return
-	}
-
 	// Write verification report with rich evidence
-	reportContent := generateReportMarkdown(containers, cellDurations, totalDuration, midRunPodmanPS)
+	reportContent := generateReportMarkdown(containers, cellResults, cellDurations, totalDuration, midRunPodmanPS)
 	if err := os.WriteFile("REPORT.md", []byte(reportContent), 0644); err != nil {
 		t.Logf("failed to write REPORT.md: %v", err)
 	} else {
@@ -1150,11 +1217,44 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	}
 }
 
-func generateReportMarkdown(containers map[string]containerInfo, cellDurations map[string]time.Duration, total time.Duration, midRunPS string) string {
+type cellDef struct {
+	ID     int
+	Name   string
+	DurKey string
+}
+
+func formatCellResult(res CellResult, ok bool) string {
+	if !ok {
+		return "[GAP: not executed]"
+	}
+	switch res.Status {
+	case CellStatusPass:
+		return "PASS"
+	case CellStatusFail:
+		if res.Reason != "" {
+			return fmt.Sprintf("FAIL: %s", res.Reason)
+		}
+		return "FAIL"
+	case CellStatusSkip:
+		if res.Reason != "" {
+			if strings.HasPrefix(res.Reason, "[SKIPPED:") {
+				return res.Reason
+			}
+			return fmt.Sprintf("[SKIPPED: %s]", res.Reason)
+		}
+		return "[SKIPPED]"
+	default:
+		return "[GAP: unknown status]"
+	}
+}
+
+func generateReportMarkdown(containers map[string]containerInfo, cellResults map[int]map[string]CellResult, cellDurations map[string]time.Duration, total time.Duration, midRunPS string) string {
 	var sb bytes.Buffer
 	sb.WriteString("# Multi-SDK Verification Report\n\n")
 	sb.WriteString(fmt.Sprintf("**Date**: %s\n", time.Now().Format("2006-01-02 15:04:05 MST")))
 	sb.WriteString(fmt.Sprintf("**Total Duration**: %v\n\n", total.Round(time.Millisecond)))
+
+	languages := []string{"Python", "TypeScript", "Go", "Java"}
 
 	sb.WriteString("## Container Inventory and Handshake\n\n")
 	sb.WriteString("| Language | Primary Service | Secondary Service | Application | Primary Executor ID | Version | Status |\n")
@@ -1170,32 +1270,28 @@ func generateReportMarkdown(containers map[string]containerInfo, cellDurations m
 	}
 
 	sb.WriteString("\n## Cell Verification Summary\n\n")
-	sb.WriteString("| Cell | Python | TypeScript | Go | Java | Duration |\n")
-	sb.WriteString("|---|---|---|---|---|---|\n")
+	sb.WriteString("| Cell | " + strings.Join(languages, " | ") + " | Duration |\n")
+	sb.WriteString("|---|---" + strings.Repeat("|---", len(languages)) + "|\n")
 
-	type cellRow struct {
-		Name   string
-		Py     string
-		TS     string
-		Go     string
-		Java   string
-		DurKey string
+	cellDefs := []cellDef{
+		{1, "1. Socket connection and presence", "Cell 1: Socket connection"},
+		{2, "2. Conformance and CLI suite", "Cell 2: Conformance and CLI"},
+		{3, "3. Data plane read and preservation", "Cell 3: Data plane read"},
+		{4, "4. Field parity between socket and database", "Cell 4: Field parity"},
+		{5, "5. Chaos, real timers, and recovery", "Cell 5: Chaos and recovery"},
+		{6, "6. Offline data-plane cancel and resume", "Cell 6: Offline cancel/resume"},
+		{7, "7. Data-plane fork to live version", "Cell 7: Data-plane fork"},
 	}
 
-	rows := []cellRow{
-		{"1. Socket connection and presence", "PASS", "PASS", "PASS", "PASS", "Cell 1: Socket connection"},
-		{"2. Conformance and CLI suite", "PASS", "PASS", "PASS", "PASS", "Cell 2: Conformance and CLI"},
-		{"3. Data plane read and preservation", "PASS", "PASS", "PASS", "PASS", "Cell 3: Data plane read"},
-		{"4. Field parity between socket and database", "PASS", "PASS", "PASS", "[SKIPPED: upstream schema v19 vs v107]", "Cell 4: Field parity"},
-		{"5. Chaos, real timers, and recovery", "PASS", "PASS", "PASS", "PASS", "Cell 5: Chaos and recovery"},
-		{"6. Offline data-plane cancel and resume", "PASS", "PASS", "PASS", "[SKIPPED: upstream schema v19 vs v107]", "Cell 6: Offline cancel/resume"},
-		{"7. Data-plane fork to live version", "PASS", "PASS", "PASS", "PASS", "Cell 7: Data-plane fork"},
-	}
-
-	for _, r := range rows {
-		dur := cellDurations[r.DurKey].Round(time.Millisecond)
-		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %v |\n",
-			r.Name, r.Py, r.TS, r.Go, r.Java, dur))
+	for _, def := range cellDefs {
+		row := []string{def.Name}
+		for _, lang := range languages {
+			res, ok := cellResults[def.ID][lang]
+			row = append(row, formatCellResult(res, ok))
+		}
+		dur := cellDurations[def.DurKey].Round(time.Millisecond)
+		row = append(row, dur.String())
+		sb.WriteString("| " + strings.Join(row, " | ") + " |\n")
 	}
 
 	sb.WriteString("\n## Cell 2 Conformance and D5 REST Scorecard\n\n")
