@@ -3,11 +3,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as esbuild from "esbuild";
 import { execSync } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+let esbuild;
+try {
+  esbuild = await import("esbuild");
+} catch {
+  execSync("npm install --no-fund --no-audit", { cwd: __dirname, stdio: "inherit" });
+  esbuild = await import("esbuild");
+}
 
 const SRC_DIR = path.join(__dirname, "src");
 const DIST_DIR = path.join(__dirname, "..", "internal", "dashboard", "dist");
@@ -35,7 +42,8 @@ if (fs.existsSync(path.join(SRC_DIR, "assets", "favicon.svg"))) {
 
 // 4. Bundle JS files into a single standalone app.js using esbuild
 esbuild.buildSync({
-  entryPoints: [path.join(SRC_DIR, "app.js")],
+  entryPoints: ["app.js"],
+  absWorkingDir: SRC_DIR,
   bundle: true,
   outfile: path.join(ASSETS_DIST, "app.js"),
   format: "iife",

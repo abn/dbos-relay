@@ -142,16 +142,19 @@ export interface CreateAlertInput {
   ruleMetadata: Record<string, unknown>;
 }
 
-export interface ApiKey {
-  id: string;
-  name: string;
-  lookup: string;
-  applicationNames: string[];
-  permissions: string[];
+export interface Token {
+  tokenName: string;
   createdAt: string;
-  lastUsedAt?: string | null;
-  revokedAt?: string | null;
+  permissions: string[];
+  appIds: string[];
 }
+
+export interface TokenCreated {
+  token: string;
+  tokenName: string;
+}
+
+export type ApiKey = Token;
 
 export interface WorkflowSearchQuery {
   workflowIds?: string[];

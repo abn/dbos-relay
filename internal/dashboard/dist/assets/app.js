@@ -1,5 +1,5 @@
 (() => {
-  // src/lib/api/client.ts
+  // lib/api/client.ts
   var ApiClient = class {
     baseUrl;
     apiKey;
@@ -123,18 +123,12 @@
       );
     }
     async forkWorkflow(org, app, id, startStep) {
-      const res = await fetch(`/v2/orgs/${org}/apps/${app}/workflows/${id}/fork`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startStep })
-      });
-      if (!res.ok) throw new Error("fork failed");
-      return res.json();
-    }
-    async restartWorkflow(orgName, appName, workflowId) {
       return this.request(
-        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
-        { method: "POST", body: "{}" }
+        `/v2/orgs/${encodeURIComponent(org)}/apps/${encodeURIComponent(app)}/workflows/${encodeURIComponent(id)}/fork`,
+        {
+          method: "POST",
+          body: JSON.stringify({ startStep })
+        }
       );
     }
     // Queues
@@ -209,7 +203,7 @@
     }
   };
 
-  // src/lib/components/StatusPill.js
+  // lib/components/StatusPill.js
   function renderStatusPill(status) {
     const s = (status || "UNKNOWN").toUpperCase();
     let colorClass = "pill-neutral";
@@ -244,7 +238,7 @@
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-  // src/lib/components/JsonViewer.js
+  // lib/components/JsonViewer.js
   function renderJsonViewer(data, title = "") {
     if (data === void 0 || data === null || data === "") {
       return `<div class="json-viewer empty"><em>No data</em></div>`;
@@ -299,7 +293,7 @@
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-  // src/lib/components/WorkflowDAG.js
+  // lib/components/WorkflowDAG.js
   function renderWorkflowDAG(steps, onSelectStepCallbackName = "window.selectStep") {
     if (!steps || steps.length === 0) {
       return `
@@ -399,10 +393,11 @@
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-  // src/app.js
+  // app.js
   var DashboardApp = class {
     constructor() {
-      this.client = new ApiClient();
+      this.apiKey = sessionStorage.getItem("relay_api_key") || null;
+      this.client = new ApiClient("", this.apiKey);
       this.currentRoute = "fleet";
       this.orgName = "default";
       this.appName = "";
@@ -419,6 +414,69 @@
           console.error("Failed to parse step:", err);
         }
       };
+    }
+    setApiKey(key) {
+      this.apiKey = key;
+      this.client.setApiKey(key);
+      if (key) {
+        sessionStorage.setItem("relay_api_key", key);
+      } else {
+        sessionStorage.removeItem("relay_api_key");
+      }
+    }
+    isAuthError(err) {
+      if (!err) return false;
+      const msg = err.message || String(err);
+      return msg.includes("401") || msg.includes("Unauthorized") || msg.includes("Authorization header required");
+    }
+    renderAuthRequired(el, actionName = "load data") {
+      el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Authentication Required</span>
+        </div>
+        <div class="card-body">
+          <p style="margin-bottom: 12px; color: var(--text-secondary);">
+            This Relay instance requires an API key or bearer token to ${escapeHtml4(actionName)}.
+          </p>
+          <div class="form-field" style="max-width: 480px;">
+            <label class="form-label">API Key / Bearer Token</label>
+            <input type="password" id="auth-key-input" class="input-text" placeholder="dbos_sec_... or JWT token" value="${escapeHtml4(this.apiKey || "")}">
+          </div>
+          <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-primary" data-action="submitSignIn">Save & Retry</button>
+            ${this.apiKey ? `<button class="btn btn-sm btn-secondary" data-action="signOut">Clear Credential</button>` : ""}
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    openSignInModal() {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      root.innerHTML = `
+      <div class="modal-overlay" data-action="closeModalOverlay">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span>Relay Authentication</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal">\u2715</button>
+          </div>
+          <div class="modal-body">
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+              Provide an API key or OIDC bearer token to authenticate with the Relay control plane.
+            </p>
+            <div class="form-field">
+              <label class="form-label">API Key / Bearer Token</label>
+              <input type="password" id="modal-auth-key-input" class="input-text" placeholder="dbos_sec_... or JWT token" value="${escapeHtml4(this.apiKey || "")}">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Cancel</button>
+            <button class="btn btn-sm btn-primary" data-action="submitModalSignIn">Sign In</button>
+          </div>
+        </div>
+      </div>
+    `;
     }
     async init() {
       this.applyTheme(this.theme);
@@ -516,6 +574,7 @@
     `;
     }
     renderTopHeader() {
+      const hasKey = Boolean(this.apiKey);
       return `
       <header class="top-header">
         <div class="header-left">
@@ -530,6 +589,11 @@
             </select>
           </div>
           <button class="btn btn-xs btn-secondary" data-action="refresh">\u21BB Refresh</button>
+          ${hasKey ? `
+            <button class="btn btn-xs btn-secondary" data-action="signOut" title="Clear saved credential">Sign Out</button>
+          ` : `
+            <button class="btn btn-xs btn-primary" data-action="openSignIn" title="Set API Key or Bearer Token">Sign In</button>
+          `}
         </div>
       </header>
     `;
@@ -945,7 +1009,7 @@
               <div>
                 <span class="stat-label">Child Workflow</span>
                 <div>
-                  <a class="btn btn-xs btn-primary" onclick="window.app.closeModal(); window.app.navigate('workflow/${encodeURIComponent(step.childWorkflowId)}')">
+                  <a class="btn btn-xs btn-primary" data-action="viewChildWorkflow" data-child-wf-id="${escapeHtml4(step.childWorkflowId)}">
                     View Child Workflow: ${escapeHtml4(step.childWorkflowId)}
                   </a>
                 </div>
@@ -1229,7 +1293,7 @@
               <thead>
                 <tr>
                   <th>Key Name</th>
-                  <th>Lookup Prefix</th>
+                  <th>Permissions</th>
                   <th>Scoped Apps</th>
                   <th>Created At</th>
                   <th>Actions</th>
@@ -1238,12 +1302,12 @@
               <tbody>
                 ${keys.length > 0 ? keys.map((k) => `
                   <tr>
-                    <td><strong>${escapeHtml4(k.tokenName || k.id)}</strong></td>
-                    <td><code>${escapeHtml4(k.tokenName || "-")}</code></td>
+                    <td><strong>${escapeHtml4(k.tokenName)}</strong></td>
+                    <td><code>${escapeHtml4(k.permissions ? k.permissions.join(", ") : "")}</code></td>
                     <td>${k.appIds && k.appIds.length > 0 ? escapeHtml4(k.appIds.join(", ")) : "All Applications"}</td>
                     <td>${formatTimestamp(k.createdAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" data-revoke-key='${escapeHtml4(k.tokenName || k.id)}'>Revoke</button>
+                      <button class="btn btn-xs btn-danger" data-revoke-key='${escapeHtml4(k.tokenName)}'>Revoke</button>
                     </td>
                   </tr>
                 `).join("") : `<tr><td colspan="5" style="text-align:center; color:var(--text-tertiary);">No API keys found.</td></tr>`}
@@ -1253,6 +1317,10 @@
         </div>
       `;
       } catch (err) {
+        if (this.isAuthError(err)) {
+          this.renderAuthRequired(el, "load API keys");
+          return;
+        }
         el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load API keys: ${escapeHtml4(err.message)}</div></div>`;
       }
     }
@@ -1384,7 +1452,7 @@
       }
       let copyBtn = e.target.closest("[data-copy]");
       if (copyBtn) {
-        navigator.clipboard.writeText(decodeURIComponent(copyBtn.getAttribute("data-copy"))).then(() => {
+        navigator.clipboard.writeText(copyBtn.getAttribute("data-copy")).then(() => {
           copyBtn.innerText = "Copied!";
           setTimeout(() => copyBtn.innerText = "Copy", 1500);
         });
@@ -1396,7 +1464,18 @@
     else if (target.dataset.action === "refresh") window.app.renderContentView();
     else if (target.dataset.action === "toggleTheme") window.app.toggleTheme();
     else if (target.dataset.action === "closeModal") window.app.closeModal();
-    else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""));
+    else if (target.dataset.action === "openSignIn") window.app.openSignInModal();
+    else if (target.dataset.action === "signOut") window.app.signOut();
+    else if (target.dataset.action === "submitModalSignIn") {
+      const input = document.getElementById("modal-auth-key-input");
+      window.app.submitSignIn(input ? input.value.trim() : "");
+    } else if (target.dataset.action === "submitSignIn") {
+      const input = document.getElementById("auth-key-input");
+      window.app.submitSignIn(input ? input.value.trim() : "");
+    } else if (target.dataset.action === "viewChildWorkflow") {
+      window.app.closeModal();
+      window.app.navigate(`workflow/${encodeURIComponent(target.dataset.childWfId || "")}`);
+    } else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""));
     else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ""));
     else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ""));
     else if (target.dataset.wfTab) window.app.switchWfTab(target.dataset.wfTab.replace(/'/g, ""));
