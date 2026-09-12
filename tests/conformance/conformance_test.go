@@ -693,8 +693,15 @@ func TestConformance_TokensAndPermissions(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&perms); err != nil {
 		t.Fatalf("decode perms: %v", err)
 	}
-	if len(perms) == 0 {
-		t.Errorf("expected permissions list")
+	wantPerms := auth.CatalogPermissions()
+	if len(perms) != len(wantPerms) {
+		t.Errorf("got %d permissions, want %d: %v", len(perms), len(wantPerms), perms)
+	} else {
+		for i := range wantPerms {
+			if perms[i] != wantPerms[i] {
+				t.Errorf("perm[%d] = %q, want %q", i, perms[i], wantPerms[i])
+			}
+		}
 	}
 
 	// 2. Create token
