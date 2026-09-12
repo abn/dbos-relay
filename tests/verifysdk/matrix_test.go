@@ -147,31 +147,39 @@ func redactConductorKey(s string) string {
 	})
 }
 
-func getExecutorsFromAPI(t *testing.T, appName string) []executorAPIResponse {
-	t.Helper()
+func fetchExecutors(appName string) ([]executorAPIResponse, error) {
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", relayBaseURL, orgName, appName)
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		t.Fatalf("failed to create executors request for %s: %v", appName, err)
+		return nil, fmt.Errorf("failed to create executors request for %s: %w", appName, err)
 	}
 	if key := getAPIKey(); key != "" {
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		t.Fatalf("failed to query executors API for %s: %v", appName, err)
+		return nil, fmt.Errorf("failed to query executors API for %s: %w", appName, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("executors API returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("executors API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var list []executorAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		t.Fatalf("failed to decode executors response: %v", err)
+		return nil, fmt.Errorf("failed to decode executors response: %w", err)
+	}
+	return list, nil
+}
+
+func getExecutorsFromAPI(t *testing.T, appName string) []executorAPIResponse {
+	t.Helper()
+	list, err := fetchExecutors(appName)
+	if err != nil {
+		t.Fatalf("%v", err)
 	}
 	return list
 }
@@ -371,7 +379,12 @@ func waitForExecutors(t *testing.T, containers map[string]containerInfo, timeout
 	for time.Now().Before(deadline) {
 		allReady := true
 		for lang, info := range containers {
-			execs := getExecutorsFromAPI(t, info.AppName)
+			execs, err := fetchExecutors(info.AppName)
+			if err != nil {
+				allReady = false
+				t.Logf("[%s] Waiting for healthy executor registration for app %s (%v)...", lang, info.AppName, err)
+				break
+			}
 			hasHealthy := false
 			for _, e := range execs {
 				if e.Status == "HEALTHY" || e.Status == "connected" {
@@ -390,6 +403,7 @@ func waitForExecutors(t *testing.T, containers map[string]containerInfo, timeout
 		}
 		time.Sleep(2 * time.Second)
 	}
+	t.Fatalf("timed out waiting for healthy executors across all applications after %v", timeout)
 }
 
 func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
@@ -529,14 +543,12 @@ func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
 }
 
 func TestVerifySDK_Matrix(t *testing.T) {
+	if os.Getenv("RELAY_VERIFY_SDK") != "1" {
+		t.Skip("skipping SDK verification matrix: set RELAY_VERIFY_SDK=1 (or run make verify-sdk) to run")
+	}
+
 	matrixStartTime := time.Now()
 	cellDurations := make(map[string]time.Duration)
-
-	// Verify podman is available and check running containers
-	psOutput := runCmd(t, "podman", "ps", "--format", "{{.Names}}\t{{.Status}}")
-	if !strings.Contains(psOutput, "deploy-relay-1") || !strings.Contains(psOutput, "deploy-postgres-1") {
-		t.Skipf("Compose services are not running. Start with `podman compose -f deploy/compose-sdk-apps.yaml up -d`.\nps output:\n%s", psOutput)
-	}
 
 	containers := map[string]containerInfo{
 		"Go": {
@@ -575,6 +587,23 @@ func TestVerifySDK_Matrix(t *testing.T) {
 			TriggerPort:   8083,
 			SecondaryPort: 8087,
 		},
+	}
+
+	// Verify all 10 required containers are running
+	psOutput := runCmd(t, "podman", "ps", "--format", "{{.Names}}\t{{.Status}}")
+	requiredContainers := []string{"deploy-relay-1", "deploy-postgres-1"}
+	for _, info := range containers {
+		requiredContainers = append(requiredContainers, info.Name, info.SecondaryName)
+	}
+
+	var missing []string
+	for _, name := range requiredContainers {
+		if !strings.Contains(psOutput, name) {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		t.Skipf("skipping: missing required containers: %s", strings.Join(missing, ", "))
 	}
 
 	// 1. Wait for all applications to register healthy executors in Relay
