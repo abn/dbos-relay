@@ -362,16 +362,52 @@ func mapWorkflowStatus(s dbos.WorkflowStatus) protocol.ListWorkflowsResponseBody
 	if s.ForkedFrom != "" {
 		body.ForkedFrom = &s.ForkedFrom
 	}
-	if s.WasForkedFrom {
-		b := true
-		body.WasForkedFrom = &b
-	}
+	b := s.WasForkedFrom
+	body.WasForkedFrom = &b
 	if s.ParentWorkflowID != "" {
 		body.ParentWorkflowID = &s.ParentWorkflowID
 	}
 	if !s.CompletedAt.IsZero() {
 		str := strconv.FormatInt(s.CompletedAt.UnixMilli(), 10)
 		body.CompletedAt = &str
+	}
+	if s.Timeout != 0 {
+		str := strconv.FormatInt(s.Timeout.Milliseconds(), 10)
+		body.WorkflowTimeoutMS = &str
+	}
+	if !s.Deadline.IsZero() {
+		str := strconv.FormatInt(s.Deadline.UnixMilli(), 10)
+		body.WorkflowDeadlineEpochMS = &str
+	}
+	if !s.StartedAt.IsZero() {
+		str := strconv.FormatInt(s.StartedAt.UnixMilli(), 10)
+		body.DequeuedAt = &str
+	}
+	if s.DeduplicationID != "" {
+		body.DeduplicationID = &s.DeduplicationID
+	}
+	if s.Priority != 0 {
+		str := strconv.Itoa(s.Priority)
+		body.Priority = &str
+	}
+	if s.QueuePartitionKey != "" {
+		body.QueuePartitionKey = &s.QueuePartitionKey
+	}
+	if !s.DelayUntil.IsZero() {
+		str := strconv.FormatInt(s.DelayUntil.UnixMilli(), 10)
+		body.DelayUntilEpochMS = &str
+	}
+	if len(s.Attributes) > 0 {
+		if bAttr, err := json.Marshal(s.Attributes); err == nil {
+			str := string(bAttr)
+			body.Attributes = &str
+		}
+	}
+	if s.ScheduleName != "" {
+		body.ScheduleName = &s.ScheduleName
+	}
+	if s.ApplicationName != "" {
+		body.ApplicationName = &s.ApplicationName
 	}
 	if s.Input != nil {
 		if str, ok := listingValueJSON(s.Input); ok {
