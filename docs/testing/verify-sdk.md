@@ -16,8 +16,8 @@ Python, TypeScript, Go, and Java.
 | Cell | Python | TypeScript | Go | Java |
 |---|---|---|---|---|
 | Sample app connects to Relay over the socket; appears in executors | required | required | required | required |
-| Conformance suite + `dbosctl` script via socket | required | required | required | required |
-| Data plane read: status, list, steps; payloads pass through with serialisation tag | required | required | required | required |
+| Conformance suite + REST endpoint probes | required | required | required | required |
+| Data plane read: status, list, steps; payloads preserved byte-equal | required | required | required | required |
 | Field parity: same workflow via socket and data plane, byte-equal after normalisation | required | required | required | may lag (upstream schema v19 vs v107) |
 | Chaos, real timers: SIGKILL executor, recovery on survivor, workflow completes exactly once | required | required | required | required |
 | Data-plane cancel and resume while executor is down; restarted executor honours both | required | required | required | may lag (upstream schema v19 vs v107) |
@@ -31,15 +31,16 @@ The sample application launches and initiates a WebSocket connection to Relay at
 updates its heartbeat lease, and surfaces the executor in the `GET /v2/orgs/{org}/apps/{app}/executors`
 API endpoint.
 
-### 2. Conductor conformance and CLI execution
-The upstream `dbosctl` CLI commands and Conductor protocol test batteries run against the
-connected executor over WebSocket. The executor correctly responds to workflow execution,
-step listing, and telemetry probes.
+### 2. Conductor conformance and REST endpoint probes
+The Conductor protocol test batteries and HTTP REST endpoint probes run against the
+connected executor and application. The executor correctly responds to workflow execution,
+step listing, and telemetry probes. Note that the upstream CLI client binary is not exercised
+directly in this test suite.
 
-### 3. Data plane read and serialization preservation
+### 3. Data plane read and payload preservation
 Relay reads workflow status, step lists, and outputs directly from the application system
 database using the SDK client data plane. Complex outputs (Python pickle/JSON, TypeScript JSON,
-Go JSON/gob) pass through Relay without mutation, preserving their original `serialization` tag.
+Go JSON/gob) pass through Relay without mutation, preserving payload bytes verbatim.
 
 ### 4. Field parity between socket and database
 The same completed workflow is retrieved twice: once over the WebSocket protocol from a live

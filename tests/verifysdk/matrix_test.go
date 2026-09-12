@@ -19,6 +19,7 @@ import (
 
 	"github.com/dbos-inc/dbos-transact-golang/dbos"
 
+	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/conformance"
 )
@@ -57,7 +58,7 @@ type containerInfo struct {
 
 	// Cell 2 Evidence
 	ConformanceSummary     string
-	DBOSCTLSummary         string
+	D5RESTSummary          string
 
 	// Cell 5 Chaos Evidence
 	KillTimestamp          time.Time
@@ -266,42 +267,76 @@ func triggerAppWorkflow(t *testing.T, triggerPort int) string {
 	return res.WorkflowID
 }
 
-func triggerAppFork(t *testing.T, port int, originalWorkflowID string) string {
+func triggerRelayFork(t *testing.T, appName, originalWorkflowID, appVersion string) string {
 	t.Helper()
-	url := fmt.Sprintf("http://localhost:%d/fork?original_workflow_id=%s", port, originalWorkflowID)
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	var resp *http.Response
-	var err error
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err = client.Get(url)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			break
-		}
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		time.Sleep(500 * time.Millisecond)
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/fork", relayBaseURL, orgName, appName, originalWorkflowID)
+	reqBody := map[string]any{
+		"appVersion": appVersion,
+		"startStep":  0,
 	}
+	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		t.Fatalf("failed to call fork endpoint at %s: %v", url, err)
+		t.Fatalf("failed to marshal fork request: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("failed to create fork request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := getAPIKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to dispatch fork via Relay API: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("fork endpoint returned %d: %s", resp.StatusCode, string(b))
+		t.Fatalf("fork via Relay API returned status %d: %s", resp.StatusCode, string(b))
 	}
+
 	var res struct {
-		WorkflowID string `json:"workflow_id"`
+		WorkflowID string `json:"workflowId"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		t.Fatalf("failed to decode fork response: %v", err)
 	}
 	if res.WorkflowID == "" {
-		t.Fatalf("fork endpoint returned empty workflow_id")
+		t.Fatalf("fork endpoint returned empty workflowId")
 	}
 	return res.WorkflowID
+}
+
+func getFullWorkflowViaAPI(t *testing.T, appName, wfID string) *gen.Workflow {
+	t.Helper()
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, appName, wfID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("failed to create get workflow request: %v", err)
+	}
+	if key := getAPIKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to get workflow via Relay API: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("get workflow via Relay API returned status %d: %s", resp.StatusCode, string(b))
+	}
+	var wf gen.Workflow
+	if err := json.NewDecoder(resp.Body).Decode(&wf); err != nil {
+		t.Fatalf("failed to decode workflow: %v", err)
+	}
+	return &wf
 }
 
 func cancelWorkflowViaAPI(t *testing.T, appName, wfID string) {
@@ -693,10 +728,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	cellDurations["Cell 1: Socket connection"] = time.Since(c1Start)
 
 	// -------------------------------------------------------------------------
-	// Cell 2: Conformance suite + D5 dbosctl REST verification
+	// Cell 2: Conformance suite + REST endpoint verification
 	// -------------------------------------------------------------------------
 	c2Start := time.Now()
-	t.Run("Cell_2_Conformance_And_CLI", func(t *testing.T) {
+	t.Run("Cell_2_Conformance_And_REST_Probes", func(t *testing.T) {
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				info := containers[lang]
@@ -708,7 +743,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// 1. Run D5 REST verification suite against app
 				d5Summary := runD5RESTProbes(t, info, wfID)
-				info.DBOSCTLSummary = d5Summary
+				info.D5RESTSummary = d5Summary
 				t.Logf("[%s] %s", lang, d5Summary)
 
 				// 2. Execute genuine conformance test runner against live app
@@ -759,7 +794,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 			})
 		}
 	})
-	cellDurations["Cell 2: Conformance and CLI"] = time.Since(c2Start)
+	cellDurations["Cell 2: Conformance and REST probes"] = time.Since(c2Start)
 
 	// -------------------------------------------------------------------------
 	// Cell 3: Data plane read and preservation
@@ -779,19 +814,89 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					wfID = triggerAppWorkflow(t, info.TriggerPort)
 				}
 
-				// Query via Relay data plane endpoint without mutation
-				url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, info.AppName, wfID)
-				resp, err := http.Get(url)
-				if err != nil {
-					t.Fatalf("data plane read failed: %v", err)
+				// 1. Fetch workflow via Relay API
+				relayWf := getFullWorkflowViaAPI(t, info.AppName, wfID)
+				if relayWf.Status == "" {
+					t.Fatalf("[%s] Empty status returned from Relay API", lang)
 				}
-				defer func() { _ = resp.Body.Close() }()
 
-				body, _ := io.ReadAll(resp.Body)
-				t.Logf("[%s] Data plane read response (%d): %s", lang, resp.StatusCode, string(body))
-				if resp.StatusCode != http.StatusOK {
-					t.Errorf("expected status 200, got %d", resp.StatusCode)
+				// 2. Fetch steps via Relay API
+				stepsURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/steps", relayBaseURL, orgName, info.AppName, wfID)
+				sReq, err := http.NewRequest(http.MethodGet, stepsURL, nil)
+				if err != nil {
+					t.Fatalf("failed to create steps request: %v", err)
+				}
+				if key := getAPIKey(); key != "" {
+					sReq.Header.Set("Authorization", "Bearer "+key)
+				}
+				sResp, err := http.DefaultClient.Do(sReq)
+				if err != nil {
+					t.Fatalf("[%s] Steps read failed: %v", lang, err)
+				}
+				defer func() { _ = sResp.Body.Close() }()
+				if sResp.StatusCode != http.StatusOK {
+					t.Errorf("[%s] Expected steps status 200, got %d", lang, sResp.StatusCode)
 					return
+				}
+				var steps []map[string]any
+				if err := json.NewDecoder(sResp.Body).Decode(&steps); err != nil {
+					t.Fatalf("[%s] Failed to decode steps JSON: %v", lang, err)
+				}
+
+				// 3. Fetch workflows list via Relay API
+				listURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows", relayBaseURL, orgName, info.AppName)
+				lReq, err := http.NewRequest(http.MethodGet, listURL, nil)
+				if err != nil {
+					t.Fatalf("failed to create list request: %v", err)
+				}
+				if key := getAPIKey(); key != "" {
+					lReq.Header.Set("Authorization", "Bearer "+key)
+				}
+				lResp, err := http.DefaultClient.Do(lReq)
+				if err != nil {
+					t.Fatalf("[%s] Workflows list failed: %v", lang, err)
+				}
+				defer func() { _ = lResp.Body.Close() }()
+				if lResp.StatusCode != http.StatusOK {
+					t.Errorf("[%s] Expected list status 200, got %d", lang, lResp.StatusCode)
+					return
+				}
+
+				// 4. Assert payload byte preservation against DBOS Go SDK client for non-Java runtimes
+				if lang != "Java" {
+					appDBURL := strings.Replace(getDBURL(), "/relay?", "/"+info.DBName+"?", 1)
+					sdkClient, err := dbos.NewClient(context.Background(), dbos.ClientConfig{
+						DatabaseURL: appDBURL,
+						AppName:     info.AppName,
+					})
+					if err != nil {
+						t.Fatalf("[%s] Failed to create SDK client: %v", lang, err)
+					}
+					statuses, err := sdkClient.ListWorkflows(sdkClient, dbos.WithFilterWorkflowIDs(wfID))
+					if err != nil || len(statuses) == 0 {
+						t.Fatalf("[%s] Failed to query workflow via SDK client: %v", lang, err)
+					}
+					sdkWf := statuses[0]
+
+					if relayWf.Output != nil && sdkWf.Output != nil {
+						var sdkOutputStr string
+						switch v := sdkWf.Output.(type) {
+						case string:
+							sdkOutputStr = v
+						case *string:
+							if v != nil {
+								sdkOutputStr = *v
+							}
+						default:
+							b, _ := json.Marshal(v)
+							sdkOutputStr = string(b)
+						}
+						if *relayWf.Output != sdkOutputStr {
+							t.Errorf("[%s] Output payload mismatch: Relay API=%s, SDK DB=%s", lang, *relayWf.Output, sdkOutputStr)
+							return
+						}
+						t.Logf("[%s] Output payload preserved byte-equal: %s", lang, *relayWf.Output)
+					}
 				}
 				cellResults[3][lang] = CellResult{Status: CellStatusPass}
 			})
@@ -826,10 +931,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				// Fetch via Relay API
-				apiStatus, _ := getWorkflowViaAPI(t, info.AppName, wfID)
-				if apiStatus == "" {
-					t.Fatalf("[%s] Failed to query workflow status via Relay API", lang)
-				}
+				apiWf := getFullWorkflowViaAPI(t, info.AppName, wfID)
 
 				// Fetch via official DBOS Go SDK client (no raw SQL against dbos.*)
 				appDBURL := strings.Replace(getDBURL(), "/relay?", "/"+info.DBName+"?", 1)
@@ -844,13 +946,93 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if err != nil || len(statuses) == 0 {
 					t.Fatalf("[%s] Failed to query workflow via SDK client: %v", lang, err)
 				}
-				sdkStatus := string(statuses[0].Status)
+				sdkWf := statuses[0]
 
-				t.Logf("[%s] Field parity check: Relay API status=%s, SDK DB status=%s", lang, apiStatus, sdkStatus)
-				if apiStatus != sdkStatus {
-					t.Errorf("status mismatch: API=%s, SDK DB=%s", apiStatus, sdkStatus)
+				var comparedFields []string
+
+				if apiWf.Status != string(sdkWf.Status) {
+					t.Errorf("[%s] Status mismatch: API=%s, SDK DB=%s", lang, apiWf.Status, sdkWf.Status)
 					return
 				}
+				comparedFields = append(comparedFields, "status")
+
+				if apiWf.WorkflowId != sdkWf.ID {
+					t.Errorf("[%s] Workflow ID mismatch: API=%s, SDK DB=%s", lang, apiWf.WorkflowId, sdkWf.ID)
+					return
+				}
+				comparedFields = append(comparedFields, "workflow_id")
+
+				if apiWf.AppVersion != nil && sdkWf.ApplicationVersion != "" {
+					if *apiWf.AppVersion != sdkWf.ApplicationVersion {
+						t.Errorf("[%s] AppVersion mismatch: API=%s, SDK DB=%s", lang, *apiWf.AppVersion, sdkWf.ApplicationVersion)
+						return
+					}
+					comparedFields = append(comparedFields, "app_version")
+				}
+
+				if apiWf.QueueName != nil && sdkWf.QueueName != "" {
+					if *apiWf.QueueName != sdkWf.QueueName {
+						t.Errorf("[%s] QueueName mismatch: API=%s, SDK DB=%s", lang, *apiWf.QueueName, sdkWf.QueueName)
+						return
+					}
+					comparedFields = append(comparedFields, "queue_name")
+				}
+
+				if apiWf.Input != nil && sdkWf.Input != nil {
+					var sdkInputStr string
+					switch v := sdkWf.Input.(type) {
+					case string:
+						sdkInputStr = v
+					case *string:
+						if v != nil {
+							sdkInputStr = *v
+						}
+					default:
+						b, _ := json.Marshal(v)
+						sdkInputStr = string(b)
+					}
+					if *apiWf.Input != sdkInputStr {
+						t.Errorf("[%s] Input mismatch: API=%s, SDK DB=%s", lang, *apiWf.Input, sdkInputStr)
+						return
+					}
+					comparedFields = append(comparedFields, "input")
+				}
+
+				if apiWf.Output != nil && sdkWf.Output != nil {
+					var sdkOutputStr string
+					switch v := sdkWf.Output.(type) {
+					case string:
+						sdkOutputStr = v
+					case *string:
+						if v != nil {
+							sdkOutputStr = *v
+						}
+					default:
+						b, _ := json.Marshal(v)
+						sdkOutputStr = string(b)
+					}
+					if *apiWf.Output != sdkOutputStr {
+						t.Errorf("[%s] Output mismatch: API=%s, SDK DB=%s", lang, *apiWf.Output, sdkOutputStr)
+						return
+					}
+					comparedFields = append(comparedFields, "output")
+				}
+
+				if apiWf.Error != nil && sdkWf.Error != nil {
+					sdkErrStr := sdkWf.Error.Error()
+					if *apiWf.Error != sdkErrStr {
+						t.Errorf("[%s] Error mismatch: API=%s, SDK DB=%s", lang, *apiWf.Error, sdkErrStr)
+						return
+					}
+					comparedFields = append(comparedFields, "error")
+				}
+
+				if len(comparedFields) == 0 {
+					t.Fatalf("[%s] Field parity check failed: compared fields set is empty", lang)
+				}
+
+				t.Logf("[%s] Field parity check passed: %d fields verified byte-equal (%s)",
+					lang, len(comparedFields), strings.Join(comparedFields, ", "))
 				cellResults[4][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
@@ -1171,9 +1353,13 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					origID = triggerAppWorkflow(t, info.SecondaryPort)
 				}
 
-				t.Logf("[%s] Forking from original workflow %s on secondary port %d", lang, origID, info.SecondaryPort)
-				forkedID := triggerAppFork(t, info.SecondaryPort, origID)
-				t.Logf("[%s] Forked workflow initiated: %s", lang, forkedID)
+				t.Logf("[%s] Dispatching fork request via Relay API for original workflow %s", lang, origID)
+				forkedID := triggerRelayFork(t, info.AppName, origID, info.AppVersion)
+				t.Logf("[%s] Forked workflow initiated via Relay API: %s", lang, forkedID)
+
+				if forkedID == origID {
+					t.Fatalf("[%s] Expected distinct workflow ID for fork, got %s", lang, forkedID)
+				}
 
 				// Wait for forked workflow to reach terminal SUCCESS state via Relay API
 				var finalStatus, finalExecID string
@@ -1191,6 +1377,13 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 				if finalExecID == "" {
 					t.Fatalf("[%s] Expected forked workflow executor_id to be set to a live executor", lang)
+				}
+
+				// Assert forked_from linkage
+				forkedWf := getFullWorkflowViaAPI(t, info.AppName, forkedID)
+				if forkedWf.ForkedFrom != nil && *forkedWf.ForkedFrom != origID {
+					t.Errorf("[%s] Expected ForkedFrom to point to %s, got %s", lang, origID, *forkedWf.ForkedFrom)
+					return
 				}
 
 				info.ForkedWfID = forkedID
@@ -1275,7 +1468,7 @@ func generateReportMarkdown(containers map[string]containerInfo, cellResults map
 
 	cellDefs := []cellDef{
 		{1, "1. Socket connection and presence", "Cell 1: Socket connection"},
-		{2, "2. Conformance and CLI suite", "Cell 2: Conformance and CLI"},
+		{2, "2. Conformance and REST probes", "Cell 2: Conformance and REST probes"},
 		{3, "3. Data plane read and preservation", "Cell 3: Data plane read"},
 		{4, "4. Field parity between socket and database", "Cell 4: Field parity"},
 		{5, "5. Chaos, real timers, and recovery", "Cell 5: Chaos and recovery"},
@@ -1295,11 +1488,11 @@ func generateReportMarkdown(containers map[string]containerInfo, cellResults map
 	}
 
 	sb.WriteString("\n## Cell 2 Conformance and D5 REST Scorecard\n\n")
-	sb.WriteString("| Language | Conformance Suite Summary | D5 dbosctl REST Battery Summary |\n")
+	sb.WriteString("| Language | Conformance Suite Summary | D5 REST Battery Summary |\n")
 	sb.WriteString("|---|---|---|\n")
 	for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 		c := containers[lang]
-		sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", lang, c.ConformanceSummary, c.DBOSCTLSummary))
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", lang, c.ConformanceSummary, c.D5RESTSummary))
 	}
 
 	sb.WriteString("\n## Mid-Run Container Inventory (podman ps)\n\n")

@@ -32,9 +32,9 @@ func TestReportMarkdown_DynamicResults(t *testing.T) {
 	delete(cellResults[5], "Go")
 
 	cellDurations := map[string]time.Duration{
-		"Cell 1: Socket connection":  100 * time.Millisecond,
-		"Cell 2: Conformance and CLI": 200 * time.Millisecond,
-		"Cell 3: Data plane read":    300 * time.Millisecond,
+		"Cell 1: Socket connection":          100 * time.Millisecond,
+		"Cell 2: Conformance and REST probes": 200 * time.Millisecond,
+		"Cell 3: Data plane read":            300 * time.Millisecond,
 		"Cell 4: Field parity":       400 * time.Millisecond,
 		"Cell 5: Chaos and recovery": 500 * time.Millisecond,
 		"Cell 6: Offline cancel/resume": 600 * time.Millisecond,
