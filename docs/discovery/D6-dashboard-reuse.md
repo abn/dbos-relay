@@ -225,3 +225,7 @@ the following design:
    DBOS Transact step graphs.
 4. **Tailwind and Modern Primitives**: UI components built with Tailwind CSS and
    `bits-ui` primitives, matching the clean aesthetic of modern developer tools.
+
+
+## Addendum
+OIDC Login flow added.
