@@ -87,8 +87,9 @@ func TestMultiplexer_LateResponse(t *testing.T) {
 
 type mockHubStore struct {
 	memoryAuthStore
-	disconnected []gen.DisconnectExecutorParams
-	mu           sync.Mutex
+	disconnected      []gen.DisconnectExecutorParams
+	disconnectCtxErrs []error
+	mu                sync.Mutex
 }
 
 func newMockHubStore() *mockHubStore {
@@ -107,6 +108,7 @@ func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.Disconnec
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.disconnected = append(m.disconnected, arg)
+	m.disconnectCtxErrs = append(m.disconnectCtxErrs, ctx.Err())
 	return gen.Executor{}, nil
 }
 
@@ -898,5 +900,140 @@ func TestHub_Handshake_InvalidIdentifiers(t *testing.T) {
 				t.Errorf("expected StatusPolicyViolation or code 1008, got: %v", err)
 			}
 		})
+	}
+}
+
+func TestHub_Close_DeadlockSafety(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	clientConn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = clientConn.Close(websocket.StatusNormalClosure, "") }()
+
+	var execConn *ExecutorConn
+	unreg := func() {
+		if execConn != nil {
+			h.registry.Unregister(h.ctx, execConn)
+		}
+	}
+
+	appID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
+	execConn = NewExecutorConn(clientConn, appID, "deadlock-exec-1", "test-app", "v1", "host-1", nil, NewMultiplexer(), unreg)
+	h.registry.Register(execConn)
+
+	// Calling Close when a connection is still registered must not deadlock
+	done := make(chan error, 1)
+	go func() {
+		done <- h.Close()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("unexpected error from Hub.Close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Hub.Close deadlocked while closing registered connection")
+	}
+
+	if conns := h.registry.ListConnected(appID); len(conns) != 0 {
+		t.Fatalf("expected registry to be empty after Close, got %d connections", len(conns))
+	}
+}
+
+func TestHub_Close_DisconnectWritesNotCancelled(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err := conn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("failed to read prompt: %v", err)
+	}
+	msg, _ := protocol.Decode(data)
+	infoReq := msg.(*protocol.ExecutorInfoRequest)
+
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "exec-shutdown-disconnect",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, _ := protocol.Encode(infoResp)
+	if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+		t.Fatalf("failed to write info response: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+	if _, err := h.registry.GetExecutorConn(appID, "exec-shutdown-disconnect"); err != nil {
+		t.Fatalf("expected executor to be registered: %v", err)
+	}
+
+	// Trigger Hub.Close
+	if err := h.Close(); err != nil {
+		t.Fatalf("Hub.Close failed: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	if len(store.disconnected) == 0 {
+		t.Fatal("expected DisconnectExecutor to be called during shutdown")
+	}
+
+	for i, ctxErr := range store.disconnectCtxErrs {
+		if ctxErr != nil {
+			t.Fatalf("DisconnectExecutor call %d failed with cancelled context: %v", i, ctxErr)
+		}
 	}
 }

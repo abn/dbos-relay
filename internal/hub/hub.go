@@ -58,7 +58,7 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 	}
 	return &Hub{
 		store:            hs,
-		registry:         NewRegistry(hs),
+		registry:         NewRegistry(hs, logger),
 		config:           cfg,
 		logger:           logger,
 		handshakeTimeout: 5 * time.Second,
@@ -366,13 +366,10 @@ func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Mess
 func (h *Hub) Close() error {
 	h.cancel()
 	h.wg.Wait()
-	// Registry close
-	h.registry.mu.Lock()
-	defer h.registry.mu.Unlock()
-	for _, appMap := range h.registry.byApp {
-		for _, conn := range appMap {
-			_ = conn.Close()
-		}
+	// Safely close any remaining connections outside the registry lock
+	conns := h.registry.DrainAll()
+	for _, conn := range conns {
+		_ = conn.Close()
 	}
 	return nil
 }

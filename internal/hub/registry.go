@@ -3,7 +3,9 @@ package hub
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -17,16 +19,18 @@ type RegistryDisconnector interface {
 
 // Registry manages connected executors.
 type Registry struct {
-	mu    sync.RWMutex
-	byApp map[pgtype.UUID]map[string]*ExecutorConn
-	q     RegistryDisconnector
+	mu     sync.RWMutex
+	byApp  map[pgtype.UUID]map[string]*ExecutorConn
+	q      RegistryDisconnector
+	logger *slog.Logger
 }
 
 // NewRegistry creates a new Registry.
-func NewRegistry(q RegistryDisconnector) *Registry {
+func NewRegistry(q RegistryDisconnector, logger *slog.Logger) *Registry {
 	return &Registry{
-		byApp: make(map[pgtype.UUID]map[string]*ExecutorConn),
-		q:     q,
+		byApp:  make(map[pgtype.UUID]map[string]*ExecutorConn),
+		q:      q,
+		logger: logger,
 	}
 }
 
@@ -49,6 +53,21 @@ func (r *Registry) Register(conn *ExecutorConn) {
 	}
 
 	appMap[conn.executorID] = conn
+}
+
+// DrainAll removes and returns all active executor connections without closing them.
+func (r *Registry) DrainAll() []*ExecutorConn {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var conns []*ExecutorConn
+	for _, appMap := range r.byApp {
+		for _, conn := range appMap {
+			conns = append(conns, conn)
+		}
+	}
+	r.byApp = make(map[pgtype.UUID]map[string]*ExecutorConn)
+	return conns
 }
 
 // Unregister removes connection if it matches the currently registered instance and updates database.
@@ -76,10 +95,20 @@ func (r *Registry) Unregister(ctx context.Context, conn *ExecutorConn) bool {
 	r.mu.Unlock()
 
 	if r.q != nil {
-		_, _ = r.q.DisconnectExecutor(ctx, gen.DisconnectExecutorParams{
+		disconnectCtx := ctx
+		if disconnectCtx.Err() != nil {
+			var cancel context.CancelFunc
+			disconnectCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+		}
+		if _, err := r.q.DisconnectExecutor(disconnectCtx, gen.DisconnectExecutorParams{
 			ApplicationID: conn.appID,
 			ExecutorID:    conn.executorID,
-		})
+		}); err != nil {
+			if r.logger != nil {
+				r.logger.Error("failed to mark executor disconnected", "error", err, "executor_id", conn.executorID)
+			}
+		}
 	}
 	return true
 }
