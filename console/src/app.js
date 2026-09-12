@@ -548,7 +548,7 @@ class DashboardApp {
 
   async restartWorkflow(id) {
     try {
-      const res = await this.client.restartWorkflow(this.orgName, this.appName, id);
+      const res = await this.client.forkWorkflow(this.orgName, this.appName, id, 0);
       alert(`Restarted workflow! New ID: ${res.workflowId}`);
       this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
     } catch (err) {

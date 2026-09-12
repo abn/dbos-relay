@@ -122,6 +122,15 @@
         { method: "POST", body: "{}" }
       );
     }
+    async forkWorkflow(org, app, id, startStep) {
+      const res = await fetch(`/v2/orgs/${org}/apps/${app}/workflows/${id}/fork`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startStep })
+      });
+      if (!res.ok) throw new Error("fork failed");
+      return res.json();
+    }
     async restartWorkflow(orgName, appName, workflowId) {
       return this.request(
         `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
@@ -903,7 +912,7 @@
     }
     async restartWorkflow(id) {
       try {
-        const res = await this.client.restartWorkflow(this.orgName, this.appName, id);
+        const res = await this.client.forkWorkflow(this.orgName, this.appName, id, 0);
         alert(`Restarted workflow! New ID: ${res.workflowId}`);
         this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
       } catch (err) {

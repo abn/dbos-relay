@@ -175,6 +175,17 @@ export class ApiClient {
     );
   }
 
+
+  async forkWorkflow(org: string, app: string, id: string, startStep: number): Promise<any> {
+    const res = await fetch(`/v2/orgs/${org}/apps/${app}/workflows/${id}/fork`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ startStep })
+    });
+    if (!res.ok) throw new Error("fork failed");
+    return res.json();
+  }
+
   async restartWorkflow(orgName: string, appName: string, workflowId: string): Promise<{ workflowId: string }> {
     return this.request<{ workflowId: string }>(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
