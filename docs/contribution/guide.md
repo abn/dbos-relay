@@ -69,9 +69,9 @@ shims. It is idempotent, so re-run it whenever hooks or tooling change.
 
 ## Discovery before code
 
-Discovery items D1-D8 and Phase 1 foundation packages are complete, and Phase 2
-protocol implementation is next. If a later phase exposes a gap in the
-protocol specification, the specification is fixed first and the code follows.
+Discovery and specification work precede implementation. If an implementation
+exposes a gap in the protocol specification, the specification is fixed first
+and the code follows.
 
 ## Related
 

@@ -73,9 +73,9 @@ rules](contribution/clean-room.md), and the reasoning is in [ADR
 
 ## Status
 
-Discovery. The current work is the executor protocol specification, the
-vendored REST contract, and the stack decision. See [goals and
-non-goals](design/goals.md) for the v1 boundary.
+Implementation is in progress across the core control plane, executor protocol,
+and data plane. See [compatibility tiers](design/compatibility-tiers.md) for milestone
+gates and [goals and non-goals](design/goals.md) for the v1 boundary.
 
 Facts about the ecosystem on this page come from the public documentation
 listed under [sources](contribution/clean-room.md#sources). They are

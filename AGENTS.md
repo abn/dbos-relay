@@ -8,8 +8,7 @@ Relay is an open-source control plane for DBOS Transact applications,
 compatible with the Conductor executor WebSocket protocol and HTTP API. It is
 self-hostable, MIT licensed, and not affiliated with or endorsed by DBOS, Inc.
 
-The project is in Phase 0: discovery. No server code is written until the
-discovery documents are accepted. The working specification is held in the
+The project implementation is in progress. The working specification is held in the
 scratch area, which is gitignored and never committed. The public design lives
 in the wiki under `docs/`.
 

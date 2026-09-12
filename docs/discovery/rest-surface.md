@@ -58,35 +58,35 @@ own Postgres database.
 | `PUT` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `setAutoscalingPolicy` | Relay store | No | N/A |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/executors` | `listExecutors` | Relay store | No | N/A |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/metrics` | `listMetrics` | Relay store | No | N/A |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues` | `listQueues` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues/{queueName}` | `getQueue` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/schedules` | `listSchedules` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}` | `getSchedule` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/backfill` | `backfillSchedule` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/pause` | `pauseSchedule` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/resume` | `resumeSchedule` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/trigger` | `triggerSchedule` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/steps/aggregates` | `getStepAggregates` | Executor dispatch | No | TBD (D2) |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues` | `listQueues` | Executor dispatch | No | `ListQueuesRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues/{queueName}` | `getQueue` | Executor dispatch | No | `GetQueueRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/schedules` | `listSchedules` | Executor dispatch | No | `ListSchedulesRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}` | `getSchedule` | Executor dispatch | No | `GetScheduleRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/backfill` | `backfillSchedule` | Executor dispatch | No | `BackfillScheduleRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/pause` | `pauseSchedule` | Executor dispatch | No | `PauseScheduleRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/resume` | `resumeSchedule` | Executor dispatch | No | `ResumeScheduleRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/trigger` | `triggerSchedule` | Executor dispatch | No | `TriggerScheduleRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/steps/aggregates` | `getStepAggregates` | Executor dispatch | No | `GetStepAggregatesRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/versions` | `listAppVersions` | Relay store | No | N/A |
 | `PATCH` | `/v2/orgs/{orgName}/apps/{appName}/versions/latest` | `setLatestAppVersion` | Relay store | No | N/A |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows` | `listWorkflows` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/aggregates` | `getWorkflowAggregates` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-cancel` | `bulkCancelWorkflows` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-delete` | `bulkDeleteWorkflows` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-fork-from-failure` | `bulkForkWorkflowsFromFailure` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-resume` | `bulkResumeWorkflows` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/import` | `importWorkflow` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/search` | `searchWorkflows` | Executor dispatch | No | TBD (D2) |
-| `DELETE` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}` | `deleteWorkflow` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}` | `getWorkflow` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/cancel` | `cancelWorkflow` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/events` | `listWorkflowEvents` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/export` | `exportWorkflow` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork` | `forkWorkflow` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/notifications` | `listWorkflowNotifications` | Executor dispatch | No | TBD (D2) |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume` | `resumeWorkflow` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps` | `listWorkflowSteps` | Executor dispatch | No | TBD (D2) |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/streams` | `listWorkflowStreams` | Executor dispatch | No | TBD (D2) |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows` | `listWorkflows` | Executor dispatch | No | `ListWorkflowsRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/aggregates` | `getWorkflowAggregates` | Executor dispatch | No | `GetWorkflowAggregatesRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-cancel` | `bulkCancelWorkflows` | Executor dispatch | No | `CancelWorkflowRequest` (bulk) |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-delete` | `bulkDeleteWorkflows` | Executor dispatch | No | `DeleteWorkflowRequest` (bulk) |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-fork-from-failure` | `bulkForkWorkflowsFromFailure` | Executor dispatch | No | `ForkFromFailureRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-resume` | `bulkResumeWorkflows` | Executor dispatch | No | `ResumeWorkflowRequest` (bulk) |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/import` | `importWorkflow` | Executor dispatch | No | `ImportWorkflowRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/search` | `searchWorkflows` | Executor dispatch | No | `ListWorkflowsRequest` |
+| `DELETE` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}` | `deleteWorkflow` | Executor dispatch | No | `DeleteWorkflowRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}` | `getWorkflow` | Executor dispatch | No | `GetWorkflowRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/cancel` | `cancelWorkflow` | Executor dispatch | No | `CancelWorkflowRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/events` | `listWorkflowEvents` | Executor dispatch | No | `GetWorkflowEventsRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/export` | `exportWorkflow` | Executor dispatch | No | `ExportWorkflowRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork` | `forkWorkflow` | Executor dispatch | No | `ForkWorkflowRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/notifications` | `listWorkflowNotifications` | Executor dispatch | No | `GetWorkflowNotificationsRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume` | `resumeWorkflow` | Executor dispatch | No | `ResumeWorkflowRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps` | `listWorkflowSteps` | Executor dispatch | No | `ListStepsRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/streams` | `listWorkflowStreams` | Executor dispatch | No | `GetWorkflowStreamsRequest` |
 | `GET` | `/v2/orgs/{orgName}/audit-logs` | `listAuditLogs` | Relay store | Yes | N/A |
 | `GET` | `/v2/orgs/{orgName}/domain-claims` | `listDomainClaims` | Relay store | Yes | N/A |
 | `POST` | `/v2/orgs/{orgName}/domain-claims` | `requestDomainClaim` | Relay store | Yes | N/A |

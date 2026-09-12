@@ -13,8 +13,8 @@ covering the project's public design, architecture, decisions, and
 contribution guidance. It is maintained to reflect status quo as the project
 evolves. The working specification is held outside this bundle.
 
-The project is in discovery. Sections describing the implementation appear as
-the implementation does.
+The project implementation is in progress. Sections describe the architecture, protocol,
+and operational usage of Relay.
 
 ## Getting started
 
@@ -36,15 +36,15 @@ the implementation does.
 
 ## Discovery
 
-* [Discovery overview](discovery/index.md) - phase 0 discovery findings
+* [Discovery overview](discovery/index.md) - initial discovery findings
 * [Provenance ledger](discovery/provenance.md) - permitted sources for every
   claim
-* [REST surface](discovery/D3-rest-surface.md) - HTTP API operations and inventory
-* [Authorization](discovery/D4-authz.md) - permission model and key format
-* [Client behaviour](discovery/D5-client-behaviour.md) - dbosctl conformance notes
-* [Dashboard reuse](discovery/D6-dashboard-reuse.md) - UI assessment and go/no-go decision
-* [Recovery timing](discovery/D7-recovery-params.md) - heartbeat, grace periods, and overrides
-* [Metrics and alerting](discovery/D8-metrics-alerting.md) - OpenMetrics catalogue and alert rules
+* [REST surface](discovery/rest-surface.md) - HTTP API operations and inventory
+* [Authorization](discovery/authz.md) - permission model and key format
+* [Client behaviour](discovery/client-behaviour.md) - dbosctl conformance notes
+* [Dashboard reuse](discovery/dashboard-reuse.md) - UI assessment and go/no-go decision
+* [Recovery timing](discovery/recovery-params.md) - heartbeat, grace periods, and overrides
+* [Metrics and alerting](discovery/metrics-alerting.md) - OpenMetrics catalogue and alert rules
 
 ## Protocol
 

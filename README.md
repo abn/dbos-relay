@@ -18,9 +18,11 @@ from the OpenAPI document work against Relay unchanged.
 
 ## Status
 
-Discovery, and nothing on this page is a shipped feature. There is no binary.
-The current work is the executor protocol specification, the vendored REST
-contract, and the stack decision.
+Relay is under active implementation. The project implements the Conductor executor
+protocol and HTTP API, providing workflow recovery, identity, metrics, and an
+embedded web dashboard. See [compatibility tiers](docs/design/compatibility-tiers.md)
+for current verification gates and [quickstart](docs/usage/quickstart.md) to run
+Relay locally.
 
 ## How it is built
 

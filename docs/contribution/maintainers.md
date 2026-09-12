@@ -55,5 +55,5 @@ wins, and the correction is recorded in [the log](../log.md). Pages
 that describe an intended design say so in plain words, so a reader never
 mistakes a plan for a shipped feature.
 
-The internal progress log is not part of the wiki. It lives in the scratch
-area under `.agents/brain/outbox/`.
+The internal progress log is not part of the wiki. It lives in the gitignored
+scratch area.

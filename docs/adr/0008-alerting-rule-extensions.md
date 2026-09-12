@@ -22,5 +22,5 @@ These types are added to the REST read/write schema and the declarative configur
 
 ## Consequences
 - The declarative YAML configuration parser has been updated to accept the new types.
-- The `D8-metrics-alerting.md` documentation has been updated to reflect the new `enum` values and metadata structures.
+- The [metrics and alerting discovery documentation](../discovery/metrics-alerting.md) has been updated to reflect the new `enum` values and metadata structures.
 - Clients relying on strict enum checking for alerting rules will need to accept the two new types.

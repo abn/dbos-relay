@@ -1,13 +1,13 @@
 ---
 type: Decision
 title: Dashboard component reuse evaluation
-description: Technical evaluation and Go or No-Go decision on consuming the @dbos-argus/ui component package for Relay Phase 6.
+description: Technical evaluation and Go or No-Go decision on consuming the @dbos-argus/ui component package for the Relay dashboard.
 status: decided
 ---
 
 # Dashboard component reuse evaluation
 
-Relay Phase 6 plans a self-hosted web dashboard (`console/`) embedded into the
+Relay plans a self-hosted web dashboard (`console/`) embedded into the
 Relay binary to provide visibility into applications, executors, workflows,
 steps, and queues. This document evaluates whether Relay should consume the
 external `@dbos-argus/ui` package from the `dbos-argus` project or build first-party

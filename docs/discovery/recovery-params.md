@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Recovery timing parameters and application configuration
-description: Timing defaults, per-application overrides, state transitions, units, and Phase 4 recovery engine requirements.
+description: Timing defaults, per-application overrides, state transitions, units, and recovery engine requirements.
 status: draft
 ---
 
@@ -265,9 +265,9 @@ Because DBOS workflows follow an at-least-once execution model for steps and
 exactly-once guarantee for outcomes, repeated recovery dispatch is safe and
 idempotent.
 
-## Impact on Phase 4 recovery engine
+## Impact on recovery engine
 
-Phase 4 implements the recovery engine within Relay. The findings in this
+Relay implements the recovery engine internally. The findings in this
 document impose specific requirements on its architecture:
 
 1. **Connection hub liveness tracking**:

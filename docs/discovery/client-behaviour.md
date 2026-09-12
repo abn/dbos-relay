@@ -10,8 +10,8 @@ status: draft
 This document records the operational behaviour of the upstream command-line
 client, `dbosctl`, derived under clean-room rules from its public source code
 and vendored OpenAPI specifications. It serves as the primary behavioral
-contract and acceptance checklist for Relay's REST engine (Phase 3) and
-authentication layer (Phase 7).
+contract and acceptance checklist for Relay's REST engine and
+authentication layer.
 
 ## Provenance and clean-room citation
 
@@ -133,7 +133,7 @@ limitation (exit 1). Instead, Relay must leave OAuth-gated routes **unregistered
 on the HTTP router when running in no-auth mode, causing requests to return
 HTTP 404 (exit 4).
 
-## 4. Device authorization flow (Phase 7 reference)
+## 4. Device authorization flow (authentication reference)
 
 The `dbosctl login` command implements the OAuth 2.0 Device Authorization Grant
 ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) over standard OIDC
@@ -359,11 +359,11 @@ binary; it makes no network requests.
 
 ## 7. Conformance and acceptance checklist
 
-This checklist defines the criteria for acceptance testing during Phase 3 and
-Phase 7. Tests in `tests/conformance/` execute unmodified `dbosctl` commands
-against Relay running as the target server.
+This checklist defines the criteria for acceptance testing the REST API and
+authentication layer. Conformance test suites in `tests/conformance/` validate HTTP requests and payloads
+against Relay running as the target server, asserting behavior matching the `dbosctl` client protocol.
 
-### Phase 3 Conformance Checklist (REST API Surface)
+### REST API Conformance Checklist
 
 - [ ] **No-Auth Defaults**:
   - Request with no token defaults organization to `"local"`.
@@ -425,7 +425,7 @@ against Relay running as the target server.
   - Non-2xx responses emit `application/problem+json` matching `api.ErrorModel`
     with `status`, `title`, and `detail`.
 
-### Phase 7 Conformance Checklist (Authentication & OIDC)
+### Authentication Conformance Checklist (OIDC)
 
 - [ ] **Token Authentication**:
   - Accepts `Authorization: Bearer <token>` carrying either a minting `dbos_`

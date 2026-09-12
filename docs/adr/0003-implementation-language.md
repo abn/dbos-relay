@@ -9,7 +9,7 @@ status: stable
 
 ## Status
 
-Accepted. This closes the stack question that discovery item D1 was opened to
+Accepted. This closes the stack question that initial discovery was opened to
 answer.
 
 ## Context
