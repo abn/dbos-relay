@@ -37,6 +37,8 @@ type ExecutorConn struct {
 
 	pingInterval time.Duration
 	pongTimeout  time.Duration
+
+	touchLease func(ctx context.Context) error
 }
 
 // NewExecutorConn creates a new executor connection.
@@ -67,6 +69,11 @@ func NewExecutorConn(
 func (c *ExecutorConn) SetPingPongTimeouts(interval, timeout time.Duration) {
 	c.pingInterval = interval
 	c.pongTimeout = timeout
+}
+
+// SetTouchLease sets the lease renewal function called on each heartbeat ping.
+func (c *ExecutorConn) SetTouchLease(fn func(ctx context.Context) error) {
+	c.touchLease = fn
 }
 
 // WriteMessage encodes and writes a protocol message to the connection safely.
@@ -138,6 +145,14 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 			pingCancel()
 			if err != nil {
 				return
+			}
+			if c.touchLease != nil {
+				touchCtx, touchCancel := context.WithTimeout(ctx, timeout)
+				err := c.touchLease(touchCtx)
+				touchCancel()
+				if err != nil {
+					return
+				}
 			}
 		}
 	}

@@ -129,6 +129,19 @@ func (s *sharedStore) DisconnectExecutor(ctx context.Context, arg gen.Disconnect
 	return e, nil
 }
 
+func (s *sharedStore) TouchExecutorLastSeen(ctx context.Context, arg gen.TouchExecutorLastSeenParams) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.executors[arg.ExecutorID]
+	if !ok {
+		return errors.New("executor not found")
+	}
+	e.LastSeenAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	e.LeaseExpiresAt = arg.LeaseExpiresAt
+	s.executors[arg.ExecutorID] = e
+	return nil
+}
+
 func (s *sharedStore) ListConnectedExecutorsByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.Executor, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -242,6 +255,7 @@ func TestHA_CrossInstancePeerForwarding_FakeExecutor(t *testing.T) {
 	// 1. Create Node 1
 	hub1 := hub.New(store, cfg, nil)
 	defer func() { _ = hub1.Close() }()
+	hub1.SetInstanceID(node1ID)
 
 	forwardHandler1 := router.NewForwardHandler(hub1, secret, 30*time.Second)
 	mux1 := http.NewServeMux()
@@ -260,6 +274,7 @@ func TestHA_CrossInstancePeerForwarding_FakeExecutor(t *testing.T) {
 	// 2. Create Node 2
 	hub2 := hub.New(store, cfg, nil)
 	defer func() { _ = hub2.Close() }()
+	hub2.SetInstanceID(node2ID)
 
 	forwardHandler2 := router.NewForwardHandler(hub2, secret, 30*time.Second)
 	mux2 := http.NewServeMux()
@@ -337,13 +352,16 @@ func TestHA_CrossInstancePeerForwarding_FakeExecutor(t *testing.T) {
 		t.Fatal("timed out waiting for executor registration")
 	}
 
-	// Manually update store executor owner to Node 1
+	// Verify executor registration has written node1ID ownership and lease
 	store.mu.Lock()
 	e := store.executors["exec-node-1"]
-	e.OwnerInstanceID = node1ID
-	e.LeaseExpiresAt = pgtype.Timestamptz{Time: time.Now().Add(1 * time.Minute), Valid: true}
-	store.executors["exec-node-1"] = e
 	store.mu.Unlock()
+	if !e.OwnerInstanceID.Valid || e.OwnerInstanceID != node1ID {
+		t.Fatalf("expected executor owner to be %v, got %v", node1ID, e.OwnerInstanceID)
+	}
+	if !e.LeaseExpiresAt.Valid {
+		t.Fatal("expected executor lease_expires_at to be valid")
+	}
 
 	// 4. Send request to Node 2 (which does NOT own the executor)
 	reqMsg := &protocol.GetWorkflowRequest{

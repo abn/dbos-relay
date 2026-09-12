@@ -173,6 +173,8 @@ type mockHubStore struct {
 	memoryAuthStore
 	disconnected      []gen.DisconnectExecutorParams
 	disconnectCtxErrs []error
+	upserted          []gen.UpsertExecutorParams
+	touches           []gen.TouchExecutorLastSeenParams
 	mu                sync.Mutex
 }
 
@@ -183,8 +185,13 @@ func newMockHubStore() *mockHubStore {
 }
 
 func (m *mockHubStore) UpsertExecutor(ctx context.Context, arg gen.UpsertExecutorParams) (gen.Executor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.upserted = append(m.upserted, arg)
 	return gen.Executor{
-		ExecutorID: arg.ExecutorID,
+		ExecutorID:      arg.ExecutorID,
+		OwnerInstanceID: arg.OwnerInstanceID,
+		LeaseExpiresAt:  arg.LeaseExpiresAt,
 	}, nil
 }
 
@@ -194,6 +201,13 @@ func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.Disconnec
 	m.disconnected = append(m.disconnected, arg)
 	m.disconnectCtxErrs = append(m.disconnectCtxErrs, ctx.Err())
 	return gen.Executor{}, nil
+}
+
+func (m *mockHubStore) TouchExecutorLastSeen(ctx context.Context, arg gen.TouchExecutorLastSeenParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.touches = append(m.touches, arg)
+	return nil
 }
 
 func TestHub_HandshakeOrder(t *testing.T) {
@@ -1319,5 +1333,87 @@ func TestHub_Dispatch_SingleExecutorTimeout(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected error containing 'timed out', got %v", err)
+	}
+}
+
+func TestHub_LeaseOwnershipAndRenewal(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	localInstanceID := pgtype.UUID{Bytes: [16]byte{42, 42, 42, 42}, Valid: true}
+	h.SetInstanceID(localInstanceID)
+	h.SetPingPongTimeouts(20*time.Millisecond, 50*time.Millisecond)
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err := conn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("read prompt failed: %v", err)
+	}
+	msg, _ := protocol.Decode(data)
+	infoReq := msg.(*protocol.ExecutorInfoRequest)
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "exec-lease-test",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, _ := protocol.Encode(infoResp)
+	_ = conn.Write(ctx, websocket.MessageText, respData)
+
+	// Keep conn open to allow ping/pong loop to run
+	go func() {
+		for {
+			_, _, readErr := conn.Read(ctx)
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	time.Sleep(60 * time.Millisecond)
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	if len(store.upserted) == 0 {
+		t.Fatal("expected UpsertExecutor to be called")
+	}
+	lastUpsert := store.upserted[len(store.upserted)-1]
+	if !lastUpsert.OwnerInstanceID.Valid || lastUpsert.OwnerInstanceID != localInstanceID {
+		t.Fatalf("expected OwnerInstanceID %v, got %v", localInstanceID, lastUpsert.OwnerInstanceID)
+	}
+	if !lastUpsert.LeaseExpiresAt.Valid {
+		t.Fatal("expected LeaseExpiresAt to be valid")
+	}
+
+	if len(store.touches) == 0 {
+		t.Fatal("expected TouchExecutorLastSeen to be called during heartbeat renewal")
+	}
+	lastTouch := store.touches[len(store.touches)-1]
+	if lastTouch.ExecutorID != "exec-lease-test" {
+		t.Fatalf("expected touch for exec-lease-test, got %s", lastTouch.ExecutorID)
+	}
+	if !lastTouch.LeaseExpiresAt.Valid {
+		t.Fatal("expected touch LeaseExpiresAt to be valid")
 	}
 }

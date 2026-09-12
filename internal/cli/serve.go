@@ -89,6 +89,8 @@ func newServeCommand() *cobra.Command {
 			}
 			defer haMgr.Stop()
 
+			h.SetInstanceID(haMgr.ID())
+
 			r := router.New(s.Queries(), h)
 			dpManager := dataplane.NewManager(nil)
 			if configPath := os.Getenv("RELAY_CONFIG"); configPath != "" {

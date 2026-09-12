@@ -33,12 +33,19 @@ type HubStore interface {
 	DisconnectExecutor(ctx context.Context, arg gen.DisconnectExecutorParams) (gen.Executor, error)
 }
 
+type LeaseStore interface {
+	TouchExecutorLastSeen(ctx context.Context, arg gen.TouchExecutorLastSeenParams) error
+}
+
 type Hub struct {
 	store            HubStore
+	leaseStore       LeaseStore
 	registry         *Registry
 	config           *config.Config
 	logger           *slog.Logger
 	liveness         LivenessTracker
+	instanceID       pgtype.UUID
+	leaseDuration    time.Duration
 	handshakeTimeout time.Duration
 	readLimit        int64
 	pingInterval     time.Duration
@@ -56,11 +63,19 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 	} else if sp, ok := store.(interface{ Queries() *gen.Queries }); ok && sp != nil {
 		hs = sp.Queries()
 	}
+	var ls LeaseStore
+	if s, ok := store.(LeaseStore); ok {
+		ls = s
+	} else if sp, ok := store.(interface{ Queries() *gen.Queries }); ok && sp != nil {
+		ls = sp.Queries()
+	}
 	return &Hub{
 		store:            hs,
+		leaseStore:       ls,
 		registry:         NewRegistry(hs, logger),
 		config:           cfg,
 		logger:           logger,
+		leaseDuration:    60 * time.Second,
 		handshakeTimeout: 5 * time.Second,
 		readLimit:        32 * 1024 * 1024,
 		pingInterval:     20 * time.Second,
@@ -68,6 +83,16 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+}
+
+// SetInstanceID sets the local relay instance ID for executor ownership.
+func (h *Hub) SetInstanceID(id pgtype.UUID) {
+	h.instanceID = id
+}
+
+// SetLeaseDuration sets the executor lease duration (default 60s).
+func (h *Hub) SetLeaseDuration(d time.Duration) {
+	h.leaseDuration = d
 }
 
 // SetHandshakeTimeout sets the handshake timeout (useful in tests).
@@ -229,6 +254,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var leaseExpires pgtype.Timestamptz
+	if h.instanceID.Valid {
+		leaseExpires = pgtype.Timestamptz{
+			Time:  time.Now().Add(h.leaseDuration),
+			Valid: true,
+		}
+	}
+
 	// Persist executor
 	_, err = h.store.UpsertExecutor(r.Context(), gen.UpsertExecutorParams{
 		ApplicationID:      appID,
@@ -236,6 +269,8 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ApplicationVersion: appVersion,
 		Hostname:           hostname,
 		Metadata:           metadata,
+		OwnerInstanceID:    h.instanceID,
+		LeaseExpiresAt:     leaseExpires,
 	})
 	if err != nil {
 		h.logger.Error("failed to persist executor", "error", err)
@@ -257,6 +292,19 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	execConn = NewExecutorConn(conn, appID, executorID, appName, appVersion, hostname, metadata, mux, unregister)
 	if h.pingInterval > 0 && h.pongTimeout > 0 {
 		execConn.SetPingPongTimeouts(h.pingInterval, h.pongTimeout)
+	}
+	if h.instanceID.Valid && h.leaseStore != nil {
+		execConn.SetTouchLease(func(ctx context.Context) error {
+			renewalExpires := pgtype.Timestamptz{
+				Time:  time.Now().Add(h.leaseDuration),
+				Valid: true,
+			}
+			return h.leaseStore.TouchExecutorLastSeen(ctx, gen.TouchExecutorLastSeenParams{
+				ApplicationID:  appID,
+				ExecutorID:     executorID,
+				LeaseExpiresAt: renewalExpires,
+			})
+		})
 	}
 
 	h.registry.Register(execConn)

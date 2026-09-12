@@ -33,6 +33,9 @@ func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string
 	var orgID pgtype.UUID
 
 	if !authEnabled {
+		if q == nil {
+			return pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, nil
+		}
 		// No-auth mode: key is accepted unconditionally
 		org, err := q.GetOrganisationByName(ctx, "local")
 		if err != nil {
