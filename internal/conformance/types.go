@@ -136,7 +136,8 @@ type Config struct {
 	AppName        string
 	Output         io.Writer
 	Verbose        bool
-	Timeout        time.Duration
-	SkipBatteryIDs []int
-	SkipReason     string
+	Timeout          time.Duration
+	SkipBatteryIDs   []int
+	SkipReason       string
+	AllowDestructive bool
 }

@@ -10,6 +10,13 @@ run either in-process during local testing or as a blackbox client against any r
 Conductor or Relay endpoint. Note that the conformance suite utilizes a synthetic,
 fake executor peer to simulate SDK connectivity during the tests.
 
+> [!WARNING]
+> The conformance suite writes state to the target server and is intended for scratch
+> or staging environments only. A full suite run will register six executors, create an
+> application row if the app name is new, create an alerting rule in battery 7 (cleaned
+> up in a subsequent check), and route wire mutations to connected executors. Running
+> against non-local targets requires the `--allow-destructive` safety flag.
+
 ## Batteries tested
 
 The conformance suite evaluates 8 distinct batteries:
