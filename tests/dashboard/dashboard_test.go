@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -502,4 +503,12 @@ func TestDashboard_EndToEndWithFakeExecutor(t *testing.T) {
 
 func (m *dashboardTestStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
 	return nil
+}
+
+func TestDashboard_BundleParses(t *testing.T) {
+	cmd := exec.Command("node", "--check", "../../internal/dashboard/dist/assets/app.js")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("node --check failed: %v\nOutput: %s", err, string(output))
+	}
 }

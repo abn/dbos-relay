@@ -1,391 +1,299 @@
-// Relay Dashboard Production Bundle
-(function() {
-  "use strict";
-
-  // --- API Client ---
-  // Relay Conductor v2 API Client
-
-
-
-class ApiClient {
-  baseUrl;
-  apiKey;
-
-  constructor(baseUrl = "", apiKey = null) {
-    this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.apiKey = apiKey;
-  }
-
-  setApiKey(key) {
-    this.apiKey = key;
-  }
-
-  async request(path, options = {}) {
-    const headers = new Headers(options.headers || {});
-    headers.set("Accept", "application/json");
-
-    if (options.body && typeof options.body === "string") {
-      headers.set("Content-Type", "application/json");
+(() => {
+  // src/lib/api/client.ts
+  var ApiClient = class {
+    baseUrl;
+    apiKey;
+    constructor(baseUrl = "", apiKey = null) {
+      this.baseUrl = baseUrl.replace(/\/+$/, "");
+      this.apiKey = apiKey;
     }
-
-    if (this.apiKey) {
-      headers.set("Authorization", `Bearer ${this.apiKey}`);
+    setApiKey(key) {
+      this.apiKey = key;
     }
-
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, { ...options, headers });
-
-    if (!response.ok) {
-      let errorDetail = `HTTP ${response.status} ${response.statusText}`;
-      try {
-        const errorJson = await response.json();
-        if (errorJson.detail) {
-          errorDetail = errorJson.detail;
-        } else if (errorJson.title) {
-          errorDetail = errorJson.title;
-        } else if (errorJson.message) {
-          errorDetail = errorJson.message;
+    async request(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("Accept", "application/json");
+      if (options.body && typeof options.body === "string") {
+        headers.set("Content-Type", "application/json");
+      }
+      if (this.apiKey) {
+        headers.set("Authorization", `Bearer ${this.apiKey}`);
+      }
+      const url = `${this.baseUrl}${path}`;
+      const response = await fetch(url, { ...options, headers });
+      if (!response.ok) {
+        let errorDetail = `HTTP ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          if (errorJson.detail) {
+            errorDetail = errorJson.detail;
+          } else if (errorJson.title) {
+            errorDetail = errorJson.title;
+          } else if (errorJson.message) {
+            errorDetail = errorJson.message;
+          }
+        } catch {
         }
+        throw new Error(errorDetail);
+      }
+      if (response.status === 204) {
+        return void 0;
+      }
+      return response.json();
+    }
+    // System & Health
+    async getHealth() {
+      return this.request("/healthz");
+    }
+    // Applications
+    async listApplications(orgName = "default") {
+      return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/apps`);
+    }
+    async getApplication(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}`
+      );
+    }
+    async listExecutors(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/executors`
+      );
+    }
+    // Workflows
+    async listWorkflows(orgName, appName, query = {}) {
+      const params = new URLSearchParams();
+      if (query.workflowIds && query.workflowIds.length > 0) {
+        for (const id of query.workflowIds) params.append("workflowIds", id);
+      }
+      if (query.workflowName && query.workflowName.length > 0) {
+        for (const name of query.workflowName) params.append("workflowName", name);
+      }
+      if (query.status && query.status.length > 0) {
+        for (const s of query.status) params.append("status", s);
+      }
+      if (query.queueName && query.queueName.length > 0) {
+        for (const q of query.queueName) params.append("queueName", q);
+      }
+      if (query.appVersion && query.appVersion.length > 0) {
+        for (const v of query.appVersion) params.append("appVersion", v);
+      }
+      if (query.limit) params.append("limit", query.limit.toString());
+      if (query.offset) params.append("offset", query.offset.toString());
+      if (query.sortDesc !== void 0) params.append("sortDesc", query.sortDesc ? "true" : "false");
+      const qs = params.toString();
+      const path = `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows${qs ? "?" + qs : ""}`;
+      return this.request(path);
+    }
+    async getWorkflow(orgName, appName, workflowId) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}`
+      );
+    }
+    async listSteps(orgName, appName, workflowId) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/steps`
+      );
+    }
+    async getWorkflowEvents(orgName, appName, workflowId) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/events`
+      );
+    }
+    async getWorkflowNotifications(orgName, appName, workflowId) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/notifications`
+      );
+    }
+    async getWorkflowStreams(orgName, appName, workflowId, key) {
+      const qs = key ? `?key=${encodeURIComponent(key)}` : "";
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/streams${qs}`
+      );
+    }
+    async cancelWorkflow(orgName, appName, workflowId) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/cancel`,
+        { method: "POST", body: "{}" }
+      );
+    }
+    async resumeWorkflow(orgName, appName, workflowId) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/resume`,
+        { method: "POST", body: "{}" }
+      );
+    }
+    async restartWorkflow(orgName, appName, workflowId) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
+        { method: "POST", body: "{}" }
+      );
+    }
+    // Queues
+    async listQueues(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/queues`
+      );
+    }
+    // Schedules
+    async listSchedules(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules`
+      );
+    }
+    async pauseSchedule(orgName, appName, scheduleName) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/pause`,
+        { method: "POST" }
+      );
+    }
+    async resumeSchedule(orgName, appName, scheduleName) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/resume`,
+        { method: "POST" }
+      );
+    }
+    async triggerSchedule(orgName, appName, scheduleName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/trigger`,
+        { method: "POST" }
+      );
+    }
+    // Alerting Rules
+    async listAlertingRules(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`
+      );
+    }
+    async createAlertingRule(orgName, appName, rule) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`,
+        {
+          method: "POST",
+          body: JSON.stringify(rule)
+        }
+      );
+    }
+    async deleteAlertingRule(orgName, appName, ruleId) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules/${encodeURIComponent(ruleId)}`,
+        { method: "DELETE" }
+      );
+    }
+    // API Keys (Tokens)
+    async listAPIKeys(orgName) {
+      return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/tokens`);
+    }
+    async createAPIKey(orgName, name, permissions = ["*"], appNames = []) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ permissions, appNames })
+        }
+      );
+    }
+    async revokeAPIKey(orgName, name) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
+        { method: "DELETE" }
+      );
+    }
+  };
+
+  // src/lib/components/StatusPill.js
+  function renderStatusPill(status) {
+    const s = (status || "UNKNOWN").toUpperCase();
+    let colorClass = "pill-neutral";
+    switch (s) {
+      case "SUCCESS":
+      case "HEALTHY":
+      case "AVAILABLE":
+        colorClass = "pill-success";
+        break;
+      case "PENDING":
+      case "ENQUEUED":
+      case "RUNNING":
+        colorClass = "pill-info";
+        break;
+      case "ERROR":
+      case "DEAD":
+      case "UNAVAILABLE":
+      case "MAX_RECOVERY_ATTEMPTS_EXCEEDED":
+        colorClass = "pill-error";
+        break;
+      case "CANCELLED":
+      case "DISCONNECTED":
+        colorClass = "pill-warning";
+        break;
+      case "DELAYED":
+        colorClass = "pill-purple";
+        break;
+    }
+    return `<span class="status-pill ${colorClass}"><span class="dot"></span>${escapeHtml(s)}</span>`;
+  }
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  // src/lib/components/JsonViewer.js
+  function renderJsonViewer(data, title = "") {
+    if (data === void 0 || data === null || data === "") {
+      return `<div class="json-viewer empty"><em>No data</em></div>`;
+    }
+    let formatted = "";
+    let raw = "";
+    if (typeof data === "string") {
+      raw = data;
+      try {
+        const parsed = JSON.parse(data);
+        formatted = syntaxHighlight(JSON.stringify(parsed, null, 2));
       } catch {
-        // Non-json response
+        formatted = `<span class="json-string">${escapeHtml2(data)}</span>`;
       }
-      throw new Error(errorDetail);
+    } else {
+      raw = JSON.stringify(data, null, 2);
+      formatted = syntaxHighlight(raw);
     }
-
-    if (response.status === 204) {
-      return undefined;
-    }
-
-    return response.json();
-  }
-
-  // System & Health
-  async getHealth() {
-    return this.request("/healthz");
-  }
-
-  // Applications
-  async listApplications(orgName = "default") {
-    return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/apps`);
-  }
-
-  async getApplication(orgName, appName) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}`
-    );
-  }
-
-  async listExecutors(orgName, appName) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/executors`
-    );
-  }
-
-  // Workflows
-  async listWorkflows(
-    orgName,
-    appName,
-    query = {}
-  ) {
-    const params = new URLSearchParams();
-    if (query.workflowIds && query.workflowIds.length > 0) {
-      for (const id of query.workflowIds) params.append("workflowIds", id);
-    }
-    if (query.workflowName && query.workflowName.length > 0) {
-      for (const name of query.workflowName) params.append("workflowName", name);
-    }
-    if (query.status && query.status.length > 0) {
-      for (const s of query.status) params.append("status", s);
-    }
-    if (query.queueName && query.queueName.length > 0) {
-      for (const q of query.queueName) params.append("queueName", q);
-    }
-    if (query.appVersion && query.appVersion.length > 0) {
-      for (const v of query.appVersion) params.append("appVersion", v);
-    }
-    if (query.limit) params.append("limit", query.limit.toString());
-    if (query.offset) params.append("offset", query.offset.toString());
-    if (query.sortDesc !== undefined) params.append("sortDesc", query.sortDesc ? "true" : "false");
-
-    const qs = params.toString();
-    const path = `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows${qs ? "?" + qs : ""}`;
-    return this.request(path);
-  }
-
-  async getWorkflow(orgName, appName, workflowId) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}`
-    );
-  }
-
-  async listSteps(orgName, appName, workflowId) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/steps`
-    );
-  }
-
-  async getWorkflowEvents(orgName, appName, workflowId) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/events`
-    );
-  }
-
-  async getWorkflowNotifications(
-    orgName,
-    appName,
-    workflowId
-  ) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/notifications`
-    );
-  }
-
-  async getWorkflowStreams(
-    orgName,
-    appName,
-    workflowId,
-    key
-  ) {
-    const qs = key ? `?key=${encodeURIComponent(key)}` : "";
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/streams${qs}`
-    );
-  }
-
-  async cancelWorkflow(orgName, appName, workflowId) {
-    await this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/cancel`,
-      { method: "POST", body: "{}" }
-    );
-  }
-
-  async resumeWorkflow(orgName, appName, workflowId) {
-    await this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/resume`,
-      { method: "POST", body: "{}" }
-    );
-  }
-
-  async restartWorkflow(orgName, appName, workflowId) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
-      { method: "POST", body: "{}" }
-    );
-  }
-
-  // Queues
-  async listQueues(orgName, appName) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/queues`
-    );
-  }
-
-  // Schedules
-  async listSchedules(orgName, appName) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules`
-    );
-  }
-
-  async pauseSchedule(orgName, appName, scheduleName) {
-    await this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/pause`,
-      { method: "POST" }
-    );
-  }
-
-  async resumeSchedule(orgName, appName, scheduleName) {
-    await this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/resume`,
-      { method: "POST" }
-    );
-  }
-
-  async triggerSchedule(
-    orgName,
-    appName,
-    scheduleName
-  ) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/trigger`,
-      { method: "POST" }
-    );
-  }
-
-  // Alerting Rules
-  async listAlertingRules(orgName, appName) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`
-    );
-  }
-
-  async createAlertingRule(
-    orgName,
-    appName,
-    rule
-  ) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`,
-      {
-        method: "POST",
-        body: JSON.stringify(rule),
-      }
-    );
-  }
-
-  async deleteAlertingRule(orgName, appName, ruleId) {
-    await this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules/${encodeURIComponent(ruleId)}`,
-      { method: "DELETE" }
-    );
-  }
-
-  // API Keys (Tokens)
-  async listAPIKeys(orgName) {
-    return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/tokens`);
-  }
-
-  async createAPIKey(
-    orgName,
-    name,
-    permissions = ["*"],
-    appNames = []
-  ) {
-    return this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
-      {
-        method: "POST",
-        body: JSON.stringify({ permissions, appNames }),
-      }
-    );
-  }
-
-  async revokeAPIKey(orgName, name) {
-    await this.request(
-      `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
-      { method: "DELETE" }
-    );
-  }
-}
-
-
-  // --- Components ---
-  // StatusPill component rendering standard status badges
-
-function renderStatusPill(status) {
-  const s = (status || "UNKNOWN").toUpperCase();
-  let colorClass = "pill-neutral";
-
-  switch (s) {
-    case "SUCCESS":
-    case "HEALTHY":
-    case "AVAILABLE":
-      colorClass = "pill-success";
-      break;
-    case "PENDING":
-    case "ENQUEUED":
-    case "RUNNING":
-      colorClass = "pill-info";
-      break;
-    case "ERROR":
-    case "DEAD":
-    case "UNAVAILABLE":
-    case "MAX_RECOVERY_ATTEMPTS_EXCEEDED":
-      colorClass = "pill-error";
-      break;
-    case "CANCELLED":
-    case "DISCONNECTED":
-      colorClass = "pill-warning";
-      break;
-    case "DELAYED":
-      colorClass = "pill-purple";
-      break;
-  }
-
-  return `<span class="status-pill ${colorClass}"><span class="dot"></span>${escapeHtml(s)}</span>`;
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-  // JsonViewer component for formatted payload inspection
-
-function renderJsonViewer(data, title = "") {
-  if (data === undefined || data === null || data === "") {
-    return `<div class="json-viewer empty"><em>No data</em></div>`;
-  }
-
-  let formatted = "";
-  let raw = "";
-
-  if (typeof data === "string") {
-    raw = data;
-    try {
-      const parsed = JSON.parse(data);
-      formatted = syntaxHighlight(JSON.stringify(parsed, null, 2));
-    } catch {
-      formatted = `<span class="json-string">${escapeHtml(data)}</span>`;
-    }
-  } else {
-    raw = JSON.stringify(data, null, 2);
-    formatted = syntaxHighlight(raw);
-  }
-
-  const id = "json-" + Math.random().toString(36).substring(2, 9);
-
-  return `
+    const id = "json-" + Math.random().toString(36).substring(2, 9);
+    return `
     <div class="json-viewer" id="${id}">
       <div class="json-header">
-        <span class="json-title">${escapeHtml(title)}</span>
+        <span class="json-title">${escapeHtml2(title)}</span>
         <button class="btn btn-xs btn-secondary copy-btn" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(raw)}')).then(() => { this.innerText = 'Copied!'; setTimeout(() => this.innerText = 'Copy', 1500); })">Copy</button>
       </div>
       <pre class="json-content"><code>${formatted}</code></pre>
     </div>
   `;
-}
-
-function syntaxHighlight(json) {
-  const escaped = escapeHtml(json);
-  return escaped.replace(
-    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\\-]?\d+)?)/g,
-    (match) => {
-      let cls = "json-number";
-      if (/^"/.test(match)) {
-        if (/:$/.test(match)) {
-          cls = "json-key";
-        } else {
-          cls = "json-string";
+  }
+  function syntaxHighlight(json) {
+    const escaped = escapeHtml2(json);
+    return escaped.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\\-]?\d+)?)/g,
+      (match) => {
+        let cls = "json-number";
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = "json-key";
+          } else {
+            cls = "json-string";
+          }
+        } else if (/true|false/.test(match)) {
+          cls = "json-boolean";
+        } else if (/null/.test(match)) {
+          cls = "json-null";
         }
-      } else if (/true|false/.test(match)) {
-        cls = "json-boolean";
-      } else if (/null/.test(match)) {
-        cls = "json-null";
+        return `<span class="${cls}">${match}</span>`;
       }
-      return `<span class="${cls}">${match}</span>`;
-    }
-  );
-}
+    );
+  }
+  function escapeHtml2(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-  // WorkflowDAG component: Interactive SVG step execution DAG for DBOS Transact workflows
-
-function renderWorkflowDAG(steps, onSelectStepCallbackName = "window.selectStep") {
-  if (!steps || steps.length === 0) {
-    return `
+  // src/lib/components/WorkflowDAG.js
+  function renderWorkflowDAG(steps, onSelectStepCallbackName = "window.selectStep") {
+    if (!steps || steps.length === 0) {
+      return `
       <div class="dag-empty">
         <svg class="dag-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 4" />
@@ -395,88 +303,72 @@ function renderWorkflowDAG(steps, onSelectStepCallbackName = "window.selectStep"
         <p>No step executions recorded for this workflow.</p>
       </div>
     `;
-  }
-
-  // Sort steps by stepId
-  const sorted = [...steps].sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
-
-  const nodeWidth = 200;
-  const nodeHeight = 64;
-  const gapX = 60;
-  const startX = 30;
-  const startY = 30;
-
-  const totalWidth = startX * 2 + sorted.length * nodeWidth + (sorted.length - 1) * gapX;
-  const totalHeight = startY * 2 + nodeHeight;
-
-  let nodesSvg = "";
-  let edgesSvg = "";
-
-  for (let i = 0; i < sorted.length; i++) {
-    const step = sorted[i];
-    const x = startX + i * (nodeWidth + gapX);
-    const y = startY;
-
-    // Determine step status & timing
-    let statusClass = "step-success";
-    let statusText = "COMPLETED";
-    let statusColor = "var(--color-success)";
-
-    if (step.error) {
-      statusClass = "step-error";
-      statusText = "ERROR";
-      statusColor = "var(--color-error)";
-    } else if (!step.completedAt && step.startedAt) {
-      statusClass = "step-running";
-      statusText = "RUNNING";
-      statusColor = "var(--color-info)";
     }
-
-    let durationText = "";
-    if (step.startedAt && step.completedAt) {
-      const start = new Date(step.startedAt).getTime();
-      const end = new Date(step.completedAt).getTime();
-      const diffMs = Math.max(0, end - start);
-      durationText = diffMs < 1000 ? `${diffMs}ms` : `${(diffMs / 1000).toFixed(2)}s`;
-    }
-
-    // Edge to next node
-    if (i < sorted.length - 1) {
-      const nextX = startX + (i + 1) * (nodeWidth + gapX);
-      const startPointX = x + nodeWidth;
-      const startPointY = y + nodeHeight / 2;
-      const endPointX = nextX;
-      const endPointY = startPointY;
-      const midX = (startPointX + endPointX) / 2;
-
-      edgesSvg += `
+    const sorted = [...steps].sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
+    const nodeWidth = 200;
+    const nodeHeight = 64;
+    const gapX = 60;
+    const startX = 30;
+    const startY = 30;
+    const totalWidth = startX * 2 + sorted.length * nodeWidth + (sorted.length - 1) * gapX;
+    const totalHeight = startY * 2 + nodeHeight;
+    let nodesSvg = "";
+    let edgesSvg = "";
+    for (let i = 0; i < sorted.length; i++) {
+      const step = sorted[i];
+      const x = startX + i * (nodeWidth + gapX);
+      const y = startY;
+      let statusClass = "step-success";
+      let statusText = "COMPLETED";
+      let statusColor = "var(--color-success)";
+      if (step.error) {
+        statusClass = "step-error";
+        statusText = "ERROR";
+        statusColor = "var(--color-error)";
+      } else if (!step.completedAt && step.startedAt) {
+        statusClass = "step-running";
+        statusText = "RUNNING";
+        statusColor = "var(--color-info)";
+      }
+      let durationText = "";
+      if (step.startedAt && step.completedAt) {
+        const start = new Date(step.startedAt).getTime();
+        const end = new Date(step.completedAt).getTime();
+        const diffMs = Math.max(0, end - start);
+        durationText = diffMs < 1e3 ? `${diffMs}ms` : `${(diffMs / 1e3).toFixed(2)}s`;
+      }
+      if (i < sorted.length - 1) {
+        const nextX = startX + (i + 1) * (nodeWidth + gapX);
+        const startPointX = x + nodeWidth;
+        const startPointY = y + nodeHeight / 2;
+        const endPointX = nextX;
+        const endPointY = startPointY;
+        const midX = (startPointX + endPointX) / 2;
+        edgesSvg += `
         <path d="M ${startPointX} ${startPointY} C ${midX} ${startPointY}, ${midX} ${endPointY}, ${endPointX} ${endPointY}"
               class="dag-edge" marker-end="url(#arrowhead)" />
       `;
-    }
-
-    const stepJson = encodeURIComponent(JSON.stringify(step));
-
-    nodesSvg += `
+      }
+      const stepJson = encodeURIComponent(JSON.stringify(step));
+      nodesSvg += `
       <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})" onclick="${onSelectStepCallbackName}('${stepJson}')" cursor="pointer">
         <rect width="${nodeWidth}" height="${nodeHeight}" rx="8" class="node-bg" />
         <rect width="4" height="${nodeHeight}" rx="2" class="node-stripe" fill="${statusColor}" />
 
         <text x="14" y="24" class="node-step-id">#${step.stepId}</text>
         <text x="36" y="24" class="node-name" width="${nodeWidth - 45}">
-          ${truncate(escapeHtml(step.stepName), 18)}
+          ${truncate(escapeHtml3(step.stepName), 18)}
         </text>
 
         <text x="14" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
         ${durationText ? `<text x="${nodeWidth - 12}" y="48" class="node-duration" text-anchor="end">${durationText}</text>` : ""}
 
         ${step.childWorkflowId ? `<rect x="${nodeWidth - 24}" y="8" width="16" height="16" rx="4" class="child-wf-badge" fill="var(--color-purple)" />
-        <text x="${nodeWidth - 16}" y="20" class="child-wf-icon" text-anchor="middle" fill="#fff" font-size="10">↳</text>` : ""}
+        <text x="${nodeWidth - 16}" y="20" class="child-wf-icon" text-anchor="middle" fill="#fff" font-size="10">\u21B3</text>` : ""}
       </g>
     `;
-  }
-
-  return `
+    }
+    return `
     <div class="dag-container">
       <svg class="dag-canvas" viewBox="0 0 ${Math.max(totalWidth, 600)} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -489,108 +381,80 @@ function renderWorkflowDAG(steps, onSelectStepCallbackName = "window.selectStep"
       </svg>
     </div>
   `;
-}
-
-function truncate(str, maxLen) {
-  if (!str) return "";
-  return str.length > maxLen ? str.substring(0, maxLen - 1) + "…" : str;
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-
-  // --- Application ---
-  // Relay Dashboard SPA Application
-
-
-
-
-
-
-class DashboardApp {
-  constructor() {
-    this.client = new ApiClient();
-    this.currentRoute = "fleet";
-    this.orgName = "default";
-    this.appName = "";
-    this.apps = [];
-    this.selectedWorkflowId = null;
-    this.selectedStep = null;
-    this.theme = localStorage.getItem("relay-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-
-    // Expose global callback for SVG DAG node clicks
-    window.selectStep = (encodedStepJson) => {
-      try {
-        const step = JSON.parse(decodeURIComponent(encodedStepJson));
-        this.selectedStep = step;
-        this.renderStepModal(step);
-      } catch (err) {
-        console.error("Failed to parse step:", err);
-      }
-    };
+  }
+  function truncate(str, maxLen) {
+    if (!str) return "";
+    return str.length > maxLen ? str.substring(0, maxLen - 1) + "\u2026" : str;
+  }
+  function escapeHtml3(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
 
-  async init() {
-    this.applyTheme(this.theme);
-    window.addEventListener("hashchange", () => this.handleRouting());
-
-    await this.loadApplications();
-    this.handleRouting();
-  }
-
-  applyTheme(theme) {
-    this.theme = theme;
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("relay-theme", theme);
-  }
-
-  toggleTheme() {
-    this.applyTheme(this.theme === "dark" ? "light" : "dark");
-  }
-
-  async loadApplications() {
-    try {
-      this.apps = await this.client.listApplications(this.orgName);
-      if (this.apps && this.apps.length > 0 && !this.appName) {
-        this.appName = this.apps[0].name;
-      }
-    } catch (err) {
-      console.warn("Listing applications:", err);
+  // src/app.js
+  var DashboardApp = class {
+    constructor() {
+      this.client = new ApiClient();
+      this.currentRoute = "fleet";
+      this.orgName = "default";
+      this.appName = "";
       this.apps = [];
+      this.selectedWorkflowId = null;
+      this.selectedStep = null;
+      this.theme = localStorage.getItem("relay-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      window.selectStep = (encodedStepJson) => {
+        try {
+          const step = JSON.parse(decodeURIComponent(encodedStepJson));
+          this.selectedStep = step;
+          this.renderStepModal(step);
+        } catch (err) {
+          console.error("Failed to parse step:", err);
+        }
+      };
     }
-  }
-
-  handleRouting() {
-    const hash = window.location.hash.replace(/^#\/?/, "") || "fleet";
-    const parts = hash.split("/");
-    const route = parts[0];
-
-    if (route === "workflow" && parts[1]) {
-      this.currentRoute = "workflow-detail";
-      this.selectedWorkflowId = parts[1];
-    } else {
-      this.currentRoute = route;
+    async init() {
+      this.applyTheme(this.theme);
+      window.addEventListener("hashchange", () => this.handleRouting());
+      await this.loadApplications();
+      this.handleRouting();
     }
-
-    this.render();
-  }
-
-  navigate(route) {
-    window.location.hash = "#/" + route;
-  }
-
-  render() {
-    const appEl = document.getElementById("app");
-    if (!appEl) return;
-
-    appEl.innerHTML = `
+    applyTheme(theme) {
+      this.theme = theme;
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("relay-theme", theme);
+    }
+    toggleTheme() {
+      this.applyTheme(this.theme === "dark" ? "light" : "dark");
+    }
+    async loadApplications() {
+      try {
+        this.apps = await this.client.listApplications(this.orgName);
+        if (this.apps && this.apps.length > 0 && !this.appName) {
+          this.appName = this.apps[0].name;
+        }
+      } catch (err) {
+        console.warn("Listing applications:", err);
+        this.apps = [];
+      }
+    }
+    handleRouting() {
+      const hash = window.location.hash.replace(/^#\/?/, "") || "fleet";
+      const parts = hash.split("/");
+      const route = parts[0];
+      if (route === "workflow" && parts[1]) {
+        this.currentRoute = "workflow-detail";
+        this.selectedWorkflowId = parts[1];
+      } else {
+        this.currentRoute = route;
+      }
+      this.render();
+    }
+    navigate(route) {
+      window.location.hash = "#/" + route;
+    }
+    render() {
+      const appEl = document.getElementById("app");
+      if (!appEl) return;
+      appEl.innerHTML = `
       ${this.renderSidebar()}
       <div class="main-wrapper">
         ${this.renderTopHeader()}
@@ -600,21 +464,18 @@ class DashboardApp {
       </div>
       <div id="modal-root"></div>
     `;
-
-    this.renderContentView();
-  }
-
-  renderSidebar() {
-    const navItems = [
-      { id: "fleet", label: "Fleet & Apps", icon: `<path d="M4 6h16M4 12h16M4 18h16"/>` },
-      { id: "workflows", label: "Workflows", icon: `<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>` },
-      { id: "queues", label: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
-      { id: "schedules", label: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
-      { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
-      { id: "keys", label: "API Keys", icon: `<path d="M21 2l-2 2m-1.5 1.5L10 13l-4 4-2-2-4 4 3 3 7-7 7.5-7.5z"/>` },
-    ];
-
-    return `
+      this.renderContentView();
+    }
+    renderSidebar() {
+      const navItems = [
+        { id: "fleet", label: "Fleet & Apps", icon: `<path d="M4 6h16M4 12h16M4 18h16"/>` },
+        { id: "workflows", label: "Workflows", icon: `<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>` },
+        { id: "queues", label: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
+        { id: "schedules", label: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
+        { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
+        { id: "keys", label: "API Keys", icon: `<path d="M21 2l-2 2m-1.5 1.5L10 13l-4 4-2-2-4 4 3 3 7-7 7.5-7.5z"/>` }
+      ];
+      return `
       <aside class="sidebar">
         <div class="sidebar-header">
           <a href="#/fleet" class="brand-logo">
@@ -626,8 +487,8 @@ class DashboardApp {
           <span class="brand-badge">Dashboard</span>
         </div>
         <nav class="sidebar-nav">
-          ${navItems.map(item => `
-            <a class="nav-item ${this.currentRoute === item.id || (this.currentRoute === 'workflow-detail' && item.id === 'workflows') ? 'active' : ''}"
+          ${navItems.map((item) => `
+            <a class="nav-item ${this.currentRoute === item.id || this.currentRoute === "workflow-detail" && item.id === "workflows" ? "active" : ""}"
                onclick="window.app.navigate('${item.id}')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 ${item.icon}
@@ -639,15 +500,14 @@ class DashboardApp {
         <div class="sidebar-footer">
           <span>Relay Control Plane</span>
           <button class="btn btn-xs btn-secondary" onclick="window.app.toggleTheme()">
-            ${this.theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+            ${this.theme === "dark" ? "\u2600\uFE0F Light" : "\u{1F319} Dark"}
           </button>
         </div>
       </aside>
     `;
-  }
-
-  renderTopHeader() {
-    return `
+    }
+    renderTopHeader() {
+      return `
       <header class="top-header">
         <div class="header-left">
           <h1 class="header-title">${this.getRouteTitle()}</h1>
@@ -656,80 +516,80 @@ class DashboardApp {
           <div class="selector-group">
             <label class="form-label" style="margin:0;">App:</label>
             <select class="select-sm" onchange="window.app.onAppChange(this.value)">
-              ${this.apps.map(a => `<option value="${escapeHtml(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
+              ${this.apps.map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
               ${this.apps.length === 0 ? `<option value="">No applications</option>` : ""}
             </select>
           </div>
-          <button class="btn btn-xs btn-secondary" onclick="window.app.renderContentView()">↻ Refresh</button>
+          <button class="btn btn-xs btn-secondary" onclick="window.app.renderContentView()">\u21BB Refresh</button>
         </div>
       </header>
     `;
-  }
-
-  getRouteTitle() {
-    switch (this.currentRoute) {
-      case "fleet": return "Fleet & Applications";
-      case "workflows": return "Workflows";
-      case "workflow-detail": return `Workflow: ${this.selectedWorkflowId || ""}`;
-      case "queues": return "Queues";
-      case "schedules": return "Schedules";
-      case "alerting": return "Alerting Rules";
-      case "keys": return "API Keys";
-      default: return "Relay Dashboard";
     }
-  }
-
-  onAppChange(newAppName) {
-    this.appName = newAppName;
-    this.renderContentView();
-  }
-
-  async renderContentView() {
-    const el = document.getElementById("content-view");
-    if (!el) return;
-
-    switch (this.currentRoute) {
-      case "fleet":
-        await this.renderFleetScreen(el);
-        break;
-      case "workflows":
-        await this.renderWorkflowsScreen(el);
-        break;
-      case "workflow-detail":
-        await this.renderWorkflowDetailScreen(el);
-        break;
-      case "queues":
-        await this.renderQueuesScreen(el);
-        break;
-      case "schedules":
-        await this.renderSchedulesScreen(el);
-        break;
-      case "alerting":
-        await this.renderAlertingScreen(el);
-        break;
-      case "keys":
-        await this.renderKeysScreen(el);
-        break;
-      default:
-        el.innerHTML = `<div class="card"><div class="card-body">Select a view from the sidebar.</div></div>`;
-    }
-  }
-
-  // --- SCREEN 1: FLEET & APPLICATIONS ---
-  async renderFleetScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading fleet information...</div>`;
-
-    try {
-      await this.loadApplications();
-      let executors = [];
-      if (this.appName) {
-        executors = await this.client.listExecutors(this.orgName, this.appName);
+    getRouteTitle() {
+      switch (this.currentRoute) {
+        case "fleet":
+          return "Fleet & Applications";
+        case "workflows":
+          return "Workflows";
+        case "workflow-detail":
+          return `Workflow: ${this.selectedWorkflowId || ""}`;
+        case "queues":
+          return "Queues";
+        case "schedules":
+          return "Schedules";
+        case "alerting":
+          return "Alerting Rules";
+        case "keys":
+          return "API Keys";
+        default:
+          return "Relay Dashboard";
       }
-
-      const activeExecutors = executors.filter(e => e.status === "HEALTHY").length;
-      const disconnectedExecutors = executors.filter(e => e.status === "DISCONNECTED").length;
-
-      el.innerHTML = `
+    }
+    onAppChange(newAppName) {
+      this.appName = newAppName;
+      this.renderContentView();
+    }
+    async renderContentView() {
+      const el = document.getElementById("content-view");
+      if (!el) return;
+      switch (this.currentRoute) {
+        case "fleet":
+          await this.renderFleetScreen(el);
+          break;
+        case "workflows":
+          await this.renderWorkflowsScreen(el);
+          break;
+        case "workflow-detail":
+          await this.renderWorkflowDetailScreen(el);
+          break;
+        case "queues":
+          await this.renderQueuesScreen(el);
+          break;
+        case "schedules":
+          await this.renderSchedulesScreen(el);
+          break;
+        case "alerting":
+          await this.renderAlertingScreen(el);
+          break;
+        case "keys":
+          await this.renderKeysScreen(el);
+          break;
+        default:
+          el.innerHTML = `<div class="card"><div class="card-body">Select a view from the sidebar.</div></div>`;
+      }
+    }
+    // --- SCREEN 1: FLEET & APPLICATIONS ---
+    async renderFleetScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading fleet information...</div>`;
+      try {
+        await this.loadApplications();
+        let executors = [];
+        if (this.appName) {
+          executors = await this.client.listExecutors(this.orgName, this.appName);
+        }
+        const activeExecutors = executors.filter((e) => e.status === "HEALTHY").length;
+        const disconnectedExecutors = executors.filter((e) => e.status === "DISCONNECTED").length;
+        el.innerHTML = `
         <div class="stat-grid">
           <div class="stat-card">
             <span class="stat-label">Applications</span>
@@ -747,7 +607,7 @@ class DashboardApp {
 
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Connected Executors (${this.appName || 'No app'})</span>
+            <span class="card-title">Connected Executors (${this.appName || "No app"})</span>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -762,13 +622,13 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${executors.length > 0 ? executors.map(e => `
+                ${executors.length > 0 ? executors.map((e) => `
                   <tr>
-                    <td><code>${escapeHtml(e.executorId)}</code></td>
+                    <td><code>${escapeHtml4(e.executorId)}</code></td>
                     <td>${renderStatusPill(e.status)}</td>
-                    <td>${escapeHtml(e.hostname || "localhost")}</td>
-                    <td><span class="badge">${escapeHtml(e.appVersion || "v1.0.0")}</span></td>
-                    <td>${escapeHtml(e.language || "unknown")}</td>
+                    <td>${escapeHtml4(e.hostname || "localhost")}</td>
+                    <td><span class="badge">${escapeHtml4(e.appVersion || "v1.0.0")}</span></td>
+                    <td>${escapeHtml4(e.language || "unknown")}</td>
                     <td>${formatTimestamp(e.updatedAt)}</td>
                   </tr>
                 `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No executors registered for this application.</td></tr>`}
@@ -792,9 +652,9 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${this.apps.map(a => `
-                  <tr class="clickable" onclick="window.app.onAppChange('${escapeHtml(a.name)}')">
-                    <td><strong>${escapeHtml(a.name)}</strong></td>
+                ${this.apps.map((a) => `
+                  <tr class="clickable" onclick="window.app.onAppChange('${escapeHtml4(a.name)}')">
+                    <td><strong>${escapeHtml4(a.name)}</strong></td>
                     <td>${renderStatusPill(a.status)}</td>
                     <td>${a.executorTimeoutSecs || 60}s</td>
                     <td>${a.privateMode ? "Enabled" : "Disabled"}</td>
@@ -805,19 +665,16 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load fleet: ${escapeHtml(err.message)}</div></div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load fleet: ${escapeHtml4(err.message)}</div></div>`;
+      }
     }
-  }
-
-  // --- SCREEN 2: WORKFLOW SEARCH & LIST ---
-  async renderWorkflowsScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading workflows...</div>`;
-
-    try {
-      const workflows = await this.client.listWorkflows(this.orgName, this.appName, { limit: 50 });
-
-      el.innerHTML = `
+    // --- SCREEN 2: WORKFLOW SEARCH & LIST ---
+    async renderWorkflowsScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading workflows...</div>`;
+      try {
+        const workflows = await this.client.listWorkflows(this.orgName, this.appName, { limit: 50 });
+        el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
             <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." oninput="window.app.filterWorkflowsTable(this.value)">
@@ -850,13 +707,13 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${workflows.length > 0 ? workflows.map(wf => `
+                ${workflows.length > 0 ? workflows.map((wf) => `
                   <tr class="clickable" onclick="window.app.navigate('workflow/${encodeURIComponent(wf.workflowId)}')">
-                    <td><code>${escapeHtml(wf.workflowId)}</code></td>
+                    <td><code>${escapeHtml4(wf.workflowId)}</code></td>
                     <td>${renderStatusPill(wf.status)}</td>
-                    <td><strong>${escapeHtml(wf.workflowName || "unnamed")}</strong></td>
-                    <td>${escapeHtml(wf.queueName || "default")}</td>
-                    <td>${escapeHtml(wf.appVersion || "-")}</td>
+                    <td><strong>${escapeHtml4(wf.workflowName || "unnamed")}</strong></td>
+                    <td>${escapeHtml4(wf.queueName || "default")}</td>
+                    <td>${escapeHtml4(wf.appVersion || "-")}</td>
                     <td>${formatTimestamp(wf.createdAt)}</td>
                     <td>${calculateDuration(wf.createdAt, wf.completedAt)}</td>
                   </tr>
@@ -866,60 +723,55 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load workflows: ${escapeHtml(err.message)}</div></div>`;
-    }
-  }
-
-  filterWorkflowsTable(query) {
-    const q = query.toLowerCase();
-    const rows = document.querySelectorAll("#workflows-table tbody tr");
-    rows.forEach(r => {
-      const text = r.innerText.toLowerCase();
-      r.style.display = text.includes(q) ? "" : "none";
-    });
-  }
-
-  filterWorkflowsStatus(status) {
-    const rows = document.querySelectorAll("#workflows-table tbody tr");
-    rows.forEach(r => {
-      if (!status) {
-        r.style.display = "";
-      } else {
-        const text = r.innerText.toUpperCase();
-        r.style.display = text.includes(status) ? "" : "none";
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load workflows: ${escapeHtml4(err.message)}</div></div>`;
       }
-    });
-  }
-
-  // --- SCREEN 3: WORKFLOW DETAIL & STEP DAG ---
-  async renderWorkflowDetailScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading workflow details...</div>`;
-
-    try {
-      const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
-      const steps = await this.client.listSteps(this.orgName, this.appName, this.selectedWorkflowId);
-
-      el.innerHTML = `
+    }
+    filterWorkflowsTable(query) {
+      const q = query.toLowerCase();
+      const rows = document.querySelectorAll("#workflows-table tbody tr");
+      rows.forEach((r) => {
+        const text = r.innerText.toLowerCase();
+        r.style.display = text.includes(q) ? "" : "none";
+      });
+    }
+    filterWorkflowsStatus(status) {
+      const rows = document.querySelectorAll("#workflows-table tbody tr");
+      rows.forEach((r) => {
+        if (!status) {
+          r.style.display = "";
+        } else {
+          const text = r.innerText.toUpperCase();
+          r.style.display = text.includes(status) ? "" : "none";
+        }
+      });
+    }
+    // --- SCREEN 3: WORKFLOW DETAIL & STEP DAG ---
+    async renderWorkflowDetailScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading workflow details...</div>`;
+      try {
+        const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
+        const steps = await this.client.listSteps(this.orgName, this.appName, this.selectedWorkflowId);
+        el.innerHTML = `
         <div style="margin-bottom: 16px;">
-          <a class="btn btn-xs btn-secondary" onclick="window.app.navigate('workflows')">← Back to workflows</a>
+          <a class="btn btn-xs btn-secondary" onclick="window.app.navigate('workflows')">\u2190 Back to workflows</a>
         </div>
 
         <div class="card">
           <div class="card-header">
             <div style="display:flex; align-items:center; gap:12px;">
-              <span class="card-title">Workflow: <code>${escapeHtml(wf.workflowId)}</code></span>
+              <span class="card-title">Workflow: <code>${escapeHtml4(wf.workflowId)}</code></span>
               ${renderStatusPill(wf.status)}
             </div>
             <div style="display:flex; gap:8px;">
               ${wf.status === "PENDING" || wf.status === "ENQUEUED" ? `
-                <button class="btn btn-sm btn-danger" onclick="window.app.cancelWorkflow('${escapeHtml(wf.workflowId)}')">Cancel</button>
+                <button class="btn btn-sm btn-danger" onclick="window.app.cancelWorkflow('${escapeHtml4(wf.workflowId)}')">Cancel</button>
               ` : ""}
               ${wf.status === "CANCELLED" ? `
-                <button class="btn btn-sm btn-primary" onclick="window.app.resumeWorkflow('${escapeHtml(wf.workflowId)}')">Resume</button>
+                <button class="btn btn-sm btn-primary" onclick="window.app.resumeWorkflow('${escapeHtml4(wf.workflowId)}')">Resume</button>
               ` : ""}
               ${wf.status === "ERROR" ? `
-                <button class="btn btn-sm btn-primary" onclick="window.app.restartWorkflow('${escapeHtml(wf.workflowId)}')">Restart</button>
+                <button class="btn btn-sm btn-primary" onclick="window.app.restartWorkflow('${escapeHtml4(wf.workflowId)}')">Restart</button>
               ` : ""}
             </div>
           </div>
@@ -927,11 +779,11 @@ class DashboardApp {
             <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0;">
               <div>
                 <span class="stat-label">Workflow Name</span>
-                <div><strong>${escapeHtml(wf.workflowName || "unnamed")}</strong></div>
+                <div><strong>${escapeHtml4(wf.workflowName || "unnamed")}</strong></div>
               </div>
               <div>
                 <span class="stat-label">Queue</span>
-                <div>${escapeHtml(wf.queueName || "default")}</div>
+                <div>${escapeHtml4(wf.queueName || "default")}</div>
               </div>
               <div>
                 <span class="stat-label">Created At</span>
@@ -975,22 +827,19 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load workflow: ${escapeHtml(err.message)}</div></div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load workflow: ${escapeHtml4(err.message)}</div></div>`;
+      }
     }
-  }
-
-  async switchWfTab(tab) {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    const btn = document.getElementById(`tab-btn-${tab}`);
-    if (btn) btn.classList.add("active");
-
-    const content = document.getElementById("wf-tab-content");
-    if (!content) return;
-
-    if (tab === "io") {
-      const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
-      content.innerHTML = `
+    async switchWfTab(tab) {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      const btn = document.getElementById(`tab-btn-${tab}`);
+      if (btn) btn.classList.add("active");
+      const content = document.getElementById("wf-tab-content");
+      if (!content) return;
+      if (tab === "io") {
+        const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
+        content.innerHTML = `
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
             <h4 style="margin-bottom:8px; font-size:13px;">Workflow Input</h4>
@@ -1002,30 +851,30 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } else if (tab === "events") {
-      content.innerHTML = `<div class="loading-spinner">Loading events...</div>`;
-      const events = await this.client.getWorkflowEvents(this.orgName, this.appName, this.selectedWorkflowId);
-      content.innerHTML = `
+      } else if (tab === "events") {
+        content.innerHTML = `<div class="loading-spinner">Loading events...</div>`;
+        const events = await this.client.getWorkflowEvents(this.orgName, this.appName, this.selectedWorkflowId);
+        content.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Event Key</th><th>Value</th></tr></thead>
           <tbody>
-            ${events.length > 0 ? events.map(e => `
-              <tr><td><code>${escapeHtml(e.key)}</code></td><td>${renderJsonViewer(e.value)}</td></tr>
+            ${events.length > 0 ? events.map((e) => `
+              <tr><td><code>${escapeHtml4(e.key)}</code></td><td>${renderJsonViewer(e.value)}</td></tr>
             `).join("") : `<tr><td colspan="2" style="text-align:center; color:var(--text-tertiary);">No events recorded.</td></tr>`}
           </tbody>
         </table>
       `;
-    } else if (tab === "notifications") {
-      content.innerHTML = `<div class="loading-spinner">Loading notifications...</div>`;
-      const notifs = await this.client.getWorkflowNotifications(this.orgName, this.appName, this.selectedWorkflowId);
-      content.innerHTML = `
+      } else if (tab === "notifications") {
+        content.innerHTML = `<div class="loading-spinner">Loading notifications...</div>`;
+        const notifs = await this.client.getWorkflowNotifications(this.orgName, this.appName, this.selectedWorkflowId);
+        content.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Topic</th><th>Message</th><th>Consumed</th><th>Time</th></tr></thead>
           <tbody>
-            ${notifs.length > 0 ? notifs.map(n => `
+            ${notifs.length > 0 ? notifs.map((n) => `
               <tr>
-                <td><code>${escapeHtml(n.topic || "-")}</code></td>
-                <td>${escapeHtml(n.message)}</td>
+                <td><code>${escapeHtml4(n.topic || "-")}</code></td>
+                <td>${escapeHtml4(n.message)}</td>
                 <td>${n.consumed ? "Yes" : "No"}</td>
                 <td>${formatTimestamp(n.createdAt)}</td>
               </tr>
@@ -1033,48 +882,43 @@ class DashboardApp {
           </tbody>
         </table>
       `;
+      }
     }
-  }
-
-  async cancelWorkflow(id) {
-    if (!confirm("Are you sure you want to cancel this workflow?")) return;
-    try {
-      await this.client.cancelWorkflow(this.orgName, this.appName, id);
-      this.renderWorkflowDetailScreen(document.getElementById("content-view"));
-    } catch (err) {
-      alert("Failed to cancel: " + err.message);
+    async cancelWorkflow(id) {
+      if (!confirm("Are you sure you want to cancel this workflow?")) return;
+      try {
+        await this.client.cancelWorkflow(this.orgName, this.appName, id);
+        this.renderWorkflowDetailScreen(document.getElementById("content-view"));
+      } catch (err) {
+        alert("Failed to cancel: " + err.message);
+      }
     }
-  }
-
-  async resumeWorkflow(id) {
-    try {
-      await this.client.resumeWorkflow(this.orgName, this.appName, id);
-      this.renderWorkflowDetailScreen(document.getElementById("content-view"));
-    } catch (err) {
-      alert("Failed to resume: " + err.message);
+    async resumeWorkflow(id) {
+      try {
+        await this.client.resumeWorkflow(this.orgName, this.appName, id);
+        this.renderWorkflowDetailScreen(document.getElementById("content-view"));
+      } catch (err) {
+        alert("Failed to resume: " + err.message);
+      }
     }
-  }
-
-  async restartWorkflow(id) {
-    try {
-      const res = await this.client.restartWorkflow(this.orgName, this.appName, id);
-      alert(`Restarted workflow! New ID: ${res.workflowId}`);
-      this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
-    } catch (err) {
-      alert("Failed to restart: " + err.message);
+    async restartWorkflow(id) {
+      try {
+        const res = await this.client.restartWorkflow(this.orgName, this.appName, id);
+        alert(`Restarted workflow! New ID: ${res.workflowId}`);
+        this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
+      } catch (err) {
+        alert("Failed to restart: " + err.message);
+      }
     }
-  }
-
-  renderStepModal(step) {
-    const root = document.getElementById("modal-root");
-    if (!root) return;
-
-    root.innerHTML = `
+    renderStepModal(step) {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      root.innerHTML = `
       <div class="modal-overlay" onclick="if(event.target === this) window.app.closeModal()">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span>Step #${step.stepId}: ${escapeHtml(step.stepName)}</span>
-            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">✕</button>
+            <span>Step #${step.stepId}: ${escapeHtml4(step.stepName)}</span>
+            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">\u2715</button>
           </div>
           <div class="modal-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1093,7 +937,7 @@ class DashboardApp {
                 <span class="stat-label">Child Workflow</span>
                 <div>
                   <a class="btn btn-xs btn-primary" onclick="window.app.closeModal(); window.app.navigate('workflow/${encodeURIComponent(step.childWorkflowId)}')">
-                    View Child Workflow: ${escapeHtml(step.childWorkflowId)}
+                    View Child Workflow: ${escapeHtml4(step.childWorkflowId)}
                   </a>
                 </div>
               </div>
@@ -1115,24 +959,20 @@ class DashboardApp {
         </div>
       </div>
     `;
-  }
-
-  closeModal() {
-    const root = document.getElementById("modal-root");
-    if (root) root.innerHTML = "";
-  }
-
-  // --- SCREEN 4: QUEUES ---
-  async renderQueuesScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading queues...</div>`;
-
-    try {
-      const queues = await this.client.listQueues(this.orgName, this.appName);
-
-      el.innerHTML = `
+    }
+    closeModal() {
+      const root = document.getElementById("modal-root");
+      if (root) root.innerHTML = "";
+    }
+    // --- SCREEN 4: QUEUES ---
+    async renderQueuesScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading queues...</div>`;
+      try {
+        const queues = await this.client.listQueues(this.orgName, this.appName);
+        el.innerHTML = `
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Queues (${this.appName || 'No app'})</span>
+            <span class="card-title">Queues (${this.appName || "No app"})</span>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -1147,9 +987,9 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${queues.length > 0 ? queues.map(q => `
+                ${queues.length > 0 ? queues.map((q) => `
                   <tr>
-                    <td><strong>${escapeHtml(q.name)}</strong></td>
+                    <td><strong>${escapeHtml4(q.name)}</strong></td>
                     <td>${q.concurrency !== null ? q.concurrency : "Unlimited"}</td>
                     <td>${q.workerConcurrency !== null ? q.workerConcurrency : "-"}</td>
                     <td>${q.rateLimitMax ? `${q.rateLimitMax} / ${q.rateLimitPeriodSecs}s` : "None"}</td>
@@ -1162,22 +1002,19 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load queues: ${escapeHtml(err.message)}</div></div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load queues: ${escapeHtml4(err.message)}</div></div>`;
+      }
     }
-  }
-
-  // --- SCREEN 5: SCHEDULES ---
-  async renderSchedulesScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading schedules...</div>`;
-
-    try {
-      const schedules = await this.client.listSchedules(this.orgName, this.appName);
-
-      el.innerHTML = `
+    // --- SCREEN 5: SCHEDULES ---
+    async renderSchedulesScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading schedules...</div>`;
+      try {
+        const schedules = await this.client.listSchedules(this.orgName, this.appName);
+        el.innerHTML = `
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Scheduled Jobs (${this.appName || 'No app'})</span>
+            <span class="card-title">Scheduled Jobs (${this.appName || "No app"})</span>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -1192,21 +1029,21 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${schedules.length > 0 ? schedules.map(s => `
+                ${schedules.length > 0 ? schedules.map((s) => `
                   <tr>
-                    <td><strong>${escapeHtml(s.scheduleName)}</strong></td>
-                    <td>${escapeHtml(s.workflowName)}</td>
-                    <td><code>${escapeHtml(s.cronExpression)}</code></td>
+                    <td><strong>${escapeHtml4(s.scheduleName)}</strong></td>
+                    <td>${escapeHtml4(s.workflowName)}</td>
+                    <td><code>${escapeHtml4(s.cronExpression)}</code></td>
                     <td>${renderStatusPill(s.status)}</td>
                     <td>${formatTimestamp(s.lastFiredAt)}</td>
                     <td>
                       <div style="display:flex; gap:4px;">
                         ${s.status === "ACTIVE" ? `
-                          <button class="btn btn-xs btn-secondary" onclick="window.app.pauseSchedule('${escapeHtml(s.scheduleName)}')">Pause</button>
+                          <button class="btn btn-xs btn-secondary" onclick="window.app.pauseSchedule('${escapeHtml4(s.scheduleName)}')">Pause</button>
                         ` : `
-                          <button class="btn btn-xs btn-secondary" onclick="window.app.resumeSchedule('${escapeHtml(s.scheduleName)}')">Resume</button>
+                          <button class="btn btn-xs btn-secondary" onclick="window.app.resumeSchedule('${escapeHtml4(s.scheduleName)}')">Resume</button>
                         `}
-                        <button class="btn btn-xs btn-primary" onclick="window.app.triggerSchedule('${escapeHtml(s.scheduleName)}')">Trigger Now</button>
+                        <button class="btn btn-xs btn-primary" onclick="window.app.triggerSchedule('${escapeHtml4(s.scheduleName)}')">Trigger Now</button>
                       </div>
                     </td>
                   </tr>
@@ -1216,47 +1053,41 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load schedules: ${escapeHtml(err.message)}</div></div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load schedules: ${escapeHtml4(err.message)}</div></div>`;
+      }
     }
-  }
-
-  async pauseSchedule(name) {
-    try {
-      await this.client.pauseSchedule(this.orgName, this.appName, name);
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to pause schedule: " + err.message);
+    async pauseSchedule(name) {
+      try {
+        await this.client.pauseSchedule(this.orgName, this.appName, name);
+        this.renderContentView();
+      } catch (err) {
+        alert("Failed to pause schedule: " + err.message);
+      }
     }
-  }
-
-  async resumeSchedule(name) {
-    try {
-      await this.client.resumeSchedule(this.orgName, this.appName, name);
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to resume schedule: " + err.message);
+    async resumeSchedule(name) {
+      try {
+        await this.client.resumeSchedule(this.orgName, this.appName, name);
+        this.renderContentView();
+      } catch (err) {
+        alert("Failed to resume schedule: " + err.message);
+      }
     }
-  }
-
-  async triggerSchedule(name) {
-    try {
-      const res = await this.client.triggerSchedule(this.orgName, this.appName, name);
-      alert(`Triggered schedule! Workflow ID: ${res.workflowId}`);
-      this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
-    } catch (err) {
-      alert("Failed to trigger schedule: " + err.message);
+    async triggerSchedule(name) {
+      try {
+        const res = await this.client.triggerSchedule(this.orgName, this.appName, name);
+        alert(`Triggered schedule! Workflow ID: ${res.workflowId}`);
+        this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
+      } catch (err) {
+        alert("Failed to trigger schedule: " + err.message);
+      }
     }
-  }
-
-  // --- SCREEN 6: ALERTING RULES ---
-  async renderAlertingScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading alerting rules...</div>`;
-
-    try {
-      const rules = await this.client.listAlertingRules(this.orgName, this.appName);
-
-      el.innerHTML = `
+    // --- SCREEN 6: ALERTING RULES ---
+    async renderAlertingScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading alerting rules...</div>`;
+      try {
+        const rules = await this.client.listAlertingRules(this.orgName, this.appName);
+        el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
             <span class="text-secondary" style="font-size:12px;">Active Alert Rules</span>
@@ -1280,15 +1111,15 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${rules.length > 0 ? rules.map(r => `
+                ${rules.length > 0 ? rules.map((r) => `
                   <tr>
-                    <td><code>${escapeHtml(r.id)}</code></td>
-                    <td><strong>${escapeHtml(r.ruleType)}</strong></td>
+                    <td><code>${escapeHtml4(r.id)}</code></td>
+                    <td><strong>${escapeHtml4(r.ruleType)}</strong></td>
                     <td>${r.minIntervalSecs || 0}s</td>
-                    <td><code>${escapeHtml(JSON.stringify(r.ruleMetadata || {}))}</code></td>
+                    <td><code>${escapeHtml4(JSON.stringify(r.ruleMetadata || {}))}</code></td>
                     <td>${formatTimestamp(r.lastFiredAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" onclick="window.app.deleteAlertRule('${escapeHtml(r.id)}')">Delete</button>
+                      <button class="btn btn-xs btn-danger" onclick="window.app.deleteAlertRule('${escapeHtml4(r.id)}')">Delete</button>
                     </td>
                   </tr>
                 `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No alerting rules configured.</td></tr>`}
@@ -1297,21 +1128,19 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load alert rules: ${escapeHtml(err.message)}</div></div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load alert rules: ${escapeHtml4(err.message)}</div></div>`;
+      }
     }
-  }
-
-  openCreateAlertModal() {
-    const root = document.getElementById("modal-root");
-    if (!root) return;
-
-    root.innerHTML = `
+    openCreateAlertModal() {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      root.innerHTML = `
       <div class="modal-overlay" onclick="if(event.target === this) window.app.closeModal()">
         <div class="modal-dialog">
           <div class="modal-header">
             <span>Create Alert Rule</span>
-            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">✕</button>
+            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">\u2715</button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1338,50 +1167,44 @@ class DashboardApp {
         </div>
       </div>
     `;
-  }
-
-  async submitCreateAlert() {
-    const ruleType = document.getElementById("new-rule-type").value;
-    const minIntervalSecs = parseInt(document.getElementById("new-rule-interval").value, 10) || 0;
-    let ruleMetadata = {};
-    try {
-      ruleMetadata = JSON.parse(document.getElementById("new-rule-meta").value);
-    } catch {
-      alert("Invalid JSON in rule metadata");
-      return;
     }
-
-    try {
-      await this.client.createAlertingRule(this.orgName, this.appName, {
-        ruleType,
-        minIntervalSecs,
-        ruleMetadata,
-      });
-      this.closeModal();
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to create rule: " + err.message);
+    async submitCreateAlert() {
+      const ruleType = document.getElementById("new-rule-type").value;
+      const minIntervalSecs = parseInt(document.getElementById("new-rule-interval").value, 10) || 0;
+      let ruleMetadata = {};
+      try {
+        ruleMetadata = JSON.parse(document.getElementById("new-rule-meta").value);
+      } catch {
+        alert("Invalid JSON in rule metadata");
+        return;
+      }
+      try {
+        await this.client.createAlertingRule(this.orgName, this.appName, {
+          ruleType,
+          minIntervalSecs,
+          ruleMetadata
+        });
+        this.closeModal();
+        this.renderContentView();
+      } catch (err) {
+        alert("Failed to create rule: " + err.message);
+      }
     }
-  }
-
-  async deleteAlertRule(ruleId) {
-    if (!confirm("Delete this alerting rule?")) return;
-    try {
-      await this.client.deleteAlertingRule(this.orgName, this.appName, ruleId);
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to delete rule: " + err.message);
+    async deleteAlertRule(ruleId) {
+      if (!confirm("Delete this alerting rule?")) return;
+      try {
+        await this.client.deleteAlertingRule(this.orgName, this.appName, ruleId);
+        this.renderContentView();
+      } catch (err) {
+        alert("Failed to delete rule: " + err.message);
+      }
     }
-  }
-
-  // --- SCREEN 7: API KEYS ---
-  async renderKeysScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading API keys...</div>`;
-
-    try {
-      const keys = await this.client.listAPIKeys(this.orgName);
-
-      el.innerHTML = `
+    // --- SCREEN 7: API KEYS ---
+    async renderKeysScreen(el) {
+      el.innerHTML = `<div class="loading-spinner">Loading API keys...</div>`;
+      try {
+        const keys = await this.client.listAPIKeys(this.orgName);
+        el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
             <span class="text-secondary" style="font-size:12px;">Organization API Keys (${this.orgName})</span>
@@ -1404,14 +1227,14 @@ class DashboardApp {
                 </tr>
               </thead>
               <tbody>
-                ${keys.length > 0 ? keys.map(k => `
+                ${keys.length > 0 ? keys.map((k) => `
                   <tr>
-                    <td><strong>${escapeHtml(k.name || k.id)}</strong></td>
-                    <td><code>${escapeHtml(k.lookup || "-")}</code></td>
-                    <td>${k.applicationNames && k.applicationNames.length > 0 ? escapeHtml(k.applicationNames.join(", ")) : "All Applications"}</td>
+                    <td><strong>${escapeHtml4(k.name || k.id)}</strong></td>
+                    <td><code>${escapeHtml4(k.lookup || "-")}</code></td>
+                    <td>${k.applicationNames && k.applicationNames.length > 0 ? escapeHtml4(k.applicationNames.join(", ")) : "All Applications"}</td>
                     <td>${formatTimestamp(k.createdAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" onclick="window.app.revokeKey('${escapeHtml(k.name || k.id)}')">Revoke</button>
+                      <button class="btn btn-xs btn-danger" onclick="window.app.revokeKey('${escapeHtml4(k.name || k.id)}')">Revoke</button>
                     </td>
                   </tr>
                 `).join("") : `<tr><td colspan="5" style="text-align:center; color:var(--text-tertiary);">No API keys found.</td></tr>`}
@@ -1420,21 +1243,19 @@ class DashboardApp {
           </div>
         </div>
       `;
-    } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load API keys: ${escapeHtml(err.message)}</div></div>`;
+      } catch (err) {
+        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load API keys: ${escapeHtml4(err.message)}</div></div>`;
+      }
     }
-  }
-
-  openCreateKeyModal() {
-    const root = document.getElementById("modal-root");
-    if (!root) return;
-
-    root.innerHTML = `
+    openCreateKeyModal() {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      root.innerHTML = `
       <div class="modal-overlay" onclick="if(event.target === this) window.app.closeModal()">
         <div class="modal-dialog">
           <div class="modal-header">
             <span>Mint Scoped API Key</span>
-            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">✕</button>
+            <button class="btn btn-xs btn-secondary" onclick="window.app.closeModal()">\u2715</button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1445,7 +1266,7 @@ class DashboardApp {
               <label class="form-label">Application Scope</label>
               <select id="new-key-app" class="select-sm">
                 <option value="">All Applications</option>
-                ${this.apps.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join("")}
+                ${this.apps.map((a) => `<option value="${escapeHtml4(a.name)}">${escapeHtml4(a.name)}</option>`).join("")}
               </select>
             </div>
           </div>
@@ -1456,30 +1277,26 @@ class DashboardApp {
         </div>
       </div>
     `;
-  }
-
-  async submitCreateKey() {
-    const name = document.getElementById("new-key-name").value.trim();
-    if (!name) {
-      alert("Key name is required");
-      return;
     }
-    const appScope = document.getElementById("new-key-app").value;
-    const appNames = appScope ? [appScope] : [];
-
-    try {
-      const res = await this.client.createAPIKey(this.orgName, name, ["*"], appNames);
-      this.renderKeyCreatedModal(name, res.token);
-    } catch (err) {
-      alert("Failed to create key: " + err.message);
+    async submitCreateKey() {
+      const name = document.getElementById("new-key-name").value.trim();
+      if (!name) {
+        alert("Key name is required");
+        return;
+      }
+      const appScope = document.getElementById("new-key-app").value;
+      const appNames = appScope ? [appScope] : [];
+      try {
+        const res = await this.client.createAPIKey(this.orgName, name, ["*"], appNames);
+        this.renderKeyCreatedModal(name, res.token);
+      } catch (err) {
+        alert("Failed to create key: " + err.message);
+      }
     }
-  }
-
-  renderKeyCreatedModal(name, token) {
-    const root = document.getElementById("modal-root");
-    if (!root) return;
-
-    root.innerHTML = `
+    renderKeyCreatedModal(name, token) {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      root.innerHTML = `
       <div class="modal-overlay">
         <div class="modal-dialog">
           <div class="modal-header">
@@ -1490,73 +1307,60 @@ class DashboardApp {
               Please copy this key now. It will not be shown again.
             </p>
             <div class="json-viewer" style="padding:12px; margin-top:8px;">
-              <code style="word-break:break-all; font-weight:700;">${escapeHtml(token)}</code>
+              <code style="word-break:break-all; font-weight:700;">${escapeHtml4(token)}</code>
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText('${escapeHtml(token)}').then(() => { window.app.closeModal(); window.app.renderContentView(); })">Copy & Done</button>
+            <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText('${escapeHtml4(token)}').then(() => { window.app.closeModal(); window.app.renderContentView(); })">Copy & Done</button>
           </div>
         </div>
       </div>
     `;
+    }
+    async revokeKey(name) {
+      if (!confirm(`Revoke API key "${name}"?`)) return;
+      try {
+        await this.client.revokeAPIKey(this.orgName, name);
+        this.renderContentView();
+      } catch (err) {
+        alert("Failed to revoke key: " + err.message);
+      }
+    }
+  };
+  function escapeHtml4(str) {
+    if (str === null || str === void 0) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
-
-  async revokeKey(name) {
-    if (!confirm(`Revoke API key "${name}"?`)) return;
+  function formatTimestamp(isoStr) {
+    if (!isoStr) return "-";
     try {
-      await this.client.revokeAPIKey(this.orgName, name);
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to revoke key: " + err.message);
+      const d = new Date(isoStr);
+      return d.toLocaleString(void 0, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    } catch {
+      return isoStr;
     }
   }
-}
-
-// Helpers
-function escapeHtml(str) {
-  if (str === null || str === undefined) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function formatTimestamp(isoStr) {
-  if (!isoStr) return "-";
-  try {
-    const d = new Date(isoStr);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  } catch {
-    return isoStr;
+  function calculateDuration(startStr, endStr) {
+    if (!startStr || !endStr) return "-";
+    try {
+      const start = new Date(startStr).getTime();
+      const end = new Date(endStr).getTime();
+      const diffMs = Math.max(0, end - start);
+      if (diffMs < 1e3) return `${diffMs}ms`;
+      if (diffMs < 6e4) return `${(diffMs / 1e3).toFixed(1)}s`;
+      return `${Math.floor(diffMs / 6e4)}m ${Math.floor(diffMs % 6e4 / 1e3)}s`;
+    } catch {
+      return "-";
+    }
   }
-}
-
-function calculateDuration(startStr, endStr) {
-  if (!startStr || !endStr) return "-";
-  try {
-    const start = new Date(startStr).getTime();
-    const end = new Date(endStr).getTime();
-    const diffMs = Math.max(0, end - start);
-    if (diffMs < 1000) return `${diffMs}ms`;
-    if (diffMs < 60000) return `${(diffMs / 1000).toFixed(1)}s`;
-    return `${Math.floor(diffMs / 60000)}m ${Math.floor((diffMs % 60000) / 1000)}s`;
-  } catch {
-    return "-";
-  }
-}
-
-// Initialize on DOM load
-window.addEventListener("DOMContentLoaded", () => {
-  window.app = new DashboardApp();
-  window.app.init();
-});
-
+  window.addEventListener("DOMContentLoaded", () => {
+    window.app = new DashboardApp();
+    window.app.init();
+  });
 })();

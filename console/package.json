@@ -6,5 +6,8 @@
   "description": "Web dashboard for Relay control plane",
   "scripts": {
     "build": "node build.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

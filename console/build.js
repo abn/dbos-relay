@@ -3,6 +3,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as esbuild from "esbuild";
+import { execSync } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,59 +33,20 @@ if (fs.existsSync(path.join(SRC_DIR, "assets", "favicon.svg"))) {
   );
 }
 
-// 4. Bundle JS files into a single standalone app.js
-// Read components
-const statusPillJs = fs.readFileSync(path.join(SRC_DIR, "lib", "components", "StatusPill.js"), "utf-8")
-  .replace(/export\s+/g, "");
+// 4. Bundle JS files into a single standalone app.js using esbuild
+esbuild.buildSync({
+  entryPoints: [path.join(SRC_DIR, "app.js")],
+  bundle: true,
+  outfile: path.join(ASSETS_DIST, "app.js"),
+  format: "iife",
+});
 
-const jsonViewerJs = fs.readFileSync(path.join(SRC_DIR, "lib", "components", "JsonViewer.js"), "utf-8")
-  .replace(/export\s+/g, "");
-
-const workflowDagJs = fs.readFileSync(path.join(SRC_DIR, "lib", "components", "WorkflowDAG.js"), "utf-8")
-  .replace(/export\s+/g, "");
-
-// Read API client
-const clientJs = fs.readFileSync(path.join(SRC_DIR, "lib", "api", "client.ts"), "utf-8")
-  // Strip typescript imports and type annotations for pure JS runtime
-  .replace(/import\s+type\s+[^;]+;/g, "")
-  .replace(/(private|public|protected|readonly)\s+/g, "")
-  .replace(/:\s*Promise<[^>]+>/g, "")
-  .replace(/\?:/g, ":")
-  .replace(/:\s*string\[\]/g, "")
-  .replace(/:\s*string\s*\|\s*null/g, "")
-  .replace(/:\s*string/g, "")
-  .replace(/:\s*number/g, "")
-  .replace(/:\s*boolean/g, "")
-  .replace(/:\s*void/g, "")
-  .replace(/:\s*RequestInit/g, "")
-  .replace(/:\s*WorkflowSearchQuery/g, "")
-  .replace(/:\s*CreateAlertInput/g, "")
-  .replace(/:\s*Record<string,\s*unknown>/g, "")
-  .replace(/<[^>]+>/g, "")
-  .replace(/\s+as\s+[^;]+/g, "")
-  .replace(/export\s+/g, "");
-
-// Read app.js
-const appJs = fs.readFileSync(path.join(SRC_DIR, "app.js"), "utf-8")
-  .replace(/import\s+[^;]+;/g, "");
-
-const bundledJs = `// Relay Dashboard Production Bundle
-(function() {
-  "use strict";
-
-  // --- API Client ---
-  ${clientJs}
-
-  // --- Components ---
-  ${statusPillJs}
-  ${jsonViewerJs}
-  ${workflowDagJs}
-
-  // --- Application ---
-  ${appJs}
-})();
-`;
-
-fs.writeFileSync(path.join(ASSETS_DIST, "app.js"), bundledJs.trim() + "\n");
+// 5. Validate the output to ensure syntax is valid and no regression
+try {
+  execSync(`node --check ${path.join(ASSETS_DIST, "app.js")}`);
+} catch (e) {
+  console.error("Syntax validation failed!");
+  process.exit(1);
+}
 
 console.log("Relay dashboard built successfully into internal/dashboard/dist/");
