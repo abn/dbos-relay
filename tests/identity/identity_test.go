@@ -186,10 +186,17 @@ func newMemoryStore() *memoryStore {
 	}
 	// Seed global roles
 	for _, rName := range []string{auth.RoleAdmin, auth.RoleOperator, auth.RoleViewer} {
+		var perms []string
+		switch rName {
+		case auth.RoleAdmin, auth.RoleOperator:
+			perms = []string{auth.PermApplicationRead, auth.PermApplicationWrite, auth.PermWebsocketConnect}
+		case auth.RoleViewer:
+			perms = []string{auth.PermApplicationRead}
+		}
 		m.roles["global:"+rName] = storegen.Role{
 			ID:          pgtype.UUID{Bytes: [16]byte{0, 0, 0, byte(len(m.roles) + 1)}, Valid: true},
 			Name:        rName,
-			Permissions: auth.RolePermissions(rName),
+			Permissions: perms,
 		}
 	}
 	return m
@@ -955,6 +962,16 @@ func TestIdentity_RolesLifecycle(t *testing.T) {
 	store := newMemoryStore()
 
 	org, _ := store.UpsertOrganisation(context.Background(), "acme")
+	user, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "sub-admin",
+		Username: "admin",
+		Email:    "admin@acme.corp",
+	})
+	store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+		OrganisationID: org.ID,
+		UserID:         user.ID,
+		RoleName:       auth.RoleAdmin,
+	})
 
 	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
 	ts := setupServer(store, true, validator)
@@ -1020,7 +1037,17 @@ func TestIdentity_DomainClaimsLifecycle(t *testing.T) {
 	idp := newMockIdP(t)
 	store := newMemoryStore()
 
-	_, _ = store.UpsertOrganisation(context.Background(), "acme")
+	org, _ := store.UpsertOrganisation(context.Background(), "acme")
+	user, _ := store.UpsertUser(context.Background(), storegen.UpsertUserParams{
+		Subject:  "admin-sub",
+		Username: "admin-sub",
+		Email:    "admin@acme.corp",
+	})
+	store.UpsertMemberRole(context.Background(), storegen.UpsertMemberRoleParams{
+		OrganisationID: org.ID,
+		UserID:         user.ID,
+		RoleName:       auth.RoleAdmin,
+	})
 
 	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
 	ts := setupServer(store, true, validator)

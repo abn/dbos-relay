@@ -19,53 +19,70 @@ type AuthStore interface {
 	GetAPIKeyByLookup(ctx context.Context, lookup string) (gen.ApiKey, error)
 	GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error)
 	CreateApplication(ctx context.Context, arg gen.CreateApplicationParams) (gen.Application, error)
+	GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error)
+	UpsertOrganisation(ctx context.Context, name string) (gen.Organisation, error)
 }
 
 // Authenticate verifies the conductor key and returns the application ID.
-func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string) (pgtype.UUID, error) {
+func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string, authEnabled bool) (pgtype.UUID, error) {
 	if appName == "" || conductorKey == "" {
 		return pgtype.UUID{}, errors.New("missing app name or conductor key")
 	}
 
-	lookup := auth.Lookup(conductorKey)
-	keyRecord, err := q.GetAPIKeyByLookup(ctx, lookup)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return pgtype.UUID{}, errors.New("invalid conductor key")
-		}
-		return pgtype.UUID{}, err
-	}
+	var orgID pgtype.UUID
 
-	if !auth.Verify(conductorKey, keyRecord.KeyHash) {
-		return pgtype.UUID{}, errors.New("invalid conductor key")
-	}
-
-	// Validate scope: application_names empty means all apps.
-	allowed := false
-	if len(keyRecord.ApplicationNames) == 0 {
-		allowed = true
-	} else {
-		for _, name := range keyRecord.ApplicationNames {
-			if name == appName {
-				allowed = true
-				break
+	if !authEnabled {
+		// No-auth mode: key is accepted unconditionally
+		org, err := q.GetOrganisationByName(ctx, "local")
+		if err != nil {
+			org, err = q.UpsertOrganisation(ctx, "local")
+			if err != nil {
+				return pgtype.UUID{}, err
 			}
 		}
-	}
-	if !allowed {
-		return pgtype.UUID{}, errors.New("key does not have access to this application")
+		orgID = org.ID
+	} else {
+		lookup := auth.Lookup(conductorKey)
+		keyRecord, err := q.GetAPIKeyByLookup(ctx, lookup)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return pgtype.UUID{}, errors.New("invalid conductor key")
+			}
+			return pgtype.UUID{}, err
+		}
+
+		if !auth.Verify(conductorKey, keyRecord.KeyHash) {
+			return pgtype.UUID{}, errors.New("invalid conductor key")
+		}
+
+		// Validate scope: application_names empty means all apps.
+		allowed := false
+		if len(keyRecord.ApplicationNames) == 0 {
+			allowed = true
+		} else {
+			for _, name := range keyRecord.ApplicationNames {
+				if name == appName {
+					allowed = true
+					break
+				}
+			}
+		}
+		if !allowed {
+			return pgtype.UUID{}, errors.New("key does not have access to this application")
+		}
+		orgID = keyRecord.OrganisationID
 	}
 
 	// Resolve application ID.
 	app, err := q.GetApplicationByName(ctx, gen.GetApplicationByNameParams{
-		OrganisationID: keyRecord.OrganisationID,
+		OrganisationID: orgID,
 		Name:           appName,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Get or Create
 			app, err = q.CreateApplication(ctx, gen.CreateApplicationParams{
-				OrganisationID: keyRecord.OrganisationID,
+				OrganisationID: orgID,
 				Name:           appName,
 				Settings:       []byte("{}"),
 			})

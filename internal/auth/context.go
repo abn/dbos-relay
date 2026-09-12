@@ -1,6 +1,10 @@
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 type identityKey struct{}
 
@@ -14,6 +18,9 @@ type UserIdentity struct {
 	Role     string
 	Token    string
 	IsAPIKey bool
+	OrgID pgtype.UUID
+	ApplicationNames []string
+	Permissions []string
 }
 
 // WithIdentity stores the UserIdentity in ctx.

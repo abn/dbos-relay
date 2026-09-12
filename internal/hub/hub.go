@@ -79,7 +79,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	appID, err := Authenticate(r.Context(), h.store, appName, conductorKey)
+	appID, err := Authenticate(r.Context(), h.store, appName, conductorKey, h.config.AuthEnabled())
 	if err != nil {
 		HandleAuthError(w, r, err)
 		return

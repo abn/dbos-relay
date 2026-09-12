@@ -61,7 +61,16 @@ func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserR
 		Role: &gen.RoleOutput{
 			Name:        roleName,
 			IsGlobal:    isGlobalRole(roleName),
-			Permissions: auth.RolePermissions(roleName),
+			Permissions: func() []string {
+				role, err := s.store.GetRole(ctx, storegen.GetRoleParams{
+					OrganisationID: primaryOrg.ID,
+					Name:           roleName,
+				})
+				if err == nil {
+					return role.Permissions
+				}
+				return []string{}
+			}(),
 		},
 	}
 	if user.IsAdmin {
@@ -211,13 +220,25 @@ func (s *Server) handleListMembers(ctx context.Context, request gen.ListMembersR
 	}
 
 	userMap := make(map[string]gen.RoleOutput)
-	for _, m := range members {
-		userMap[m.Username] = gen.RoleOutput{
-			Name:        m.RoleName,
-			IsGlobal:    isGlobalRole(m.RoleName),
-			Permissions: auth.RolePermissions(m.RoleName),
+
+		// Fetch all roles for the org to map permissions
+		roles, _ := s.store.ListRoles(ctx, org.ID)
+		rolePerms := make(map[string][]string)
+		for _, r := range roles {
+			rolePerms[r.Name] = r.Permissions
 		}
-	}
+
+		for _, m := range members {
+			perms := rolePerms[m.RoleName]
+			if perms == nil {
+				perms = []string{}
+			}
+			userMap[m.Username] = gen.RoleOutput{
+				Name:        m.RoleName,
+				IsGlobal:    isGlobalRole(m.RoleName),
+				Permissions: perms,
+			}
+		}
 
 	return gen.ListMembers200JSONResponse{
 		OrgName: request.OrgName,
