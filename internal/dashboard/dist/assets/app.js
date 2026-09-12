@@ -1229,12 +1229,12 @@
               <tbody>
                 ${keys.length > 0 ? keys.map((k) => `
                   <tr>
-                    <td><strong>${escapeHtml4(k.name || k.id)}</strong></td>
-                    <td><code>${escapeHtml4(k.lookup || "-")}</code></td>
-                    <td>${k.applicationNames && k.applicationNames.length > 0 ? escapeHtml4(k.applicationNames.join(", ")) : "All Applications"}</td>
+                    <td><strong>${escapeHtml4(k.tokenName || k.id)}</strong></td>
+                    <td><code>${escapeHtml4(k.tokenName || "-")}</code></td>
+                    <td>${k.appIds && k.appIds.length > 0 ? escapeHtml4(k.appIds.join(", ")) : "All Applications"}</td>
                     <td>${formatTimestamp(k.createdAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" data-revoke-key='${escapeHtml4(k.name || k.id)}'>Revoke</button>
+                      <button class="btn btn-xs btn-danger" data-revoke-key='${escapeHtml4(k.tokenName || k.id)}'>Revoke</button>
                     </td>
                   </tr>
                 `).join("") : `<tr><td colspan="5" style="text-align:center; color:var(--text-tertiary);">No API keys found.</td></tr>`}
