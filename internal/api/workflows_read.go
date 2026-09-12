@@ -64,58 +64,6 @@ func parseTimeString(s *string) *time.Time {
 	return nil
 }
 
-func toInt64Ptr(v any) *int64 {
-	if v == nil {
-		return nil
-	}
-	switch val := v.(type) {
-	case int:
-		n := int64(val)
-		return &n
-	case int32:
-		n := int64(val)
-		return &n
-	case int64:
-		return &val
-	case float64:
-		n := int64(val)
-		return &n
-	case float32:
-		n := int64(val)
-		return &n
-	case string:
-		if n, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64); err == nil {
-			return &n
-		}
-	}
-	return nil
-}
-
-func toTimePtr(v any) *time.Time {
-	if v == nil {
-		return nil
-	}
-	switch val := v.(type) {
-	case time.Time:
-		utc := val.UTC()
-		return &utc
-	case *time.Time:
-		if val != nil {
-			utc := val.UTC()
-			return &utc
-		}
-		return nil
-	case string:
-		return parseTimeString(&val)
-	case int64:
-		t := time.UnixMilli(val).UTC()
-		return &t
-	case float64:
-		t := time.UnixMilli(int64(val)).UTC()
-		return &t
-	}
-	return nil
-}
 
 func mapWorkflow(b protocol.ListWorkflowsResponseBody) gen.Workflow {
 	var status string
@@ -198,87 +146,24 @@ func mapStep(s protocol.WorkflowStepsResponseBody) gen.Step {
 	}
 }
 
-func mapWorkflowAggregate(m map[string]any) gen.WorkflowAggregate {
+func mapWorkflowAggregate(m protocol.WorkflowAggregateRow) gen.WorkflowAggregate {
 	var agg gen.WorkflowAggregate
-	group := make(map[string]*string)
-
-	if gRaw, ok := m["group"]; ok {
-		if gMap, ok := gRaw.(map[string]any); ok {
-			for k, v := range gMap {
-				if v == nil {
-					group[k] = nil
-				} else {
-					str := fmt.Sprintf("%v", v)
-					group[k] = &str
-				}
-			}
-		}
+	agg.Group = m.Group
+	agg.Count = m.Count
+	agg.MaxQueueWaitMs = m.MaxQueueWaitMs
+	agg.MaxTotalLatencyMs = m.MaxTotalLatencyMs
+	if m.MinCreatedAt != nil {
+		t := time.UnixMilli(*m.MinCreatedAt).UTC()
+		agg.MinCreatedAt = &t
 	}
-
-	for k, v := range m {
-		switch strings.ToLower(k) {
-		case "count":
-			agg.Count = toInt64Ptr(v)
-		case "max_queue_wait_ms", "maxqueuewaitms":
-			agg.MaxQueueWaitMs = toInt64Ptr(v)
-		case "max_total_latency_ms", "maxtotallatencyms":
-			agg.MaxTotalLatencyMs = toInt64Ptr(v)
-		case "min_created_at", "mincreatedat":
-			agg.MinCreatedAt = toTimePtr(v)
-		case "group":
-			// already processed
-		default:
-			if _, exists := group[k]; !exists {
-				if v == nil {
-					group[k] = nil
-				} else {
-					str := fmt.Sprintf("%v", v)
-					group[k] = &str
-				}
-			}
-		}
-	}
-	agg.Group = group
 	return agg
 }
 
-func mapStepAggregate(m map[string]any) gen.StepAggregate {
+func mapStepAggregate(m protocol.StepAggregateRow) gen.StepAggregate {
 	var agg gen.StepAggregate
-	group := make(map[string]*string)
-
-	if gRaw, ok := m["group"]; ok {
-		if gMap, ok := gRaw.(map[string]any); ok {
-			for k, v := range gMap {
-				if v == nil {
-					group[k] = nil
-				} else {
-					str := fmt.Sprintf("%v", v)
-					group[k] = &str
-				}
-			}
-		}
-	}
-
-	for k, v := range m {
-		switch strings.ToLower(k) {
-		case "count":
-			agg.Count = toInt64Ptr(v)
-		case "max_duration_ms", "maxdurationms":
-			agg.MaxDurationMs = toInt64Ptr(v)
-		case "group":
-			// already processed
-		default:
-			if _, exists := group[k]; !exists {
-				if v == nil {
-					group[k] = nil
-				} else {
-					str := fmt.Sprintf("%v", v)
-					group[k] = &str
-				}
-			}
-		}
-	}
-	agg.Group = group
+	agg.Group = m.Group
+	agg.Count = m.Count
+	agg.MaxDurationMs = m.MaxDurationMs
 	return agg
 }
 

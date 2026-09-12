@@ -24,6 +24,11 @@ func (m *mockWorkflowRouter) Dispatch(ctx context.Context, orgName, appName stri
 	return nil, nil
 }
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
+
 func TestListWorkflows(t *testing.T) {
 	t.Run("successful dispatch and model translation", func(t *testing.T) {
 		status := "SUCCESS"
@@ -742,13 +747,13 @@ func TestGetWorkflowAggregates(t *testing.T) {
 					Type:      protocol.MessageTypeGetWorkflowAggregates,
 					RequestID: msg.GetRequestID(),
 				},
-				Output: []map[string]any{
+				Output: []protocol.WorkflowAggregateRow{
 					{
-						"count":                 int64(42),
-						"status":                "SUCCESS",
-						"max_queue_wait_ms":     int64(150),
-						"max_total_latency_ms":  int64(500),
-						"min_created_at":        "2026-09-01T08:00:00Z",
+						Group:             map[string]*string{"status": ptr("SUCCESS")},
+						Count:             ptr(int64(42)),
+						MaxQueueWaitMs:    ptr(int64(150)),
+						MaxTotalLatencyMs: ptr(int64(500)),
+						MinCreatedAt:      ptr(int64(1756713600000)),
 					},
 				},
 			}, nil
@@ -810,11 +815,11 @@ func TestGetStepAggregates(t *testing.T) {
 					Type:      protocol.MessageTypeGetStepAggregates,
 					RequestID: msg.GetRequestID(),
 				},
-				Output: []map[string]any{
+				Output: []protocol.StepAggregateRow{
 					{
-						"count":           int64(10),
-						"function_name":   "processStep",
-						"max_duration_ms": int64(120),
+						Group:         map[string]*string{"function_name": ptr("processStep")},
+						Count:         ptr(int64(10)),
+						MaxDurationMs: ptr(int64(120)),
 					},
 				},
 			}, nil
