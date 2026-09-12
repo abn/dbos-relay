@@ -37,24 +37,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	if authHeader != "" {
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-			http.Error(w, "invalid authorization header", http.StatusUnauthorized)
-			return
-		}
-		rawKey := parts[1]
-		lookup := auth.Lookup(rawKey)
-		keyRec, err := h.store.GetAPIKeyByLookup(r.Context(), lookup)
-		if err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !auth.Verify(rawKey, keyRec.KeyHash) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	identity, ok := auth.IdentityFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 
 	appsFilter := r.URL.Query()["applications"]
@@ -96,6 +82,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		if !identity.IsAdmin {
+			if identity.IsAPIKey {
+				if !contains(identity.ApplicationNames, app.Name) {
+					continue
+				}
+			} else {
+				if app.OrganisationID != identity.OrgID {
+					continue
+				}
+			}
+		}
+
 		execs, err := h.store.ListExecutorsByApplication(r.Context(), app.ID)
 		if err != nil {
 			continue
@@ -112,12 +110,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				status = "DEAD"
 			}
 
-			version := exec.ApplicationVersion
+			version := sanitizeLabel(exec.ApplicationVersion)
 			if version == "" {
 				version = "unknown"
 			}
 
-			labels := fmt.Sprintf(`{application="%s",application_version="%s",status="%s"}`, app.Name, version, status)
+			labels := fmt.Sprintf(`{application="%s",application_version="%s",status="%s"}`, sanitizeLabel(app.Name), version, status)
 			executorCounts[labels]++
 		}
 	}
@@ -136,4 +134,14 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
+}
+
+func sanitizeLabel(s string) string {
+	s = strings.ReplaceAll(s, "\"", "")
+	s = strings.ReplaceAll(s, "\\", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	if len(s) > 64 {
+		s = s[:64]
+	}
+	return s
 }

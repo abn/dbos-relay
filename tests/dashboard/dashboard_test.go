@@ -291,7 +291,7 @@ func TestDashboard_LiveServerRootServesUI(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("/", dashHandler)
 	mux.Handle("/websocket/", h)
-	mux.Handle("/v1/metrics", metrics.NewHandler(store))
+	mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metrics.NewHandler(store)))
 
 	ts := httptest.NewServer(mux)
 	defer ts.Close()

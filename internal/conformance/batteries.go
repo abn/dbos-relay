@@ -154,6 +154,7 @@ func (r *Runner) runBattery1Spec(ctx context.Context) BatteryResult {
 
 	// Check 1.6: GET /v1/metrics
 	checks = append(checks, executeCheck("1.6 Prometheus Metrics Scrape (/v1/metrics)", func() error {
+		// Verify missing token yields 401
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
 		if err != nil {
 			return err
@@ -164,14 +165,30 @@ func (r *Runner) runBattery1Spec(ctx context.Context) BatteryResult {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusUnauthorized {
+			return fmt.Errorf("expected status 401 without token, got %d", resp.StatusCode)
 		}
-		body, err := io.ReadAll(resp.Body)
+
+		// Verify with token yields 200
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(string(body), "relay_") && !strings.Contains(string(body), "# TYPE") {
+		req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		resp2, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp2.Body.Close() }()
+
+		if resp2.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp2.StatusCode)
+		}
+		body, err := io.ReadAll(resp2.Body)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(body), "dbos_") && !strings.Contains(string(body), "# TYPE") {
 			return errors.New("response does not contain expected prometheus metrics")
 		}
 		return nil

@@ -37,10 +37,7 @@ func (m *mockMetricsStore) GetAPIKeyByLookup(ctx context.Context, lookup string)
 
 func TestMetricsEndpoint_Scrape(t *testing.T) {
 	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	plainKey, rec, err := auth.Mint()
-	if err != nil {
-		t.Fatalf("Mint failed: %v", err)
-	}
+
 
 	store := &mockMetricsStore{
 		apps: []gen.Application{
@@ -72,8 +69,6 @@ func TestMetricsEndpoint_Scrape(t *testing.T) {
 			},
 		},
 		key: gen.ApiKey{
-			Lookup:      rec.Lookup,
-			KeyHash:     rec.Hash,
 			Permissions: []string{"application.read"},
 		},
 	}
@@ -82,7 +77,13 @@ func TestMetricsEndpoint_Scrape(t *testing.T) {
 
 	t.Run("ValidScrapeWithToken", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/v1/metrics", nil)
-		req.Header.Set("Authorization", "Bearer "+plainKey)
+		ctx := auth.WithIdentity(req.Context(), &auth.UserIdentity{
+			Subject:          "test",
+			IsAdmin:          true,
+			IsAPIKey:         true,
+			ApplicationNames: []string{"test-app"},
+		})
+		req = req.WithContext(ctx)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -103,9 +104,8 @@ func TestMetricsEndpoint_Scrape(t *testing.T) {
 		}
 	})
 
-	t.Run("InvalidTokenRejected", func(t *testing.T) {
+	t.Run("MissingIdentityRejected", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/v1/metrics", nil)
-		req.Header.Set("Authorization", "Bearer invalid-token")
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -117,7 +117,13 @@ func TestMetricsEndpoint_Scrape(t *testing.T) {
 
 	t.Run("FilterByApplication", func(t *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/v1/metrics?applications=other-app", nil)
-		req.Header.Set("Authorization", "Bearer "+plainKey)
+		ctx := auth.WithIdentity(req.Context(), &auth.UserIdentity{
+			Subject:          "test",
+			IsAdmin:          true,
+			IsAPIKey:         true,
+			ApplicationNames: []string{"test-app"},
+		})
+		req = req.WithContext(ctx)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)

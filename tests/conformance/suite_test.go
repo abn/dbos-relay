@@ -119,7 +119,7 @@ func TestConformance_EndToEndSuite(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.Handle("/", dashHandler)
 		mux.Handle("/websocket/", h)
-		mux.Handle("/v1/metrics", metrics.NewHandler(s.Queries()))
+		mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metrics.NewHandler(s.Queries())))
 
 		ts := httptest.NewServer(mux)
 		defer ts.Close()
