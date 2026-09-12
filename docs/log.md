@@ -6,6 +6,11 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Documented synthetic executor disclosure in conformance test reporting and CLI usage guide.
+* **Update**: Wired timeout configuration into conformance HTTP client and per-battery execution context.
+* **Update**: Hardened conformance test suite scoring logic and added workflow mutation identifier assertions.
+* **Update**: Removed duplicate clean-room source listings from agent governance references in favour of the canonical contribution guide.
+
 * **Update**: Rebuilt [Conductor WebSocket protocol specification](protocol/executor-ws.md) covering all 32 implemented message types, normalized envelope definitions, aligned handshake and alert payloads, and added inline citations for idempotence guarantees.
 * **Update**: Resolved decoding direction heuristics in protocol codec and added exhaustive round-trip tests for zero-value response structures.
 * **Update**: Aligned `MetricData` shape with upstream schema and added golden fixture testing with unknown field rejections.
