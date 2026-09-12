@@ -8,8 +8,8 @@
 
 
 class ApiClient {
-  private baseUrl;
-  private apiKey;
+  baseUrl;
+  apiKey;
 
   constructor(baseUrl = "", apiKey = null) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -20,7 +20,7 @@ class ApiClient {
     this.apiKey = key;
   }
 
-  private async request(path, options = {}): Promise {
+  async request(path, options = {}) {
     const headers = new Headers(options.headers || {});
     headers.set("Accept", "application/json");
 
@@ -53,29 +53,29 @@ class ApiClient {
     }
 
     if (response.status === 204) {
-      return undefined as unknown as T;
+      return undefined;
     }
 
-    return response.json() as Promise;
+    return response.json();
   }
 
   // System & Health
-  async getHealth(): Promise {
+  async getHealth() {
     return this.request("/healthz");
   }
 
   // Applications
-  async listApplications(orgName = "default"): Promise {
+  async listApplications(orgName = "default") {
     return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/apps`);
   }
 
-  async getApplication(orgName, appName): Promise {
+  async getApplication(orgName, appName) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}`
     );
   }
 
-  async listExecutors(orgName, appName): Promise {
+  async listExecutors(orgName, appName) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/executors`
     );
@@ -86,7 +86,7 @@ class ApiClient {
     orgName,
     appName,
     query = {}
-  ): Promise {
+  ) {
     const params = new URLSearchParams();
     if (query.workflowIds && query.workflowIds.length > 0) {
       for (const id of query.workflowIds) params.append("workflowIds", id);
@@ -112,19 +112,19 @@ class ApiClient {
     return this.request(path);
   }
 
-  async getWorkflow(orgName, appName, workflowId): Promise {
+  async getWorkflow(orgName, appName, workflowId) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}`
     );
   }
 
-  async listSteps(orgName, appName, workflowId): Promise {
+  async listSteps(orgName, appName, workflowId) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/steps`
     );
   }
 
-  async getWorkflowEvents(orgName, appName, workflowId): Promise {
+  async getWorkflowEvents(orgName, appName, workflowId) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/events`
     );
@@ -134,7 +134,7 @@ class ApiClient {
     orgName,
     appName,
     workflowId
-  ): Promise {
+  ) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/notifications`
     );
@@ -144,29 +144,29 @@ class ApiClient {
     orgName,
     appName,
     workflowId,
-    key?
-  ): Promise {
+    key
+  ) {
     const qs = key ? `?key=${encodeURIComponent(key)}` : "";
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/streams${qs}`
     );
   }
 
-  async cancelWorkflow(orgName, appName, workflowId): Promise {
+  async cancelWorkflow(orgName, appName, workflowId) {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/cancel`,
       { method: "POST", body: "{}" }
     );
   }
 
-  async resumeWorkflow(orgName, appName, workflowId): Promise {
+  async resumeWorkflow(orgName, appName, workflowId) {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/resume`,
       { method: "POST", body: "{}" }
     );
   }
 
-  async restartWorkflow(orgName, appName, workflowId): Promise {
+  async restartWorkflow(orgName, appName, workflowId) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
       { method: "POST", body: "{}" }
@@ -174,27 +174,27 @@ class ApiClient {
   }
 
   // Queues
-  async listQueues(orgName, appName): Promise {
+  async listQueues(orgName, appName) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/queues`
     );
   }
 
   // Schedules
-  async listSchedules(orgName, appName): Promise {
+  async listSchedules(orgName, appName) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules`
     );
   }
 
-  async pauseSchedule(orgName, appName, scheduleName): Promise {
+  async pauseSchedule(orgName, appName, scheduleName) {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/pause`,
       { method: "POST" }
     );
   }
 
-  async resumeSchedule(orgName, appName, scheduleName): Promise {
+  async resumeSchedule(orgName, appName, scheduleName) {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/resume`,
       { method: "POST" }
@@ -205,7 +205,7 @@ class ApiClient {
     orgName,
     appName,
     scheduleName
-  ): Promise {
+  ) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/schedules/${encodeURIComponent(scheduleName)}/trigger`,
       { method: "POST" }
@@ -213,7 +213,7 @@ class ApiClient {
   }
 
   // Alerting Rules
-  async listAlertingRules(orgName, appName): Promise {
+  async listAlertingRules(orgName, appName) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`
     );
@@ -223,7 +223,7 @@ class ApiClient {
     orgName,
     appName,
     rule
-  ): Promise {
+  ) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules`,
       {
@@ -233,7 +233,7 @@ class ApiClient {
     );
   }
 
-  async deleteAlertingRule(orgName, appName, ruleId): Promise {
+  async deleteAlertingRule(orgName, appName, ruleId) {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/alerting-rules/${encodeURIComponent(ruleId)}`,
       { method: "DELETE" }
@@ -241,16 +241,16 @@ class ApiClient {
   }
 
   // API Keys (Tokens)
-  async listAPIKeys(orgName): Promise {
+  async listAPIKeys(orgName) {
     return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/tokens`);
   }
 
   async createAPIKey(
     orgName,
     name,
-    permissions[] = ["*"],
-    appNames[] = []
-  ): Promise {
+    permissions = ["*"],
+    appNames = []
+  ) {
     return this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
       {
@@ -260,7 +260,7 @@ class ApiClient {
     );
   }
 
-  async revokeAPIKey(orgName, name): Promise {
+  async revokeAPIKey(orgName, name) {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
       { method: "DELETE" }

@@ -46,6 +46,10 @@ const workflowDagJs = fs.readFileSync(path.join(SRC_DIR, "lib", "components", "W
 const clientJs = fs.readFileSync(path.join(SRC_DIR, "lib", "api", "client.ts"), "utf-8")
   // Strip typescript imports and type annotations for pure JS runtime
   .replace(/import\s+type\s+[^;]+;/g, "")
+  .replace(/(private|public|protected|readonly)\s+/g, "")
+  .replace(/:\s*Promise<[^>]+>/g, "")
+  .replace(/\?:/g, ":")
+  .replace(/:\s*string\[\]/g, "")
   .replace(/:\s*string\s*\|\s*null/g, "")
   .replace(/:\s*string/g, "")
   .replace(/:\s*number/g, "")
@@ -54,9 +58,9 @@ const clientJs = fs.readFileSync(path.join(SRC_DIR, "lib", "api", "client.ts"), 
   .replace(/:\s*RequestInit/g, "")
   .replace(/:\s*WorkflowSearchQuery/g, "")
   .replace(/:\s*CreateAlertInput/g, "")
-  .replace(/:\s*string\[\]/g, "")
   .replace(/:\s*Record<string,\s*unknown>/g, "")
   .replace(/<[^>]+>/g, "")
+  .replace(/\s+as\s+[^;]+/g, "")
   .replace(/export\s+/g, "");
 
 // Read app.js
