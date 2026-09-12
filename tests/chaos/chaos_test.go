@@ -213,6 +213,7 @@ func TestChaos_FakeExecutorFailureDispatchesRecovery(t *testing.T) {
 	defer cancel()
 
 	// 1. Connect Executor 1 (victim)
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
 	exec1 := fakeexecutor.New(fakeexecutor.Options{
 		URL:                wsURL,
 		AppName:            "test-app",
@@ -226,6 +227,7 @@ func TestChaos_FakeExecutorFailureDispatchesRecovery(t *testing.T) {
 	go func() { _ = exec1.Run(ctx) }()
 
 	// 2. Connect Executor 2 (healthy survivor)
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
 	exec2 := fakeexecutor.New(fakeexecutor.Options{
 		URL:                wsURL,
 		AppName:            "test-app",
@@ -473,6 +475,7 @@ func TestChaos_LiveDatabase_FakeExecutorFailureDispatchesRecovery(t *testing.T) 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
 	// 1. Connect Executor 1 (victim)
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
 	exec1 := fakeexecutor.New(fakeexecutor.Options{
 		URL:                wsURL,
 		AppName:            appName,
@@ -486,6 +489,7 @@ func TestChaos_LiveDatabase_FakeExecutorFailureDispatchesRecovery(t *testing.T) 
 	go func() { _ = exec1.Run(ctx) }()
 
 	// 2. Connect Executor 2 (healthy survivor)
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
 	exec2 := fakeexecutor.New(fakeexecutor.Options{
 		URL:                wsURL,
 		AppName:            appName,

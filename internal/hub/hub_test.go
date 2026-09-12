@@ -1,12 +1,21 @@
 package hub
 
 import (
+	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
+
+	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/protocol"
+	"github.com/abn/relay/internal/store/gen"
 )
 
 func TestHandleAuthError(t *testing.T) {
@@ -70,5 +79,99 @@ func TestMultiplexer_LateResponse(t *testing.T) {
 		}
 	default:
 		t.Error("expected channel to be closed")
+	}
+}
+
+type mockHubStore struct {
+	memoryAuthStore
+}
+
+func newMockHubStore() *mockHubStore {
+	return &mockHubStore{
+		memoryAuthStore: *newMemoryAuthStore(),
+	}
+}
+
+func (m *mockHubStore) UpsertExecutor(ctx context.Context, arg gen.UpsertExecutorParams) (gen.Executor, error) {
+	return gen.Executor{
+		ExecutorID: arg.ExecutorID,
+	}, nil
+}
+
+func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.DisconnectExecutorParams) (gen.Executor, error) {
+	return gen.Executor{}, nil
+}
+
+func TestHub_HandshakeOrder(t *testing.T) {
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
+	store := newMockHubStore()
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	// Verify Relay's first frame is an executor_info request
+	typ, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("failed to read first frame from relay: %v", err)
+	}
+	if typ != websocket.MessageText {
+		t.Fatalf("expected text message, got %v", typ)
+	}
+	msg, err := protocol.Decode(data)
+	if err != nil {
+		t.Fatalf("failed to decode message: %v", err)
+	}
+	infoReq, ok := msg.(*protocol.ExecutorInfoRequest)
+	if !ok {
+		t.Fatalf("expected *protocol.ExecutorInfoRequest, got %T", msg)
+	}
+	if infoReq.RequestID == "" {
+		t.Fatalf("expected non-empty request id in executor_info request")
+	}
+
+	// Echo request id in response
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "test-exec-1",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, err := protocol.Encode(infoResp)
+	if err != nil {
+		t.Fatalf("failed to encode executor_info response: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+		t.Fatalf("failed to write executor_info response: %v", err)
+	}
+
+	// Verify executor was registered in hub
+	time.Sleep(100 * time.Millisecond)
+	connected := h.registry.ListConnected(store.apps["test-app"].ID)
+	// Even if app is nil UUID in no-auth mode, registry can be checked directly
+	found := false
+	for _, appConns := range h.registry.byApp {
+		if _, ok := appConns["test-exec-1"]; ok {
+			found = true
+			break
+		}
+	}
+	if !found && len(connected) == 0 {
+		t.Fatalf("expected executor test-exec-1 to be registered in hub registry")
 	}
 }

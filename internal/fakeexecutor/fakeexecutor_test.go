@@ -28,6 +28,20 @@ func TestFakeExecutor_ConnectAndInfo(t *testing.T) {
 		}
 		defer func() { _ = conn.Close(websocket.StatusInternalError, "") }()
 
+		req := protocol.ExecutorInfoRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeExecutorInfo,
+				RequestID: "req-info-1",
+			},
+		}
+		reqData, err := protocol.Encode(&req)
+		if err != nil {
+			t.Fatalf("encode error: %v", err)
+		}
+		if err := conn.Write(r.Context(), websocket.MessageText, reqData); err != nil {
+			t.Fatalf("write error: %v", err)
+		}
+
 		typ, data, err := conn.Read(r.Context())
 		if err != nil {
 			t.Fatalf("read error: %v", err)
@@ -81,6 +95,15 @@ func TestFakeExecutor_MessageRoundTrip(t *testing.T) {
 			t.Fatalf("accept error: %v", err)
 		}
 		defer func() { _ = conn.Close(websocket.StatusInternalError, "") }()
+
+		reqInfo := protocol.ExecutorInfoRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeExecutorInfo,
+				RequestID: "req-info",
+			},
+		}
+		reqInfoData, _ := protocol.Encode(&reqInfo)
+		_ = conn.Write(r.Context(), websocket.MessageText, reqInfoData)
 
 		// discard executor_info
 		_, _, _ = conn.Read(r.Context())
@@ -138,6 +161,11 @@ func TestFakeExecutor_FaultInjection_Malformed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, _ := websocket.Accept(w, r, nil)
 		defer func() { _ = conn.Close(websocket.StatusInternalError, "") }()
+		reqInfo := protocol.ExecutorInfoRequest{
+			Envelope: protocol.Envelope{Type: protocol.MessageTypeExecutorInfo, RequestID: "req-info"},
+		}
+		reqInfoData, _ := protocol.Encode(&reqInfo)
+		_ = conn.Write(r.Context(), websocket.MessageText, reqInfoData)
 		_, _, _ = conn.Read(r.Context())
 
 		// send request
@@ -186,6 +214,11 @@ func TestFakeExecutor_FaultInjection_Delayed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, _ := websocket.Accept(w, r, nil)
 		defer func() { _ = conn.Close(websocket.StatusInternalError, "") }()
+		reqInfo := protocol.ExecutorInfoRequest{
+			Envelope: protocol.Envelope{Type: protocol.MessageTypeExecutorInfo, RequestID: "req-info"},
+		}
+		reqInfoData, _ := protocol.Encode(&reqInfo)
+		_ = conn.Write(r.Context(), websocket.MessageText, reqInfoData)
 		_, _, _ = conn.Read(r.Context())
 
 		start := time.Now()
@@ -227,6 +260,11 @@ func TestFakeExecutor_FaultInjection_AbruptClosure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, _ := websocket.Accept(w, r, nil)
 		defer func() { _ = conn.Close(websocket.StatusInternalError, "") }()
+		reqInfo := protocol.ExecutorInfoRequest{
+			Envelope: protocol.Envelope{Type: protocol.MessageTypeExecutorInfo, RequestID: "req-info"},
+		}
+		reqInfoData, _ := protocol.Encode(&reqInfo)
+		_ = conn.Write(r.Context(), websocket.MessageText, reqInfoData)
 		_, _, _ = conn.Read(r.Context())
 
 		req := protocol.GetWorkflowRequest{

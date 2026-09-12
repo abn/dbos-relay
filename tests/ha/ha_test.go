@@ -286,6 +286,7 @@ func TestHA_CrossInstancePeerForwarding_FakeExecutor(t *testing.T) {
 
 	// 3. Connect Fake Executor to Node 1
 	wsURL := "ws" + strings.TrimPrefix(server1.URL, "http")
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
 	exec := fakeexecutor.New(fakeexecutor.Options{
 		URL:                wsURL,
 		AppName:            appName,

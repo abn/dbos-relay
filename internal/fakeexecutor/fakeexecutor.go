@@ -1,3 +1,4 @@
+// Package fakeexecutor provides an in-process protocol stand-in, not a real DBOS SDK.
 package fakeexecutor
 
 import (
@@ -36,6 +37,7 @@ type Options struct {
 	CloseAfterHandshake bool
 	CloseMidRequest     bool
 	SendMalformedJSON   bool
+	UnpromptedInfo      bool
 }
 
 type FakeExecutor struct {
@@ -88,12 +90,38 @@ func (fe *FakeExecutor) Connect(ctx context.Context) error {
 	}
 	fe.conn = conn
 
+	reqID := generateUUID()
+	if !fe.opts.UnpromptedInfo {
+		// Wait for executor_info request
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			_ = conn.Close(websocket.StatusInternalError, "read error")
+			return fmt.Errorf("failed to read executor_info request: %w", err)
+		}
+		if typ != websocket.MessageText {
+			_ = conn.Close(websocket.StatusUnsupportedData, "expected text message")
+			return fmt.Errorf("expected text message")
+		}
+		msg, err := protocol.Decode(data)
+		if err != nil {
+			_ = conn.Close(websocket.StatusInternalError, "decode error")
+			return fmt.Errorf("failed to decode executor_info request: %w", err)
+		}
+		if msg.GetMessageType() != protocol.MessageTypeExecutorInfo {
+			_ = conn.Close(websocket.StatusPolicyViolation, "expected executor_info")
+			return fmt.Errorf("expected executor_info, got %s", msg.GetMessageType())
+		}
+		if msg.GetRequestID() != "" {
+			reqID = msg.GetRequestID()
+		}
+	}
+
 	// Send executor_info
 	hostname := fe.opts.Hostname
 	info := &protocol.ExecutorInfoResponse{
 		Envelope: protocol.Envelope{
 			Type:      protocol.MessageTypeExecutorInfo,
-			RequestID: generateUUID(),
+			RequestID: reqID,
 		},
 		ExecutorID:         fe.opts.ExecutorID,
 		ApplicationVersion: fe.opts.ApplicationVersion,
