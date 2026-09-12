@@ -20,7 +20,6 @@ type SDKClient struct {
 	cancel context.CancelFunc
 }
 
-
 // NewSDKClient initializes an SDKClient backed by dbos.NewClient.
 // Provenance: dbos-inc/dbos-transact-golang (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8, dbos/dbos.go:742)
 func NewSDKClient(cfg AppConfig) (Client, error) {
@@ -300,6 +299,162 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 				RequestID: req.RequestID,
 			},
 			NewWorkflowID: &newID,
+		}, nil
+
+	case *protocol.GetWorkflowAggregatesRequest:
+		var tb time.Duration
+		if req.Body.TimeBucketSizeMs != nil {
+			tb = time.Duration(*req.Body.TimeBucketSizeMs) * time.Millisecond
+		}
+		var statuses []dbos.WorkflowStatusType
+		if len(req.Body.Status) > 0 {
+			for _, st := range req.Body.Status {
+				statuses = append(statuses, dbos.WorkflowStatusType(st))
+			}
+		}
+		var startTime, endTime, completedAfter, completedBefore, dequeuedAfter, dequeuedBefore time.Time
+		if req.Body.StartTime != nil {
+			startTime = *req.Body.StartTime
+		}
+		if req.Body.EndTime != nil {
+			endTime = *req.Body.EndTime
+		}
+		if req.Body.CompletedAfter != nil {
+			completedAfter = *req.Body.CompletedAfter
+		}
+		if req.Body.CompletedBefore != nil {
+			completedBefore = *req.Body.CompletedBefore
+		}
+		if req.Body.DequeuedAfter != nil {
+			dequeuedAfter = *req.Body.DequeuedAfter
+		}
+		if req.Body.DequeuedBefore != nil {
+			dequeuedBefore = *req.Body.DequeuedBefore
+		}
+
+		input := dbos.GetWorkflowAggregatesInput{
+			GroupByStatus:             req.Body.GroupByStatus,
+			GroupByName:               req.Body.GroupByName,
+			GroupByQueueName:          req.Body.GroupByQueueName,
+			GroupByExecutorID:         req.Body.GroupByExecutorID,
+			GroupByApplicationVersion: req.Body.GroupByApplicationVersion,
+			GroupByApplicationName:    req.Body.GroupByApplicationName,
+			SelectCount:               req.Body.SelectCount,
+			SelectMinCreatedAt:        req.Body.SelectMinCreatedAt,
+			SelectMaxQueueWaitMs:      req.Body.SelectMaxQueueWaitMs,
+			SelectMaxTotalLatencyMs:   req.Body.SelectMaxTotalLatencyMs,
+			TimeBucketSize:            tb,
+			Status:                    statuses,
+			StartTime:                 startTime,
+			EndTime:                   endTime,
+			CompletedAfter:            completedAfter,
+			CompletedBefore:           completedBefore,
+			DequeuedAfter:             dequeuedAfter,
+			DequeuedBefore:            dequeuedBefore,
+			Name:                      req.Body.Name,
+			ApplicationVersion:        req.Body.AppVersion,
+			ExecutorID:                req.Body.ExecutorID,
+			QueueName:                 req.Body.QueueName,
+			WorkflowIDPrefix:          req.Body.WorkflowIDPrefix,
+			WorkflowIDs:               req.Body.WorkflowIDs,
+			AuthenticatedUser:         req.Body.User,
+			ForkedFrom:                req.Body.ForkedFrom,
+			ParentWorkflowID:          req.Body.ParentWorkflowID,
+			ApplicationName:           req.Body.ApplicationName,
+			WasForkedFrom:             req.Body.WasForkedFrom,
+			HasParent:                 req.Body.HasParent,
+			Attributes:                req.Body.Attributes,
+		}
+		rows, err := cli.GetWorkflowAggregates(cli, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get workflow aggregates: %w", err)
+		}
+		outputs := make([]map[string]any, len(rows))
+		for i, row := range rows {
+			m := make(map[string]any)
+			for k, v := range row.Group {
+				if v == nil {
+					m[k] = nil
+				} else {
+					m[k] = *v
+				}
+			}
+			if row.Count != nil {
+				m["count"] = *row.Count
+			}
+			if row.MinCreatedAt != nil {
+				m["min_created_at"] = *row.MinCreatedAt
+			}
+			if row.MaxQueueWaitMs != nil {
+				m["max_queue_wait_ms"] = *row.MaxQueueWaitMs
+			}
+			if row.MaxTotalLatencyMs != nil {
+				m["max_total_latency_ms"] = *row.MaxTotalLatencyMs
+			}
+			outputs[i] = m
+		}
+		return &protocol.GetWorkflowAggregatesResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeGetWorkflowAggregates,
+				RequestID: req.RequestID,
+			},
+			Output: outputs,
+		}, nil
+
+	case *protocol.GetStepAggregatesRequest:
+		var tb time.Duration
+		if req.Body.TimeBucketSizeMs != nil {
+			tb = time.Duration(*req.Body.TimeBucketSizeMs) * time.Millisecond
+		}
+		var completedAfter, completedBefore time.Time
+		if req.Body.CompletedAfter != nil {
+			completedAfter = *req.Body.CompletedAfter
+		}
+		if req.Body.CompletedBefore != nil {
+			completedBefore = *req.Body.CompletedBefore
+		}
+
+		input := dbos.GetStepAggregatesInput{
+			GroupByFunctionName: req.Body.GroupByFunctionName,
+			GroupByStatus:       req.Body.GroupByStatus,
+			SelectCount:         req.Body.SelectCount,
+			SelectMaxDurationMs: req.Body.SelectMaxDurationMs,
+			TimeBucketSize:      tb,
+			Status:              req.Body.Status,
+			FunctionName:        req.Body.FunctionName,
+			WorkflowIDPrefix:    req.Body.WorkflowIDPrefix,
+			CompletedAfter:      completedAfter,
+			CompletedBefore:     completedBefore,
+			ApplicationName:     req.Body.ApplicationName,
+		}
+		rows, err := cli.GetStepAggregates(cli, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get step aggregates: %w", err)
+		}
+		outputs := make([]map[string]any, len(rows))
+		for i, row := range rows {
+			m := make(map[string]any)
+			for k, v := range row.Group {
+				if v == nil {
+					m[k] = nil
+				} else {
+					m[k] = *v
+				}
+			}
+			if row.Count != nil {
+				m["count"] = *row.Count
+			}
+			if row.MaxDurationMs != nil {
+				m["max_duration_ms"] = *row.MaxDurationMs
+			}
+			outputs[i] = m
+		}
+		return &protocol.GetStepAggregatesResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeGetStepAggregates,
+				RequestID: req.RequestID,
+			},
+			Output: outputs,
 		}, nil
 
 	default:

@@ -16,10 +16,12 @@ type ClientFactory func(cfg AppConfig) (Client, error)
 
 // DefaultManager implements Manager.
 type DefaultManager struct {
-	mu      sync.RWMutex
-	clients map[pgtype.UUID]Client
-	configs map[pgtype.UUID]AppConfig
-	factory ClientFactory
+	mu          sync.RWMutex
+	clients     map[pgtype.UUID]Client
+	configs     map[pgtype.UUID]AppConfig
+	initMu      map[pgtype.UUID]*sync.Mutex
+	lastInitErr map[pgtype.UUID]time.Time
+	factory     ClientFactory
 }
 
 // NewManager creates a new DefaultManager with the provided client factory.
@@ -28,9 +30,11 @@ func NewManager(factory ClientFactory) *DefaultManager {
 		factory = NewSDKClient
 	}
 	return &DefaultManager{
-		clients: make(map[pgtype.UUID]Client),
-		configs: make(map[pgtype.UUID]AppConfig),
-		factory: factory,
+		clients:     make(map[pgtype.UUID]Client),
+		configs:     make(map[pgtype.UUID]AppConfig),
+		initMu:      make(map[pgtype.UUID]*sync.Mutex),
+		lastInitErr: make(map[pgtype.UUID]time.Time),
+		factory:     factory,
 	}
 }
 
@@ -59,10 +63,14 @@ func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	}
 
 	m.configs[cfg.ApplicationID] = cfg
+	m.initMu[cfg.ApplicationID] = &sync.Mutex{}
+	delete(m.lastInitErr, cfg.ApplicationID)
 
 	// Attempt eager initialization, but do not fail registration if database is not yet migrated
 	if client, err := m.factory(cfg); err == nil {
 		m.clients[cfg.ApplicationID] = client
+	} else {
+		m.lastInitErr[cfg.ApplicationID] = time.Now()
 	}
 
 	return nil
@@ -77,6 +85,8 @@ func (m *DefaultManager) UnregisterApp(appID pgtype.UUID) {
 		_ = client.Close()
 		delete(m.clients, appID)
 		delete(m.configs, appID)
+		delete(m.initMu, appID)
+		delete(m.lastInitErr, appID)
 	}
 }
 
@@ -100,25 +110,57 @@ func (m *DefaultManager) GetMode(appID pgtype.UUID) (Mode, bool) {
 }
 
 func (m *DefaultManager) getOrInitClient(appID pgtype.UUID) (Client, AppConfig, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	m.mu.RLock()
 	cfg, ok := m.configs[appID]
 	if !ok {
+		m.mu.RUnlock()
 		return nil, AppConfig{}, ErrNoDataPlaneConfigured
 	}
 
 	client, ok := m.clients[appID]
+	appMu := m.initMu[appID]
+	lastErr := m.lastInitErr[appID]
+	m.mu.RUnlock()
+
 	if ok && client != nil {
 		return client, cfg, nil
+	}
+	if appMu == nil {
+		return nil, cfg, fmt.Errorf("application not properly registered")
+	}
+
+	if time.Since(lastErr) < 5*time.Second {
+		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: backoff active")
+	}
+
+	appMu.Lock()
+	defer appMu.Unlock()
+
+	m.mu.RLock()
+	client, ok = m.clients[appID]
+	lastErr = m.lastInitErr[appID]
+	m.mu.RUnlock()
+
+	if ok && client != nil {
+		return client, cfg, nil
+	}
+	if time.Since(lastErr) < 5*time.Second {
+		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: backoff active")
 	}
 
 	client, err := m.factory(cfg)
 	if err != nil {
+		m.mu.Lock()
+		m.lastInitErr[appID] = time.Now()
+		m.mu.Unlock()
 		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: %w", err)
 	}
 
+	m.mu.Lock()
 	m.clients[appID] = client
+	delete(m.lastInitErr, appID)
+	m.mu.Unlock()
+
 	return client, cfg, nil
 }
 
@@ -157,6 +199,8 @@ func (m *DefaultManager) Close() error {
 		}
 		delete(m.clients, id)
 		delete(m.configs, id)
+		delete(m.initMu, id)
+		delete(m.lastInitErr, id)
 	}
 	return firstErr
 }

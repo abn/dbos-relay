@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -23,11 +22,11 @@ var appNameRegex = regexp.MustCompile(`^[a-z0-9\-_]{3,256}$`)
 
 // Config represents a declarative Relay configuration document.
 type Config struct {
-	Version      string                `yaml:"version"`
-	Organisation string                `yaml:"organisation,omitempty"`
-	Applications []Application         `yaml:"applications,omitempty"`
-	AlertRules   []AlertRule           `yaml:"alert_rules,omitempty"`
-	DataPlanes   map[string]DataPlane  `yaml:"data_plane,omitempty"`
+	Version      string               `yaml:"version"`
+	Organisation string               `yaml:"organisation,omitempty"`
+	Applications []Application        `yaml:"applications,omitempty"`
+	AlertRules   []AlertRule          `yaml:"alert_rules,omitempty"`
+	DataPlanes   map[string]DataPlane `yaml:"data_plane,omitempty"`
 }
 
 // Application represents an application definition.
@@ -216,22 +215,6 @@ func LoadFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading file %s: %w", path, err)
-	}
-	cfg, err := Parse(data)
-	if err != nil {
-		return nil, err
-	}
-	if err := Validate(cfg); err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-// Load reads and parses YAML data from an io.Reader.
-func Load(r io.Reader) (*Config, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("reading configuration: %w", err)
 	}
 	cfg, err := Parse(data)
 	if err != nil {

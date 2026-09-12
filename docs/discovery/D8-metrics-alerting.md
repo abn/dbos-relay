@@ -170,7 +170,7 @@ Conductor provides managed alerting rules that trigger when failure or latency t
   "properties": {
     "ruleType": {
       "type": "string",
-      "enum": ["WorkflowFailure", "SlowQueue", "UnresponsiveApplication"]
+      "enum": ["WorkflowFailure", "SlowQueue", "UnresponsiveApplication", "RecoveryFlapping", "StrandedVersion"]
     },
     "ruleMetadata": { "type": "object" },
     "minIntervalSecs": { "type": "integer", "format": "int32" },
@@ -200,7 +200,7 @@ Conductor provides managed alerting rules that trigger when failure or latency t
     "receivingAppId": { "type": "string" },
     "ruleType": {
       "type": "string",
-      "enum": ["WorkflowFailure", "SlowQueue", "UnresponsiveApplication"]
+      "enum": ["WorkflowFailure", "SlowQueue", "UnresponsiveApplication", "RecoveryFlapping", "StrandedVersion"]
     },
     "ruleMetadata": { "type": "object" },
     "minIntervalSecs": { "type": ["integer", "null"], "format": "int32" },
