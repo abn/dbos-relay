@@ -87,8 +87,8 @@ under specific client and server conventions.
   * Name: `local`
   * Org: `local`
 * **Static Permission Catalogue**: `dbosctl permission list` targets
-  `GET /v2/{org}/permissions`. Conductor registers this endpoint in all modes
-  (with `org` defaulting to `"local"`), returning a static allow-list of grantable
+  `GET /v2/orgs/{orgName}/permissions`. Conductor registers this endpoint in all modes
+  (with `orgName` defaulting to `"local"`), returning a static allow-list of grantable
   permissions even when OAuth is inactive.
 
 ### Server-side route presence: HTTP 404 vs HTTP 403
@@ -289,68 +289,68 @@ HTTP mapping, URL template, query parameters, payload shape, and resolution flag
 
 | Command | HTTP Method | Endpoint Path | Query / Body Parameters | Resolution Flags |
 | :--- | :--- | :--- | :--- | :--- |
-| `dbosctl api-key list` | `GET` | `/v2/{org_name}/tokens` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl api-key create <name>` | `POST` | `/v2/{org_name}/tokens/{token_name}` | Body: `{"appNames": [...], "permissions": [...]}`. Flag: repeatable `--app`, repeatable `--permission`. | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl api-key delete <name>` | `DELETE` | `/v2/{org_name}/tokens/{token_name}` | None. | `--profile`, `--url`, `--org` |
+| `dbosctl api-key list` | `GET` | `/v2/orgs/{orgName}/tokens` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl api-key create <name>` | `POST` | `/v2/orgs/{orgName}/tokens/{tokenName}` | Body: `{"appNames": [...], "permissions": [...]}`. Flag: repeatable `--app`, repeatable `--permission`. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl api-key delete <name>` | `DELETE` | `/v2/orgs/{orgName}/tokens/{tokenName}` | None. | `--profile`, `--url`, `--org` |
 
 #### Applications (`app`)
 
 | Command | HTTP Method | Endpoint Path | Query / Body Parameters | Resolution Flags |
 | :--- | :--- | :--- | :--- | :--- |
-| `dbosctl app list` | `GET` | `/v2/{org_name}/apps` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl app register <name>` | `POST` | `/v2/{org_name}/apps/{app_name}` | Body: `{"privateMode": bool}`. Flag: `--private-mode`. | `--profile`, `--url`, `--org` |
-| `dbosctl app delete <name>` | `DELETE` | `/v2/{org_name}/apps/{app_name}` | Interactive prompt or `--force`. | `--profile`, `--url`, `--org`, `--force` |
-| `dbosctl app get <name>` | `GET` | `/v2/{org_name}/apps/{app_name}` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl app versions <name>` | `GET` | `/v2/{org_name}/apps/{app_name}/versions` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl app executors <name>` | `GET` | `/v2/{org_name}/apps/{app_name}/executors` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl app metrics <name>` | `GET` | `/v2/{org_name}/apps/{app_name}/metrics` | Query: `startTime` (timestamp), `endTime` (timestamp). Flag: `--since` (duration, default: 24h). | `--profile`, `--url`, `--org`, `-o` / `--output` |
-| `dbosctl app update <name>` | `PATCH` | `/v2/{org_name}/apps/{app_name}` | Body (sparse patch): `{"executorTimeoutSecs": int64, "gcRowsThreshold": int64, "gcTimeThresholdMs": int64, "globalTimeoutMs": int64, "privateMode": bool}`. Flags: `--executor-timeout-secs`, `--gc-rows-threshold`, `--gc-time-threshold-ms`, `--global-timeout-ms`, `--private-mode`. | `--profile`, `--url`, `--org` |
-| `dbosctl app set-version <name> <version>` | `POST` | `/v2/{org_name}/apps/{app_name}/version` | Body: `{"versionName": "<version>"}`. | `--profile`, `--url`, `--org` |
+| `dbosctl app list` | `GET` | `/v2/orgs/{orgName}/apps` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl app register <name>` | `PUT` | `/v2/orgs/{orgName}/apps/{appName}` | Body: `{"privateMode": bool}`. Flag: `--private-mode`. | `--profile`, `--url`, `--org` |
+| `dbosctl app delete <name>` | `DELETE` | `/v2/orgs/{orgName}/apps/{appName}` | Interactive prompt or `--force`. | `--profile`, `--url`, `--org`, `--force` |
+| `dbosctl app get <name>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl app versions <name>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/versions` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl app executors <name>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/executors` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl app metrics <name>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/metrics` | Query: `startTime` (timestamp), `endTime` (timestamp). Flag: `--since` (duration, default: 24h). | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl app update <name>` | `PATCH` | `/v2/orgs/{orgName}/apps/{appName}` | Body (sparse patch): `{"executorTimeoutSecs": int64, "gcRowsThreshold": int64, "gcTimeThresholdMs": int64, "globalTimeoutMs": int64, "privateMode": bool}`. Flags: `--executor-timeout-secs`, `--gc-rows-threshold`, `--gc-time-threshold-ms`, `--global-timeout-ms`, `--private-mode`. | `--profile`, `--url`, `--org` |
+| `dbosctl app set-version <name> <version>` | `PATCH` | `/v2/orgs/{orgName}/apps/{appName}/versions/latest` | Body: `{"versionName": "<version>"}`. | `--profile`, `--url`, `--org` |
 
 #### Queues (`queue`)
 
 | Command | HTTP Method | Endpoint Path | Query / Body Parameters | Resolution Flags |
 | :--- | :--- | :--- | :--- | :--- |
-| `dbosctl queue list` | `GET` | `/v2/{org_name}/apps/{app_name}/queues` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl queue get <name>` | `GET` | `/v2/{org_name}/apps/{app_name}/queues/{queue_name}` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl queue list` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl queue get <name>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues/{queueName}` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
 
 #### Schedules (`schedule`)
 
 | Command | HTTP Method | Endpoint Path | Query / Body Parameters | Resolution Flags |
 | :--- | :--- | :--- | :--- | :--- |
-| `dbosctl schedule list` | `GET` | `/v2/{org_name}/apps/{app_name}/schedules` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl schedule get <name>` | `GET` | `/v2/{org_name}/apps/{app_name}/schedules/{schedule_name}` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl schedule pause <name>` | `POST` | `/v2/{org_name}/apps/{app_name}/schedules/{schedule_name}/pause` | None. | `--profile`, `--url`, `--org`, `-a` / `--app` |
-| `dbosctl schedule resume <name>` | `POST` | `/v2/{org_name}/apps/{app_name}/schedules/{schedule_name}/resume` | None. | `--profile`, `--url`, `--org`, `-a` / `--app` |
-| `dbosctl schedule trigger <name>` | `POST` | `/v2/{org_name}/apps/{app_name}/schedules/{schedule_name}/trigger` | None. Returns 201 with `{"workflow_id": "..."}`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl schedule backfill <name>` | `POST` | `/v2/{org_name}/apps/{app_name}/schedules/{schedule_name}/backfill` | Body: `{"startTime": timestamp, "endTime": timestamp}`. Flags: `--since`, `--until` (required). | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl schedule list` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/schedules` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl schedule get <name>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl schedule pause <name>` | `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/pause` | None. | `--profile`, `--url`, `--org`, `-a` / `--app` |
+| `dbosctl schedule resume <name>` | `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/resume` | None. | `--profile`, `--url`, `--org`, `-a` / `--app` |
+| `dbosctl schedule trigger <name>` | `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/trigger` | None. Returns 201 with `{"workflow_id": "..."}`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl schedule backfill <name>` | `POST` | `/v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/backfill` | Body: `{"startTime": timestamp, "endTime": timestamp}`. Flags: `--since`, `--until` (required). | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
 
 #### Workflows (`workflow`, alias: `wf`)
 
 | Command | HTTP Method | Endpoint Path | Query / Body Parameters | Resolution Flags |
 | :--- | :--- | :--- | :--- | :--- |
-| `dbosctl workflow list` | `POST` | `/v2/{org_name}/apps/{app_name}/workflows/search` | Body: `{"workflowIds": [...], "user": [...], "status": [...], "workflowName": [...], "appVersion": [...], "queueName": [...], "limit": int64, "offset": int64, "sortDesc": bool, "queuesOnly": bool, "startTime": timestamp, "endTime": timestamp}`. Flags: `-l` / `--limit`, `--offset`, `--id`, `-u` / `--user`, `-s` / `--status`, `-n` / `--name`, `--app-version`, `--queue`, `--since`, `--until`, `--desc`, `--queued`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` (supports `-o ids`) |
-| `dbosctl workflow get <id>` | `GET` | `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl workflow steps <id>` | `GET` | `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}/steps` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl workflow events <id>` | `GET` | `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}/events` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl workflow cancel <id>...` | `POST` | Single ID: `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}/cancel`<br>Multi ID: `/v2/{org_name}/apps/{app_name}/workflows/cancel` | Body: `{"cancelChildren": bool}` (single) or `{"workflowIds": [...], "cancelChildren": bool}` (multi). Positional args accept `-` to read IDs from stdin. Flag: `--children`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` (`-o ids`) |
-| `dbosctl workflow resume <id>...` | `POST` | Single ID: `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}/resume`<br>Multi ID: `/v2/{org_name}/apps/{app_name}/workflows/resume` | Body: `{"queueName": "<queue>"}` (single) or `{"workflowIds": [...], "queueName": "<queue>"}` (multi). Positional args accept `-` to read IDs from stdin. Flag: `--queue`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl workflow delete <id>...` | Single: `DELETE`<br>Multi: `POST` | Single ID: `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}`<br>Multi ID: `/v2/{org_name}/apps/{app_name}/workflows/delete` | Single query: `delete_children=bool`. Multi body: `{"workflowIds": [...], "deleteChildren": bool}`. Positional args accept `-` to read IDs from stdin. Flag: `--children`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
-| `dbosctl workflow fork <id>` | `POST` | `/v2/{org_name}/apps/{app_name}/workflows/{workflow_id}/fork` | Body: `{"newWorkflowId": "...", "startStep": int32, "queueName": "...", "appVersion": "..."}`. Returns 201 with `{"workflow_id": "..."}`. Flags: `--new-id`, `--start-step`, `--queue`, `--app-version`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl workflow list` | `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/search` | Body: `{"workflowIds": [...], "user": [...], "status": [...], "workflowName": [...], "appVersion": [...], "queueName": [...], "limit": int64, "offset": int64, "sortDesc": bool, "queuesOnly": bool, "startTime": timestamp, "endTime": timestamp}`. Flags: `-l` / `--limit`, `--offset`, `--id`, `-u` / `--user`, `-s` / `--status`, `-n` / `--name`, `--app-version`, `--queue`, `--since`, `--until`, `--desc`, `--queued`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` (supports `-o ids`) |
+| `dbosctl workflow get <id>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl workflow steps <id>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl workflow events <id>` | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/events` | None. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl workflow cancel <id>...` | `POST` | Single ID: `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/cancel`<br>Multi ID: `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-cancel` | Body: `{"cancelChildren": bool}` (single) or `{"workflowIds": [...], "cancelChildren": bool}` (multi). Positional args accept `-` to read IDs from stdin. Flag: `--children`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` (`-o ids`) |
+| `dbosctl workflow resume <id>...` | `POST` | Single ID: `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume`<br>Multi ID: `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-resume` | Body: `{"queueName": "<queue>"}` (single) or `{"workflowIds": [...], "queueName": "<queue>"}` (multi). Positional args accept `-` to read IDs from stdin. Flag: `--queue`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl workflow delete <id>...` | Single: `DELETE`<br>Multi: `POST` | Single ID: `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}`<br>Multi ID: `/v2/orgs/{orgName}/apps/{appName}/workflows/bulk-delete` | Single query: `delete_children=bool`. Multi body: `{"workflowIds": [...], "deleteChildren": bool}`. Positional args accept `-` to read IDs from stdin. Flag: `--children`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
+| `dbosctl workflow fork <id>` | `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork` | Body: `{"newWorkflowId": "...", "startStep": int32, "queueName": "...", "appVersion": "..."}`. Returns 201 with `{"workflow_id": "..."}`. Flags: `--new-id`, `--start-step`, `--queue`, `--app-version`. | `--profile`, `--url`, `--org`, `-a` / `--app`, `-o` / `--output` |
 
 #### Permissions (`permission`)
 
 | Command | HTTP Method | Endpoint Path | Query / Body Parameters | Resolution Flags |
 | :--- | :--- | :--- | :--- | :--- |
-| `dbosctl permission list` | `GET` | `/v2/{org_name}/permissions` | None. Registered in all auth modes. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl permission list` | `GET` | `/v2/orgs/{orgName}/permissions` | None. Registered in all auth modes. | `--profile`, `--url`, `--org`, `-o` / `--output` |
 
 #### System Database Commands (`sysdb`)
 
 The `sysdb` command group (`sysdb migrate`, `sysdb reset`, `sysdb rename`) connects
 directly to PostgreSQL or CockroachDB using `--db-url` or `$DBOS_SYSTEM_DATABASE_URL`.
 These commands never call the Conductor or Relay HTTP API and require no profile.
-Under Relay's architectural invariants, Relay never accesses an application's
-system database; those operations remain exclusively client-side.
+Under Relay's architectural invariants, Relay never executes direct raw SQL against
+an application's system database; sysdb operations remain exclusively client-side.
 
 #### Version Command (`version`)
 
@@ -370,57 +370,57 @@ against Relay running as the target server, asserting behavior matching the `dbo
   - Routes tagged `x-dbos-requires-oauth` are unregistered and return HTTP 404
     (`dbosctl` exits with code 4).
 - [ ] **Application Operations**:
-  - `app list`: `GET /v2/{org}/apps` returns list of application objects.
-  - `app register`: `POST /v2/{org}/apps/{app}` creates application record.
-  - `app get`: `GET /v2/{org}/apps/{app}` returns application metadata.
-  - `app update`: `PATCH /v2/{org}/apps/{app}` applies sparse update for timeout,
+  - `app list`: `GET /v2/orgs/{orgName}/apps` returns list of application objects.
+  - `app register`: `PUT /v2/orgs/{orgName}/apps/{appName}` creates application record.
+  - `app get`: `GET /v2/orgs/{orgName}/apps/{appName}` returns application metadata.
+  - `app update`: `PATCH /v2/orgs/{orgName}/apps/{appName}` applies sparse update for timeout,
     retention, and private mode.
-  - `app set-version`: `POST /v2/{org}/apps/{app}/version` records active version.
-  - `app versions`: `GET /v2/{org}/apps/{app}/versions` returns registered versions.
-  - `app executors`: `GET /v2/{org}/apps/{app}/executors` returns connected
+  - `app set-version`: `PATCH /v2/orgs/{orgName}/apps/{appName}/versions/latest` records active version.
+  - `app versions`: `GET /v2/orgs/{orgName}/apps/{appName}/versions` returns registered versions.
+  - `app executors`: `GET /v2/orgs/{orgName}/apps/{appName}/executors` returns connected
     executors reported over WebSocket.
-  - `app metrics`: `GET /v2/{org}/apps/{app}/metrics` returns point-in-time metrics
+  - `app metrics`: `GET /v2/orgs/{orgName}/apps/{appName}/metrics` returns point-in-time metrics
     for given time window.
-  - `app delete`: `DELETE /v2/{org}/apps/{app}` removes application.
+  - `app delete`: `DELETE /v2/orgs/{orgName}/apps/{appName}` removes application.
 - [ ] **Queue Operations**:
-  - `queue list`: `GET /v2/{org}/apps/{app}/queues` returns queue configurations.
-  - `queue get`: `GET /v2/{org}/apps/{app}/queues/{queue}` returns queue details.
+  - `queue list`: `GET /v2/orgs/{orgName}/apps/{appName}/queues` returns queue configurations.
+  - `queue get`: `GET /v2/orgs/{orgName}/apps/{appName}/queues/{queueName}` returns queue details.
 - [ ] **Schedule Operations**:
-  - `schedule list`: `GET /v2/{org}/apps/{app}/schedules` returns schedule definitions.
-  - `schedule get`: `GET /v2/{org}/apps/{app}/schedules/{schedule}` returns schedule details.
-  - `schedule pause`: `POST /v2/{org}/apps/{app}/schedules/{schedule}/pause` pauses schedule.
-  - `schedule resume`: `POST /v2/{org}/apps/{app}/schedules/{schedule}/resume` resumes schedule.
-  - `schedule trigger`: `POST /v2/{org}/apps/{app}/schedules/{schedule}/trigger` starts workflow and returns HTTP 201 with `workflow_id`.
-  - `schedule backfill`: `POST /v2/{org}/apps/{app}/schedules/{schedule}/backfill` starts workflow backfill window.
+  - `schedule list`: `GET /v2/orgs/{orgName}/apps/{appName}/schedules` returns schedule definitions.
+  - `schedule get`: `GET /v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}` returns schedule details.
+  - `schedule pause`: `POST /v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/pause` pauses schedule.
+  - `schedule resume`: `POST /v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/resume` resumes schedule.
+  - `schedule trigger`: `POST /v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/trigger` starts workflow and returns HTTP 201 with `workflow_id`.
+  - `schedule backfill`: `POST /v2/orgs/{orgName}/apps/{appName}/schedules/{scheduleName}/backfill` starts workflow backfill window.
 - [ ] **Workflow Search and Inspection**:
-  - `workflow list`: `POST /v2/{org}/apps/{app}/workflows/search` correctly
+  - `workflow list`: `POST /v2/orgs/{orgName}/apps/{appName}/workflows/search` correctly
     processes all filter combinations (IDs, status, names, queue, pagination,
     time ranges, order, queued-only).
-  - `workflow get`: `GET /v2/{org}/apps/{app}/workflows/{id}` returns complete
+  - `workflow get`: `GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}` returns complete
     workflow record.
-  - `workflow steps`: `GET /v2/{org}/apps/{app}/workflows/{id}/steps` returns step
+  - `workflow steps`: `GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps` returns step
     execution list.
-  - `workflow events`: `GET /v2/{org}/apps/{app}/workflows/{id}/events` returns event
+  - `workflow events`: `GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/events` returns event
     key-value list.
 - [ ] **Workflow Mutations**:
-  - `workflow cancel` (single): `POST /v2/{org}/apps/{app}/workflows/{id}/cancel`
+  - `workflow cancel` (single): `POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/cancel`
     dispatches cancel command to executor over WebSocket.
-  - `workflow cancel` (bulk): `POST /v2/{org}/apps/{app}/workflows/cancel`
+  - `workflow cancel` (bulk): `POST /v2/orgs/{orgName}/apps/{appName}/workflows/bulk-cancel`
     dispatches bulk cancellation.
-  - `workflow resume` (single): `POST /v2/{org}/apps/{app}/workflows/{id}/resume`.
-  - `workflow resume` (bulk): `POST /v2/{org}/apps/{app}/workflows/resume`.
-  - `workflow delete` (single): `DELETE /v2/{org}/apps/{app}/workflows/{id}`.
-  - `workflow delete` (bulk): `POST /v2/{org}/apps/{app}/workflows/delete`.
-  - `workflow fork`: `POST /v2/{org}/apps/{app}/workflows/{id}/fork` creates
+  - `workflow resume` (single): `POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume`.
+  - `workflow resume` (bulk): `POST /v2/orgs/{orgName}/apps/{appName}/workflows/bulk-resume`.
+  - `workflow delete` (single): `DELETE /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}`.
+  - `workflow delete` (bulk): `POST /v2/orgs/{orgName}/apps/{appName}/workflows/bulk-delete`.
+  - `workflow fork`: `POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork` creates
     forked workflow and returns HTTP 201 with new `workflow_id`.
 - [ ] **Permissions**:
-  - `permission list`: `GET /v2/{org}/permissions` returns list of grantable
+  - `permission list`: `GET /v2/orgs/{orgName}/permissions` returns list of grantable
     permissions in all modes.
 - [ ] **API Keys**:
-  - `api-key list`: `GET /v2/{org}/tokens` returns API keys.
-  - `api-key create`: `POST /v2/{org}/tokens/{name}` mints API key with secret
+  - `api-key list`: `GET /v2/orgs/{orgName}/tokens` returns API keys.
+  - `api-key create`: `POST /v2/orgs/{orgName}/tokens/{tokenName}` mints API key with secret
     returned once in HTTP 201 response.
-  - `api-key delete`: `DELETE /v2/{org}/tokens/{name}` revokes API key.
+  - `api-key delete`: `DELETE /v2/orgs/{orgName}/tokens/{tokenName}` revokes API key.
 - [ ] **Problem Details Format**:
   - Non-2xx responses emit `application/problem+json` matching `api.ErrorModel`
     with `status`, `title`, and `detail`.

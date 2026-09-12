@@ -27,6 +27,8 @@ and operational usage of Relay.
 
 * [Usage overview](usage/index.md) - how to run and operate Relay
 * [Quickstart](usage/quickstart.md) - run Relay locally with Postgres
+* [Declarative operations](usage/declarative.md) - fleet configuration with relay.yaml, apply, and diff
+* [Operations and migrations](usage/operations.md) - schema migrations, rolling upgrades, and rollbacks
 * [Conformance testing](usage/conformance.md) - run the automated Conductor conformance test suite
 
 ## Testing

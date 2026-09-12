@@ -10,15 +10,16 @@ its unauthenticated endpoints.
 
 ## Prerequisites
 
-- Go 1.24 or later
+- Go 1.26 or later (as required by `go.mod`)
 - Docker or Podman (for running the local database container)
 - `curl`
 
 ## 1. Start the database
 
-Start the local PostgreSQL container:
+Build the Relay binary and start the local PostgreSQL container:
 
 ```bash
+make build
 make db/up
 export RELAY_DATABASE_URL="$(make -s db/url)"
 ```
@@ -30,6 +31,8 @@ Migrate Relay's control plane schema:
 ```bash
 ./bin/relay migrate
 ```
+
+Relay's `serve` command also applies migrations automatically at startup, making explicit migration optional for single-instance setups. Older server binaries refuse to start against a schema newer than their embedded migration version (`no migration found for version`).
 
 ## 3. Mint an API key
 
@@ -78,12 +81,37 @@ Point your browser to `http://localhost:8090/` to inspect connected executors, w
 
 ## 6. Connecting an executor
 
-A DBOS Transact application connects to Relay by configuring the `RELAY_URL` and `RELAY_API_KEY` environment variables.
+A DBOS Transact application connects to Relay over WebSocket using the Conductor configuration. In application code, configure the conductor URL with the `ws://` scheme and provide an API key:
+
+- **Go**:
+  ```go
+  cfg := dbos.Config{
+      ConductorURL:    "ws://localhost:8090",
+      ConductorAPIKey: "dbos_...",
+  }
+  ```
+- **Python**:
+  ```python
+  config = DBOSConfig(conductor_url="ws://localhost:8090", conductor_key="dbos_...")
+  ```
+- **TypeScript**:
+  ```typescript
+  const config = {
+      conductorURL: "ws://localhost:8090",
+      conductorKey: "dbos_...",
+  };
+  ```
+
+Alternatively, configure the cloud-emulation environment variables (`DBOS__CLOUD=true` together with `DBOS__CONDUCTOR_APP_NAME`, `DBOS__CONDUCTOR_KEY`, and `DBOS__CONDUCTOR_URL`):
 
 ```bash
-export RELAY_URL="http://localhost:8090"
-export RELAY_API_KEY="dbos_..."
+export DBOS__CLOUD="true"
+export DBOS__CONDUCTOR_APP_NAME="my-app"
+export DBOS__CONDUCTOR_KEY="dbos_..."
+export DBOS__CONDUCTOR_URL="ws://localhost:8090"
 ```
+
+The sample applications in `examples/` wrap these settings using `RELAY_URL` and `RELAY_API_KEY` for local testing convenience.
 
 ## 7. Listing executors
 
@@ -125,8 +153,8 @@ curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/schedules
 The upstream `dbosctl` CLI works directly with Relay. Point `dbosctl` at Relay's URL:
 
 ```bash
-export DBOS_CONDUCTOR_URL="http://localhost:8090"
-export DBOS_API_KEY="dbos_..."
+export DBOS_URL="http://localhost:8090"
+export DBOS_TOKEN="dbos_..."
 
 # List applications
 dbosctl app list
@@ -150,3 +178,12 @@ All API errors return RFC 9457 Problem Details (`application/problem+json`):
   "detail": "no live executor connected for this application"
 }
 ```
+
+## 11. Upgrades and rollback
+
+When upgrading Relay:
+- Schema migrations are additive and applied automatically by `relay serve` or explicitly with `relay migrate`.
+- In high-availability deployments, upgrade the database schema before rolling out updated Relay instances.
+- Older Relay binaries refuse to start against a newer schema version (`no migration found for version`).
+- If a migration fails mid-apply, the database is marked dirty; resolve the schema state before restarting `relay serve`.
+- Relay migrations provide paired `.down.sql` scripts, but the CLI exposes no automated rollback command; rollback requires restoring from a database backup or applying down migrations with the external `golang-migrate` tool.
