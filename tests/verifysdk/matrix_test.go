@@ -848,7 +848,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 						SELECT COUNT(*) FROM test_step_executions
 						WHERE workflow_id = $1 AND step_name = 'step1';
 					`, chaosWfID)
-					_ = row.Scan(&count)
+					err := row.Scan(&count)
+					if err != nil {
+						t.Fatalf("failed to scan step1 count: %v", err)
+					}
 					if count >= 1 {
 						step1Recorded = true
 						break
@@ -856,7 +859,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					time.Sleep(500 * time.Millisecond)
 				}
 				if !step1Recorded {
-					t.Logf("[%s] Step 1 recorded in test_step_executions table", lang)
+					t.Fatalf("[%s] Step 1 not recorded in test_step_executions table", lang)
 				}
 
 				// (a) Kill timestamp from harness
@@ -872,7 +875,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				// (b) Relay's DISCONNECTED then DEAD transitions
 				var deadObserved bool
 				var deadTime, discTime time.Time
-				gracePeriod := 10 * time.Second
+				executorTimeout := 10 * time.Second
+				gracePeriod := executorTimeout
 
 				deadline := time.Now().Add(35 * time.Second)
 				for time.Now().Before(deadline) {
@@ -898,7 +902,9 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					// or was removed after the grace period following kill, it reached DEAD and was pruned.
 					if (!discTime.IsZero() && !found) || (!found && time.Since(killTime) >= gracePeriod) {
 						deadObserved = true
-						deadTime = time.Now()
+						if !discTime.IsZero() {
+							deadTime = time.Now()
+						}
 						break
 					}
 					time.Sleep(500 * time.Millisecond)
@@ -952,20 +958,27 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// (e) Exactly-once at outcome level measured by sample workflow steps
 				var step1Count, step2Count int
-				_ = dbConn.QueryRow(context.Background(), `
+				err := dbConn.QueryRow(context.Background(), `
 					SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step1';
 				`, chaosWfID).Scan(&step1Count)
-				_ = dbConn.QueryRow(context.Background(), `
+				if err != nil {
+					t.Fatalf("failed to scan step1Count: %v", err)
+				}
+				err = dbConn.QueryRow(context.Background(), `
 					SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
 				`, chaosWfID).Scan(&step2Count)
+				if err != nil {
+					t.Fatalf("failed to scan step2Count: %v", err)
+				}
+
+				if step1Count != 1 {
+					t.Fatalf("[%s] Expected exactly 1 step1 execution, got %d", lang, step1Count)
+				}
+				if step2Count != 1 {
+					t.Fatalf("[%s] Expected exactly 1 step2 execution, got %d", lang, step2Count)
+				}
 
 				stepReExecutions := 0
-				if step1Count > 1 {
-					stepReExecutions += step1Count - 1
-				}
-				if step2Count > 1 {
-					stepReExecutions += step2Count - 1
-				}
 				primaryInfo.TerminalOutcomes = terminalOutcomes
 				primaryInfo.StepReexecutions = stepReExecutions
 
@@ -1053,13 +1066,13 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				var resumeStatus string
 				for i := 0; i < 20; i++ {
 					resumeStatus, _ = getWorkflowViaAPI(t, info.AppName, wfResumeID)
-					if resumeStatus != "" && resumeStatus != "CANCELLED" {
+					if resumeStatus == "SUCCESS" || resumeStatus == "ERROR" || resumeStatus == "SUCCESS_TERMINAL" {
 						break
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
-				if resumeStatus == "" || resumeStatus == "CANCELLED" {
-					t.Fatalf("[%s] Resumed workflow %s remained %s after container restart", lang, wfResumeID, resumeStatus)
+				if resumeStatus != "SUCCESS" {
+					t.Fatalf("[%s] Resumed workflow %s expected SUCCESS, got %s after container restart", lang, wfResumeID, resumeStatus)
 				}
 				info.Cell6ResumedCompleted = true
 				info.Cell6Duration = time.Since(cellLangStart)
