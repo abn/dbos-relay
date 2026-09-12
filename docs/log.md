@@ -6,6 +6,12 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Rebuilt [Conductor WebSocket protocol specification](protocol/executor-ws.md) covering all 32 implemented message types, normalized envelope definitions, aligned handshake and alert payloads, and added inline citations for idempotence guarantees.
+* **Update**: Resolved decoding direction heuristics in protocol codec and added exhaustive round-trip tests for zero-value response structures.
+* **Update**: Aligned `MetricData` shape with upstream schema and added golden fixture testing with unknown field rejections.
+* **Update**: Added `NOTICE` acknowledging clean-room derivation of wire types from MIT-licensed SDK source and amended [ADR 0001](adr/0001-clean-room-derivation.md).
+* **Update**: Replaced loose map interfaces in workflow and step aggregate responses with typed rows mirroring system database schemas across protocol, data-plane, and REST mapping layers.
+* **Update**: Corrected schedule property mappings and list workflow filter names in [Wire to REST mapping](protocol/wire-to-rest.md) and removed fabricated HTTP 502 status claims.
 * **Update**: Implemented full filter parity, cancellation options, and full status field mapping in data-plane client.
 * **Update**: Propagated caller context, statement timeouts, and connection pool bounds to data-plane client instances.
 * **Update**: Added transactional mutation support and reconciliation in declarative engine.
