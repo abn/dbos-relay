@@ -1,0 +1,11 @@
+{
+  "type": "get_metrics",
+  "request_id": "r1",
+  "metrics": [
+    {
+      "metric_name": "dbos_workflows",
+      "metric_type": "counter",
+      "value": 1
+    }
+  ]
+}

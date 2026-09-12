@@ -654,10 +654,9 @@ type SetLatestApplicationVersionResponse struct {
 	Success bool `json:"success"`
 }
 
-// MetricData provenance: Go SDK dbos-transact-go/dbos/internal/sysdb/sysdb.go
+// MetricData provenance: Go SDK dbos-transact-go/dbos/internal/sysdb/system_database.go:5449 (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
 type MetricData struct {
-	MetricName  string         `json:"metric_name"`
-	MetricValue float64        `json:"metric_value"`
-	Timestamp   int64          `json:"timestamp"`
-	Tags        map[string]any `json:"tags,omitempty"`
+	MetricName string  `json:"metric_name"`
+	MetricType string  `json:"metric_type"`
+	Value      float64 `json:"value"`
 }
