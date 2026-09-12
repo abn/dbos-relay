@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ type RegistryDisconnector interface {
 type Registry struct {
 	mu     sync.RWMutex
 	byApp  map[pgtype.UUID]map[string]*ExecutorConn
+	rrApp  map[pgtype.UUID]uint64
 	q      RegistryDisconnector
 	logger *slog.Logger
 }
@@ -29,6 +31,7 @@ type Registry struct {
 func NewRegistry(q RegistryDisconnector, logger *slog.Logger) *Registry {
 	return &Registry{
 		byApp:  make(map[pgtype.UUID]map[string]*ExecutorConn),
+		rrApp:  make(map[pgtype.UUID]uint64),
 		q:      q,
 		logger: logger,
 	}
@@ -67,6 +70,7 @@ func (r *Registry) DrainAll() []*ExecutorConn {
 		}
 	}
 	r.byApp = make(map[pgtype.UUID]map[string]*ExecutorConn)
+	r.rrApp = make(map[pgtype.UUID]uint64)
 	return conns
 }
 
@@ -91,6 +95,7 @@ func (r *Registry) Unregister(ctx context.Context, conn *ExecutorConn) bool {
 	delete(appMap, conn.executorID)
 	if len(appMap) == 0 {
 		delete(r.byApp, conn.appID)
+		delete(r.rrApp, conn.appID)
 	}
 	r.mu.Unlock()
 
@@ -113,22 +118,40 @@ func (r *Registry) Unregister(ctx context.Context, conn *ExecutorConn) bool {
 	return true
 }
 
-// SelectExecutor returns an active executor connection for dispatch.
+// SelectExecutor returns an active executor connection for dispatch using round-robin selection.
 func (r *Registry) SelectExecutor(appID pgtype.UUID) (*ExecutorConn, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	return r.SelectExecutorWithExclusion(appID, "")
+}
+
+// SelectExecutorWithExclusion picks an active executor connection for dispatch using round-robin,
+// excluding a specific executor ID if provided.
+func (r *Registry) SelectExecutorWithExclusion(appID pgtype.UUID, excludeExecutorID string) (*ExecutorConn, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	appMap, ok := r.byApp[appID]
 	if !ok || len(appMap) == 0 {
 		return nil, errors.New("no executors available for application")
 	}
 
-	// Pseudo-random selection (map iteration order is randomized in Go).
-	for _, conn := range appMap {
-		return conn, nil
+	var ids []string
+	for id := range appMap {
+		if id != excludeExecutorID {
+			ids = append(ids, id)
+		}
 	}
 
-	return nil, errors.New("no executors available")
+	if len(ids) == 0 {
+		return nil, errors.New("no alternative executors available")
+	}
+
+	sort.Strings(ids)
+
+	idx := r.rrApp[appID]
+	r.rrApp[appID]++
+	selectedID := ids[idx%uint64(len(ids))]
+
+	return appMap[selectedID], nil
 }
 
 // ListConnected returns currently connected executors for the app.

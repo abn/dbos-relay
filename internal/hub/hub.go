@@ -333,6 +333,68 @@ func (h *Hub) SendRecovery(ctx context.Context, appID pgtype.UUID, targetExecuto
 	}
 }
 
+// isSafeToRetry returns true if the message is idempotent or a read-only query
+// that is safe to retry on another executor upon timeout or disconnect.
+func isSafeToRetry(req protocol.Message) bool {
+	if req == nil {
+		return false
+	}
+	switch req.GetMessageType() {
+	case protocol.MessageTypeExecutorInfo,
+		protocol.MessageTypeListWorkflows,
+		protocol.MessageTypeListQueuedWorkflows,
+		protocol.MessageTypeListSteps,
+		protocol.MessageTypeGetWorkflow,
+		protocol.MessageTypeExistPendingWorkflows,
+		protocol.MessageTypeGetMetrics,
+		protocol.MessageTypeListSchedules,
+		protocol.MessageTypeGetSchedule,
+		protocol.MessageTypeGetWorkflowEvents,
+		protocol.MessageTypeGetWorkflowNotifications,
+		protocol.MessageTypeGetWorkflowStreams,
+		protocol.MessageTypeGetWorkflowAggregates,
+		protocol.MessageTypeGetStepAggregates,
+		protocol.MessageTypeListApplicationVersions,
+		protocol.MessageTypeListQueues,
+		protocol.MessageTypeGetQueue,
+		protocol.MessageTypeCancel,
+		protocol.MessageTypeResume,
+		protocol.MessageTypeForkWorkflow,
+		protocol.MessageTypeForkFromFailure:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Hub) dispatchToConn(ctx context.Context, conn *ExecutorConn, reqID string, req protocol.Message) (protocol.Message, error, error) {
+	ch, unregister, err := conn.mux.Register(reqID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unregister()
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)
+	defer cancel()
+
+	if err := conn.WriteMessage(timeoutCtx, req); err != nil {
+		return nil, err, fmt.Errorf("dispatch failed: %w", err)
+	}
+
+	select {
+	case <-timeoutCtx.Done():
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		return nil, nil, errors.New("request timed out")
+	case res, ok := <-ch:
+		if !ok {
+			return nil, nil, errors.New("connection closed while awaiting response")
+		}
+		return res, nil, nil
+	}
+}
+
 // Dispatch sends a request to an executor and waits for the response.
 func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Message) (protocol.Message, error) {
 	conn, err := h.registry.SelectExecutor(appID)
@@ -345,28 +407,24 @@ func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Mess
 		return nil, errors.New("request must have an ID")
 	}
 
-	ch, unregister, err := conn.mux.Register(reqID)
-	if err != nil {
-		return nil, err
-	}
-	defer unregister()
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, h.config.ExecutorDeadline)
-	defer cancel()
-
-	if err := conn.WriteMessage(timeoutCtx, req); err != nil {
-		return nil, fmt.Errorf("dispatch failed: %w", err)
-	}
-
-	select {
-	case <-timeoutCtx.Done():
-		return nil, errors.New("request timed out")
-	case res, ok := <-ch:
-		if !ok {
-			return nil, errors.New("connection closed while awaiting response")
-		}
+	res, writeErr, dispatchErr := h.dispatchToConn(ctx, conn, reqID, req)
+	if dispatchErr == nil {
 		return res, nil
 	}
+
+	// Retry on an alternative healthy executor if write failed or if request is safe to retry on timeout
+	if writeErr != nil || isSafeToRetry(req) {
+		altConn, altErr := h.registry.SelectExecutorWithExclusion(appID, conn.executorID)
+		if altErr == nil {
+			altRes, _, altDispatchErr := h.dispatchToConn(ctx, altConn, reqID, req)
+			if altDispatchErr == nil {
+				return altRes, nil
+			}
+			return nil, altDispatchErr
+		}
+	}
+
+	return nil, dispatchErr
 }
 
 func (h *Hub) Close() error {

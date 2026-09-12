@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -1121,5 +1122,202 @@ func TestHub_Close_DisconnectWritesNotCancelled(t *testing.T) {
 		if ctxErr != nil {
 			t.Fatalf("DisconnectExecutor call %d failed with cancelled context: %v", i, ctxErr)
 		}
+	}
+}
+
+func TestHub_Dispatch_RetryOnSilentExecutor(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{
+		ExecutorDeadline: 20 * time.Millisecond,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsBase := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Connect silent executor
+	silentConn, resp, err := websocket.Dial(ctx, wsBase, nil)
+	if err != nil {
+		t.Fatalf("failed to dial silent executor: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = silentConn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err := silentConn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("silent executor read prompt failed: %v", err)
+	}
+	msg, _ := protocol.Decode(data)
+	infoReq := msg.(*protocol.ExecutorInfoRequest)
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "exec-silent",
+		ApplicationVersion: "v1.0.0",
+	}
+	respBytes, _ := protocol.Encode(infoResp)
+	_ = silentConn.Write(ctx, websocket.MessageText, respBytes)
+
+	// Read and discard loop for silent executor
+	go func() {
+		for {
+			_, _, readErr := silentConn.Read(ctx)
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	// Connect active executor
+	activeConn, resp, err := websocket.Dial(ctx, wsBase, nil)
+	if err != nil {
+		t.Fatalf("failed to dial active executor: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = activeConn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err = activeConn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("active executor read prompt failed: %v", err)
+	}
+	msg, _ = protocol.Decode(data)
+	infoReq = msg.(*protocol.ExecutorInfoRequest)
+	infoResp = &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "exec-active",
+		ApplicationVersion: "v1.0.0",
+	}
+	respBytes, _ = protocol.Encode(infoResp)
+	_ = activeConn.Write(ctx, websocket.MessageText, respBytes)
+
+	// Responder loop for active executor
+	go func() {
+		for {
+			readTyp, readData, readErr := activeConn.Read(ctx)
+			if readErr != nil {
+				return
+			}
+			if readTyp != websocket.MessageText {
+				continue
+			}
+			reqMsg, decodeErr := protocol.DecodeRequest(readData)
+			if decodeErr != nil {
+				continue
+			}
+			activeResp := &protocol.ListWorkflowsResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeListWorkflows,
+					RequestID: reqMsg.GetRequestID(),
+				},
+				Output: []protocol.ListWorkflowsResponseBody{},
+			}
+			activeBytes, _ := protocol.Encode(activeResp)
+			_ = activeConn.Write(ctx, websocket.MessageText, activeBytes)
+		}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+
+	// 20 dispatches must all succeed despite 1 of 2 executors being silent
+	for i := 0; i < 20; i++ {
+		req := &protocol.ListWorkflowsRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeListWorkflows,
+				RequestID: fmt.Sprintf("req-retry-%d", i),
+			},
+		}
+		res, err := h.Dispatch(ctx, appID, req)
+		if err != nil {
+			t.Fatalf("dispatch %d failed: %v", i, err)
+		}
+		if res == nil {
+			t.Fatalf("dispatch %d returned nil response", i)
+		}
+	}
+}
+
+func TestHub_Dispatch_SingleExecutorTimeout(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{
+		ExecutorDeadline: 20 * time.Millisecond,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err := conn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("read prompt failed: %v", err)
+	}
+	msg, _ := protocol.Decode(data)
+	infoReq := msg.(*protocol.ExecutorInfoRequest)
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "exec-silent-alone",
+		ApplicationVersion: "v1.0.0",
+	}
+	respData, _ := protocol.Encode(infoResp)
+	_ = conn.Write(ctx, websocket.MessageText, respData)
+
+	go func() {
+		for {
+			_, _, readErr := conn.Read(ctx)
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+	req := &protocol.ListWorkflowsRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeListWorkflows,
+			RequestID: "req-alone-timeout",
+		},
+	}
+	_, err = h.Dispatch(ctx, appID, req)
+	if err == nil {
+		t.Fatal("expected dispatch timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected error containing 'timed out', got %v", err)
 	}
 }
