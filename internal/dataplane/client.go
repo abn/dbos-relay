@@ -369,29 +369,15 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if err != nil {
 			return nil, fmt.Errorf("failed to get workflow aggregates: %w", err)
 		}
-		outputs := make([]map[string]any, len(rows))
+		outputs := make([]protocol.WorkflowAggregateRow, len(rows))
 		for i, row := range rows {
-			m := make(map[string]any)
-			for k, v := range row.Group {
-				if v == nil {
-					m[k] = nil
-				} else {
-					m[k] = *v
-				}
+			outputs[i] = protocol.WorkflowAggregateRow{
+				Group:             row.Group,
+				Count:             row.Count,
+				MinCreatedAt:      row.MinCreatedAt,
+				MaxQueueWaitMs:    row.MaxQueueWaitMs,
+				MaxTotalLatencyMs: row.MaxTotalLatencyMs,
 			}
-			if row.Count != nil {
-				m["count"] = *row.Count
-			}
-			if row.MinCreatedAt != nil {
-				m["min_created_at"] = *row.MinCreatedAt
-			}
-			if row.MaxQueueWaitMs != nil {
-				m["max_queue_wait_ms"] = *row.MaxQueueWaitMs
-			}
-			if row.MaxTotalLatencyMs != nil {
-				m["max_total_latency_ms"] = *row.MaxTotalLatencyMs
-			}
-			outputs[i] = m
 		}
 		return &protocol.GetWorkflowAggregatesResponse{
 			Envelope: protocol.Envelope{
@@ -431,23 +417,13 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if err != nil {
 			return nil, fmt.Errorf("failed to get step aggregates: %w", err)
 		}
-		outputs := make([]map[string]any, len(rows))
+		outputs := make([]protocol.StepAggregateRow, len(rows))
 		for i, row := range rows {
-			m := make(map[string]any)
-			for k, v := range row.Group {
-				if v == nil {
-					m[k] = nil
-				} else {
-					m[k] = *v
-				}
+			outputs[i] = protocol.StepAggregateRow{
+				Group:         row.Group,
+				Count:         row.Count,
+				MaxDurationMs: row.MaxDurationMs,
 			}
-			if row.Count != nil {
-				m["count"] = *row.Count
-			}
-			if row.MaxDurationMs != nil {
-				m["max_duration_ms"] = *row.MaxDurationMs
-			}
-			outputs[i] = m
 		}
 		return &protocol.GetStepAggregatesResponse{
 			Envelope: protocol.Envelope{
