@@ -6,6 +6,11 @@ implementation milestones; those belong in the commit history.
 
 ## 2026-09-12
 
+* **Update**: Replaced regex dashboard bundling with an esbuild pipeline and added bundle parse validation.
+* **Update**: Hardened dashboard against HTML injection in inline event handlers and configured Content Security Policy headers.
+* **Update**: Aligned dashboard API key management model with OpenAPI specification schemas.
+* **Update**: Implemented workflow fork functionality and mapped restart actions to step-zero forks.
+* **Update**: Added in-browser authentication modal intercepting unauthenticated API responses under auth mode.
 * **Update**: Unified authorization middleware, enforced tenant path and application scoping across REST endpoints, and implemented cross-tenant isolation testing.
 * **Update**: Hardened peer-forward endpoint with random cluster secret fallback, replay protection windows, and pre-allocation signature verification.
 * **Update**: Enforced role-based access control on identity mutation handlers, organisation secret validation on join, and grantable permission catalogues.
