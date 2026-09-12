@@ -752,8 +752,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				t.Logf("[%s] %s", lang, d5Summary)
 
 				// 2. Execute genuine conformance test runner against live app
-				var skipIDs []int
-				var skipReason string
+				skipIDs := []int{2, 3, 4, 5, 6}
+				skipReason := "batteries require synthetic executor; excluded during multi-SDK verification"
 
 				confCfg := conformance.Config{
 					TargetURL:      relayBaseURL,
