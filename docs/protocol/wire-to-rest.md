@@ -13,10 +13,8 @@ Relay decouples HTTP clients from live executors through an internal router. The
 ### Search and List
 
 Incoming REST search parameters map to `ListWorkflowsRequest` body:
-* `workflowIds` -> `WorkflowUUID` (list or string)
+* `workflowIds` -> `WorkflowUUIDs` (`workflow_uuids`, list)
 * `workflowName` -> `WorkflowName`
-* `workflow_class` -> `WorkflowClassName`
-* `workflow_config` -> `WorkflowConfigName`
 * `status` -> `Status` (list or string)
 * `user` -> `AuthenticatedUser`
 * `startTime` / `endTime` -> `StartTime` / `EndTime`
@@ -52,7 +50,7 @@ REST query `GET /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/steps` maps to 
 
 Wire `WorkflowStepsResponseBody` maps to OpenAPI `#/components/schemas/WorkflowStep`:
 * `FunctionID` -> `stepId` (integer)
-* `FunctionName` -> `name` (string)
+* `FunctionName` -> `stepName` (string)
 * `Output` -> `output` (null if absent)
 * `Error` -> `error` (null if absent)
 * `ChildWorkflowID` -> `childWorkflowId` (null if absent)
@@ -71,23 +69,28 @@ Wire `QueueOutput` maps to OpenAPI `#/components/schemas/Queue`:
 * `Concurrency` -> `concurrency`
 * `WorkerConcurrency` -> `workerConcurrency`
 * `RateLimitMax` -> `rateLimitMax`
-* `RateLimitPeriodSec` -> `rateLimitPeriodSec`
+* `RateLimitPeriodSec` -> `rateLimitPeriodSecs`
 * `PriorityEnabled` -> `priorityEnabled`
+* `PartitionQueue` -> `partitionQueue`
+* `PollingIntervalSec` -> `pollingIntervalSecs`
+* `ApplicationName` -> `applicationName`
 
 ## Schedules
 
 Wire `ScheduleOutput` maps to OpenAPI `#/components/schemas/Schedule`:
-* `ScheduleID` -> `id`
-* `ScheduleName` -> `name`
+* `ScheduleID` -> `scheduleId`
+* `ScheduleName` -> `scheduleName`
 * `WorkflowName` -> `workflowName`
-* `WorkflowClassName` -> `workflowClassName`
-* `Schedule` -> `schedule`
+* `WorkflowClassName` -> `workflowClass`
+* `Schedule` -> `cronExpression`
 * `Status` -> `status`
 * `Context` -> `context`
 * `LastFiredAt` -> `lastFiredAt` (RFC 3339 timestamp)
 * `AutomaticBackfill` -> `automaticBackfill`
 * `CronTimezone` -> `cronTimezone`
-* `QueueName` -> `queueName`
+* `ApplicationName` -> `applicationName`
+
+Wire `queue_name` is dropped because OpenAPI `#/components/schemas/Schedule` has no corresponding property.
 
 ## Error Mapping
 
