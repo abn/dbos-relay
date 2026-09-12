@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -92,5 +93,41 @@ func TestRegistry_SelectExecutorWithExclusion(t *testing.T) {
 	_, err := regSingle.SelectExecutorWithExclusion(singleApp, "only-one")
 	if err == nil {
 		t.Error("expected error when excluding the only executor, got nil")
+	}
+}
+
+func BenchmarkRegistry_SelectExecutor(b *testing.B) {
+	reg := NewRegistry(nil, nil)
+	appID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true}
+	for i := 0; i < 10; i++ {
+		reg.Register(&ExecutorConn{
+			appID:      appID,
+			executorID: fmt.Sprintf("bench-exec-%d", i),
+		})
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = reg.SelectExecutor(appID)
+	}
+}
+
+func BenchmarkRegistry_ConnectionLifecycle(b *testing.B) {
+	reg := NewRegistry(nil, nil)
+	appID := pgtype.UUID{Bytes: [16]byte{5, 6, 7, 8}, Valid: true}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		execID := fmt.Sprintf("bench-lifecycle-%d", i%100)
+		conn := &ExecutorConn{
+			appID:      appID,
+			executorID: execID,
+		}
+		reg.Register(conn)
+		_ = reg.ListConnected(appID)
+		_, _ = reg.SelectExecutor(appID)
+		reg.Unregister(context.Background(), conn)
 	}
 }

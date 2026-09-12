@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -133,6 +134,10 @@ func isValidIdentifier(s string, allowEmpty bool) bool {
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.URL.Path, "/websocket/") {
+		http.NotFound(w, r)
+		return
+	}
 	// Simple path routing /websocket/{appName}/{conductorKey}
 	pathParts := r.URL.Path[len("/websocket/"):]
 	appName := ""
@@ -176,6 +181,22 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	stopHandshakeWatcher := make(chan struct{})
+	defer close(stopHandshakeWatcher)
+	go func() {
+		select {
+		case <-h.ctx.Done():
+			if !registered {
+				_ = conn.Close(websocket.StatusPolicyViolation, "hub closed")
+			}
+		case <-handshakeCtx.Done():
+			if !registered {
+				_ = conn.Close(websocket.StatusPolicyViolation, "handshake timed out")
+			}
+		case <-stopHandshakeWatcher:
+		}
+	}()
+
 	// Send executor_info request to prompt executor registration per D7 protocol
 	infoReq := &protocol.ExecutorInfoRequest{
 		Envelope: protocol.Envelope{
@@ -191,7 +212,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// First message must be executor info
-	typ, data, err := conn.Read(handshakeCtx)
+	typ, data, err := conn.Read(context.WithoutCancel(handshakeCtx))
 	if err != nil {
 		h.logger.Error("failed to read executor info", "error", err)
 		return
@@ -476,12 +497,19 @@ func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Mess
 }
 
 func (h *Hub) Close() error {
+	// Safely close active connections so peers receive a clean WebSocket close frame.
+	conns := h.registry.DrainAll()
+	var wg sync.WaitGroup
+	for _, conn := range conns {
+		wg.Add(1)
+		go func(c *ExecutorConn) {
+			defer wg.Done()
+			_ = c.Close()
+		}(conn)
+	}
+	wg.Wait()
+
 	h.cancel()
 	h.wg.Wait()
-	// Safely close any remaining connections outside the registry lock
-	conns := h.registry.DrainAll()
-	for _, conn := range conns {
-		_ = conn.Close()
-	}
 	return nil
 }
