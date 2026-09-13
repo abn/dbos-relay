@@ -43,31 +43,31 @@ type CellResult struct {
 }
 
 type containerInfo struct {
-	Name                   string
-	SecondaryName          string
-	Language               string
-	AppName                string
-	DBName                 string
-	TriggerPort            int
-	SecondaryPort          int
-	ExecutorID             string
-	AppVersion             string
-	SDKVersion             string
-	LaunchLog              string
-	TriggeredWfID          string
+	Name          string
+	SecondaryName string
+	Language      string
+	AppName       string
+	DBName        string
+	TriggerPort   int
+	SecondaryPort int
+	ExecutorID    string
+	AppVersion    string
+	SDKVersion    string
+	LaunchLog     string
+	TriggeredWfID string
 
 	// Cell 2 Evidence
-	ConformanceSummary     string
-	D5RESTSummary          string
+	ConformanceSummary string
+	D5RESTSummary      string
 
 	// Cell 5 Chaos Evidence
-	KillTimestamp          time.Time
-	DisconnectedTimestamp  time.Time
-	DeadTimestamp          time.Time
-	DeadKillDelta          time.Duration
-	SurvivorRecoveryLog    string
-	TerminalOutcomes       int
-	StepReexecutions       int
+	KillTimestamp         time.Time
+	DisconnectedTimestamp time.Time
+	DeadTimestamp         time.Time
+	DeadKillDelta         time.Duration
+	SurvivorRecoveryLog   string
+	TerminalOutcomes      int
+	StepReexecutions      int
 
 	// Cell 6 Offline Cancel/Resume Evidence
 	Cell6Duration          time.Duration
@@ -77,9 +77,9 @@ type containerInfo struct {
 	Cell6ResumeStep2Count  int
 
 	// Cell 7 Fork Evidence
-	Cell7Duration          time.Duration
-	ForkedWfID             string
-	ForkedExecutorID       string
+	Cell7Duration    time.Duration
+	ForkedWfID       string
+	ForkedExecutorID string
 }
 
 type executorAPIResponse struct {
@@ -205,7 +205,6 @@ func getSDKVersion(lang string, container string) string {
 	}
 	return "unknown"
 }
-
 
 func fetchExecutors(appName string) ([]executorAPIResponse, error) {
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", relayBaseURL, orgName, appName)
@@ -483,6 +482,10 @@ func waitForExecutors(t *testing.T, containers map[string]containerInfo, timeout
 			for _, e := range execs {
 				if e.Status == "HEALTHY" || e.Status == "connected" {
 					hasHealthy = true
+					if info.AppVersion == "" && e.ApplicationVersion != "" {
+						info.AppVersion = e.ApplicationVersion
+						containers[lang] = info
+					}
 					break
 				}
 			}
@@ -858,13 +861,6 @@ func TestVerifySDK_Matrix(t *testing.T) {
 						cellResults[3][lang] = CellResult{Status: CellStatusFail}
 					}
 				}()
-				if lang == "Java" {
-					cellResults[3][lang] = CellResult{
-						Status: CellStatusSkip,
-						Reason: "upstream schema v19 vs v107",
-					}
-					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK client v1.3.0 (requires v107)")
-				}
 				info := containers[lang]
 				wfID := info.TriggeredWfID
 				if wfID == "" {
@@ -1512,13 +1508,6 @@ func TestVerifySDK_Matrix(t *testing.T) {
 						cellResults[7][lang] = CellResult{Status: CellStatusFail}
 					}
 				}()
-				if lang == "Java" {
-					cellResults[7][lang] = CellResult{
-						Status: CellStatusSkip,
-						Reason: "upstream schema v19 vs v107",
-					}
-					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK data-plane fallback v1.3.0 (requires v107)")
-				}
 				cellLangStart := time.Now()
 				info := containers[lang]
 
