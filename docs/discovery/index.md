@@ -10,3 +10,4 @@ cites the permitted source for every claim it makes.
 * [Dashboard component reuse](dashboard-reuse.md) - UI assessment and go/no-go decision
 * [Recovery timing parameters](recovery-params.md) - heartbeat, grace periods, and overrides
 * [Metrics and alerting surface](metrics-alerting.md) - OpenMetrics catalogue and alert rules
+* [Conformance batteries](Batteries.md) - test battery catalogue and synthetic peer disclosure

@@ -11,8 +11,7 @@ server or any live endpoint to verify behavioral parity with DBOS Conductor.
 ## Synthetic Peer Disclosure
 
 Batteries 2 through 6 test control plane framing, dispatch, and lifecycle handling
-by connecting an in-tree synthetic test double (`internal/fakeexecutor`). The synthetic
-peer implements the DBOS executor WebSocket wire protocol (D1, D2) and registers
+by connecting an in-tree synthetic test double (`internal/fakeexecutor`). The synthetic peer implements the DBOS executor WebSocket wire protocol (see [Conductor Protocol (WebSocket)](../protocol/executor-ws.md)) and registers
 handlers that assert control frame reception and reply with typed responses.
 
 These batteries certify control plane correctness, REST-to-WebSocket multiplexing,
@@ -69,7 +68,7 @@ Validates mutating workflow control actions dispatched from the control plane to
 - **Check 4.2 (Resume Workflow)**: `POST /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/resume`
   dispatches `resume` frame to the executor, returning HTTP 200 or 204. Asserts that the executor
   affirmatively received the resume frame for the targeted workflow.
-- **Check 4.3 (Restart/Fork Workflow)**: `POST /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/fork`
+- **Check 4.3 (Fork Workflow)**: `POST /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/fork`
   with `newWorkflowId` dispatches `fork_workflow` frame to the executor, returning HTTP 200 or 201
   with the new workflow identifier. Asserts that the executor received the fork request and that
   the response contains the expected workflow ID.

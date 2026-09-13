@@ -14,26 +14,23 @@ back does not strand its work.
 
 ## The state machine
 
-An executor is connected while its socket is open. When the socket closes it
-becomes disconnected. That is a waiting state. A process that reconnects with
-the same identifier returns to connected and nothing else happens. If the
-grace period elapses without a reconnect, the executor is declared dead.
+Each executor registration transitions through four discrete lifecycle states:
 
-A dead executor's work is offered to a healthy executor of the same
-application, preferring one running the same application version. That
-executor is asked to recover the dead executor's workflows. On a successful
-reply the dead executor's record is removed and the action is written to the
-audit log. On failure or timeout, the next healthy executor is tried with
-backoff, and the condition is surfaced as an alert if no executor takes it.
+1. **Connected (`HEALTHY`)**: The executor maintains an active WebSocket connection responding to heartbeat frames.
+2. **Disconnected (`DISCONNECTED`)**: The WebSocket connection is closed or times out (after exceeding the 25-second server ping wait). A per-application grace period timer begins (`executorTimeoutSecs`, default 60 seconds). If the executor reconnects presenting the same `executor_id` before expiry, it returns to `HEALTHY`.
+3. **Dead (`DEAD`)**: The grace period elapses without reconnection. Relay marks the executor `DEAD` and initiates workflow recovery dispatch.
+4. **Deleted**: Once recovery is acknowledged by an active peer, the dead executor record is pruned from the registry.
+
+A dead executor's work is offered to a healthy peer executor belonging to the same application and organisation, preferring one running the same application version. Relay asks that peer to recover the dead executor's workflows by dispatching a `recovery` frame (`executor_ids: [dead_executor_id]`). On a successful reply (`success: true`), Relay deletes the dead executor's record and writes the action to the audit log. On failure, peer disconnect, or acknowledgement timeout, Relay fails over sequentially to the next healthy candidate with backoff. If no healthy peers are connected or willing to adopt, the executor remains in `DEAD` status until a healthy peer joins.
 
 ```
-connected --socket closed--> disconnected --grace elapsed--> dead
-    ^                             |                            |
-    \------ reconnect, same id ---/                            |
-                                                               v
-                                              pick a healthy executor of the
-                                              same application, ask it to
-                                              recover, confirm, then delete
+HEALTHY --socket closed / ping wait > 25s--> DISCONNECTED --grace elapsed (default 60s)--> DEAD
+   ^                                                |                                       |
+   \--------- reconnect within grace period --------/                                       |
+             (same executor_id -> HEALTHY)                                                  v
+                                                                             pick healthy peer executor of
+                                                                             same app/version, send recovery,
+                                                                             on success: true -> Deleted
 ```
 
 ## Rules
@@ -42,7 +39,9 @@ connected --socket closed--> disconnected --grace elapsed--> dead
   library's guarantees as at-least-once for steps and exactly-once for
   outcomes, which makes a duplicated recovery request cheap. Prefer sending it
   twice over never sending it. This guarantee is validated across test suites
-  and chaos scenarios.
+  and chaos scenarios. Recovery re-enqueue in the SDK system database is
+  scoped to rows with status PENDING, ensuring duplicate recovery dispatches
+  do not corrupt execution state.
 - Never recover across applications or organisations, and never to an executor
   of a different application name.
 - If no healthy executor runs the dead executor's version, recovery to the
@@ -62,9 +61,15 @@ executors on a schedule, and a check that every started workflow reaches a
 terminal state exactly once. It runs in CI for any change to liveness or
 routing.
 
-Relay implements a default executor timeout of 60 seconds (`executorTimeoutSecs`)
-with a 20-second ping heartbeat interval. These defaults may be configured per
-application in `relay.yaml` or overridden by application conductor settings.
-When an executor connection is interrupted and the timeout duration elapses
-without reconnection, the executor is declared dead, and its orphaned workflows
-are scheduled for recovery dispatch to a healthy peer.
+## Liveness and timing parameters
+
+Relay implements the normative timing parameters defined in the executor protocol specification:
+
+* **Grace period timeout**: Default 60 seconds (`executorTimeoutSecs`), configurable per application in `relay.yaml` or overridden via application conductor settings (`PATCH /v2/orgs/{orgName}/apps/{appName}`).
+* **Server ping interval**: 20 seconds (`_PING_INTERVAL` in `internal/hub/conn.go`).
+* **Client ping interval**: 20 seconds default across DBOS Transact SDKs.
+* **Server ping wait**: 25 seconds (`executorPingWait`), after which an unresponsive connection transitions to `DISCONNECTED`.
+* **Client pong timeout**: 15 seconds (Python, TypeScript, Java) or 30 seconds (Go).
+* **Reconnect backoff**: 1 second initial delay with exponential backoff up to 30 seconds.
+
+When an executor connection is interrupted and the grace period elapses without reconnection, the executor is declared `DEAD`, and its orphaned workflows are scheduled for recovery dispatch to a healthy peer.

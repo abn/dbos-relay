@@ -3,6 +3,13 @@
 This log tracks the evolution of the knowledge base and architectural capabilities:
 page additions, deprecations, and structural refactors.
 
+## 2026-09-13
+
+* **Update**: Reconciled executor lifecycle status definitions (`HEALTHY`, `DISCONNECTED`, `DEAD`, `Deleted`), heartbeat timing parameters (20s ping interval, 25s ping wait, 15s/30s pong timeout), and peer failover mechanics in [Recovery](architecture/recovery.md) and [Recovery timing parameters](discovery/recovery-params.md) to match the normative WebSocket protocol specification.
+* **Update**: Aligned data-plane documentation in [Data plane](architecture/dataplane.md) with ADR 0004 and ADR 0008, detailing `SkipMigrations: true` schema safety, `VerifyMigrations` checks, deferred serialization boundaries, fork mutation semantics, and separating Conductor alerting rules from Prometheus operational alerts.
+* **Update**: Aligned WebSocket alert frame documentation in [Metrics, alerting, and HA peer forwarding](discovery/metrics-alerting.md) with the unidirectional notification contract in [Conductor Protocol (WebSocket)](protocol/executor-ws.md), removing invalid response envelopes and detailing HMAC-SHA256 authenticated peer-forwarding route `/internal/v1/forward/{appID}` with loop prevention headers.
+* **Update**: Aligned conformance battery 4 documentation in [Conformance testing](usage/conformance.md) and [Conformance Batteries Specification](discovery/Batteries.md) to specify `fork_workflow` mutations rather than unimplemented restart types, and removed internal discovery shorthand.
+
 ## 2026-09-12
 
 * **Update**: Sanitized internal process vocabulary, phase numbering, and legacy document prefix identifiers across all documentation and discovery references, renaming discovery documents to topic-only paths (`rest-surface.md`, `authz.md`, `client-behaviour.md`, `dashboard-reuse.md`, `recovery-params.md`, `metrics-alerting.md`).
