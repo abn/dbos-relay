@@ -80,6 +80,17 @@ func (m *Multiplexer) RouteResponse(msg protocol.Message) bool {
 	return false
 }
 
+// IsPending checks if a request with the given ID is currently pending a response.
+func (m *Multiplexer) IsPending(requestID string) bool {
+	if requestID == "" {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.pending[requestID]
+	return ok
+}
+
 // CancelAll cancels all pending requests, typically when a connection closes.
 func (m *Multiplexer) CancelAll(err error) {
 	m.mu.Lock()

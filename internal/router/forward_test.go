@@ -3,6 +3,7 @@ package router_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -149,6 +150,61 @@ func TestForward_RoundTrip(t *testing.T) {
 	}
 	if getWfRes.Output == nil || getWfRes.Output.WorkflowUUID != "wf-123" || *getWfRes.Output.Status != "SUCCESS" {
 		t.Errorf("unexpected response content: %+v", getWfRes)
+	}
+}
+
+func TestForward_ZeroValueResponse(t *testing.T) {
+	secret := []byte("test-cluster-secret")
+
+	// Mock remote server returning a zero-value response
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		_, _, err = router.VerifyRequest(r, body, secret, 30*time.Second)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		msg, err := protocol.DecodeRequest(body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Reply with bare zero-value response frame
+		respBytes := []byte(fmt.Sprintf(`{"type":"get_workflow","request_id":"%s"}`, msg.GetRequestID()))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(respBytes)
+	}))
+	defer server.Close()
+
+	client := router.NewForwarder(secret, nil)
+
+	req := &protocol.GetWorkflowRequest{
+		WorkflowID: "missing-wf",
+	}
+	req.Type = protocol.MessageTypeGetWorkflow
+	req.RequestID = "req-zero-val"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	res, err := client.Forward(ctx, server.URL+"/internal/v1/forward", req)
+	if err != nil {
+		t.Fatalf("Forward failed: %v", err)
+	}
+
+	getWfRes, ok := res.(*protocol.GetWorkflowResponse)
+	if !ok {
+		t.Fatalf("expected *protocol.GetWorkflowResponse, got %T", res)
+	}
+	if getWfRes.Output != nil {
+		t.Errorf("expected nil Output, got %+v", getWfRes.Output)
 	}
 }
 

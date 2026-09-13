@@ -171,7 +171,7 @@ func (f *Forwarder) Forward(ctx context.Context, targetURL string, msg protocol.
 		return nil, fmt.Errorf("forward peer returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	decoded, err := protocol.Decode(respBody)
+	decoded, err := protocol.DecodeResponse(respBody)
 	if err != nil {
 		return nil, fmt.Errorf("decoding forward response: %w", err)
 	}

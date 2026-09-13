@@ -222,7 +222,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := protocol.Decode(data)
+	msg, err := protocol.DecodeResponse(data)
 	if err != nil {
 		_ = conn.Close(websocket.StatusUnsupportedData, "invalid protocol message")
 		return

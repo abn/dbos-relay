@@ -3,6 +3,10 @@
   "request_id": "req-uuid",
   "body": {
     "workflow_name": ["my_workflow"],
-    "limit": 10
+    "limit": 10,
+    "sort_desc": false,
+    "load_input": false,
+    "load_output": false,
+    "queues_only": false
   }
 }

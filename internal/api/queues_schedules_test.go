@@ -830,7 +830,6 @@ func TestListMetrics(t *testing.T) {
 	t.Run("success returns metrics array", func(t *testing.T) {
 		start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 		end := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
-		metricTime := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
 		r := &mockRouter{
 			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
@@ -855,20 +854,14 @@ func TestListMetrics(t *testing.T) {
 					},
 					Metrics: []protocol.MetricData{
 						{
-							MetricName:  "dbos_conductor_v1_workflow_started_rate",
-							MetricValue: 42.5,
-							Timestamp:   metricTime.UnixMilli(),
-							Tags: map[string]any{
-								"metric_type": "workflow_count",
-								"granularity": float64(60),
-								"app_id":      "custom-app-id",
-							},
+							MetricName: "dbos_conductor_v1_workflow_started_rate",
+							MetricType: "workflow_count",
+							Value:      42.5,
 						},
 						{
-							MetricName:  "step_execution_time",
-							MetricValue: 120.0,
-							Timestamp:   metricTime.Unix(),
-							Tags:        nil,
+							MetricName: "step_execution_time",
+							MetricType: "step_count",
+							Value:      120.0,
 						},
 					},
 				}, nil
@@ -903,8 +896,8 @@ func TestListMetrics(t *testing.T) {
 		if m1.MetricType != "workflow_count" {
 			t.Errorf("expected metricType 'workflow_count', got %s", m1.MetricType)
 		}
-		if m1.AppId != "custom-app-id" {
-			t.Errorf("expected appId 'custom-app-id', got %s", m1.AppId)
+		if m1.AppId != "analytics-app" {
+			t.Errorf("expected appId 'analytics-app', got %s", m1.AppId)
 		}
 		if m1.Granularity != 60 {
 			t.Errorf("expected granularity 60, got %d", m1.Granularity)
@@ -912,8 +905,8 @@ func TestListMetrics(t *testing.T) {
 		if m1.Value != 42 {
 			t.Errorf("expected value 42, got %d", m1.Value)
 		}
-		if !m1.TimeBucket.Equal(metricTime) {
-			t.Errorf("expected timeBucket %v, got %v", metricTime, m1.TimeBucket)
+		if !m1.TimeBucket.Equal(start) {
+			t.Errorf("expected timeBucket %v, got %v", start, m1.TimeBucket)
 		}
 
 		m2 := jsonResp[1]

@@ -1,9 +1,11 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -60,25 +62,162 @@ func TestGoldenFiles(t *testing.T) {
 		t.Fatalf("No golden files found")
 	}
 
+	expectedMap := map[string]struct {
+		isResponse bool
+		expected   Message
+	}{
+		"alert_request.json": {
+			isResponse: false,
+			expected: &AlertRequest{
+				Envelope: Envelope{Type: MessageTypeAlert, RequestID: "req-uuid"},
+				Name:     "system_failure",
+				Message:  "High memory usage",
+				Metadata: map[string]string{"cpu": "90%"},
+			},
+		},
+		"executor_info_request.json": {
+			isResponse: false,
+			expected: &ExecutorInfoRequest{
+				Envelope: Envelope{Type: MessageTypeExecutorInfo, RequestID: "req-uuid"},
+			},
+		},
+		"executor_info_response.json": {
+			isResponse: true,
+			expected: &ExecutorInfoResponse{
+				Envelope:           Envelope{Type: MessageTypeExecutorInfo, RequestID: "req-uuid"},
+				ExecutorID:         "exec-123",
+				ApplicationVersion: "v1.0.0",
+				Hostname:           stringPtr("localhost"),
+				Language:           "go",
+				DBOSVersion:        "0.1.0",
+			},
+		},
+		"get_metrics_response.json": {
+			isResponse: true,
+			expected: &GetMetricsResponse{
+				Envelope: Envelope{Type: MessageTypeGetMetrics, RequestID: "r1"},
+				Metrics: []MetricData{
+					{
+						MetricName: "dbos_workflows",
+						MetricType: "counter",
+						Value:      1,
+					},
+				},
+			},
+		},
+		"get_workflow_request.json": {
+			isResponse: false,
+			expected: &GetWorkflowRequest{
+				Envelope:   Envelope{Type: MessageTypeGetWorkflow, RequestID: "req-uuid"},
+				WorkflowID: "wf-123",
+				LoadInput:  true,
+				LoadOutput: true,
+			},
+		},
+		"get_workflow_response.json": {
+			isResponse: true,
+			expected: &GetWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeGetWorkflow, RequestID: "req-uuid"},
+				Output: &ListWorkflowsResponseBody{
+					WorkflowUUID: "wf-123",
+					Status:       stringPtr("PENDING"),
+				},
+			},
+		},
+		"list_workflows_request.json": {
+			isResponse: false,
+			expected: &ListWorkflowsRequest{
+				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
+				Body: ListWorkflowsRequestBody{
+					WorkflowName: StringOrList{"my_workflow"},
+					Limit:        intPtr(10),
+				},
+			},
+		},
+		"list_workflows_response.json": {
+			isResponse: true,
+			expected: &ListWorkflowsResponse{
+				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
+				Output: []ListWorkflowsResponseBody{
+					{
+						WorkflowUUID: "wf-123",
+						Status:       stringPtr("SUCCESS"),
+					},
+				},
+			},
+		},
+		"recovery_request.json": {
+			isResponse: false,
+			expected: &RecoveryRequest{
+				Envelope:    Envelope{Type: MessageTypeRecovery, RequestID: "req-uuid"},
+				ExecutorIDs: []string{"exec-123"},
+			},
+		},
+		"recovery_response.json": {
+			isResponse: true,
+			expected: &RecoveryResponse{
+				Envelope: Envelope{Type: MessageTypeRecovery, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+	}
+
 	for _, file := range files {
-		t.Run(filepath.Base(file), func(t *testing.T) {
+		name := filepath.Base(file)
+		t.Run(name, func(t *testing.T) {
 			data, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatalf("Failed to read golden file: %v", err)
 			}
 
-			// We need to guess request or response for legacy tests.
-			msg, err := DecodeRequest(data)
-			if err != nil {
-				msg, err = DecodeResponse(data)
-				if err != nil {
-					t.Fatalf("Decode failed: %v", err)
-				}
+			exp, ok := expectedMap[name]
+			if !ok {
+				t.Fatalf("No expected definition for golden fixture %s", name)
 			}
 
-			// Verify it implements Message
-			if msg.GetMessageType() == "" || msg.GetRequestID() == "" {
-				t.Errorf("Message interface not fully populated")
+			// 1. Strict decode with DisallowUnknownFields into a fresh target of the expected type
+			targetVal := reflect.New(reflect.TypeOf(exp.expected).Elem()).Interface()
+			dec := json.NewDecoder(bytes.NewReader(data))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(targetVal); err != nil {
+				t.Fatalf("Strict decode (DisallowUnknownFields) failed: %v", err)
+			}
+
+			// 2. Decode using DecodeRequest / DecodeResponse according to direction
+			var msg Message
+			if exp.isResponse {
+				msg, err = DecodeResponse(data)
+			} else {
+				msg, err = DecodeRequest(data)
+			}
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+
+			// 3. Assert concrete type matches expected
+			if reflect.TypeOf(msg) != reflect.TypeOf(exp.expected) {
+				t.Fatalf("Type mismatch: got %T, want %T", msg, exp.expected)
+			}
+
+			// 4. Assert field values match expected
+			if !reflect.DeepEqual(msg, exp.expected) {
+				t.Errorf("Field value mismatch: got %+v, want %+v", msg, exp.expected)
+			}
+
+			// 5. Normalized JSON comparison
+			encoded, err := Encode(msg)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+			var origJSON, reencJSON any
+			if err := json.Unmarshal(data, &origJSON); err != nil {
+				t.Fatalf("Unmarshal orig JSON failed: %v", err)
+			}
+			if err := json.Unmarshal(encoded, &reencJSON); err != nil {
+				t.Fatalf("Unmarshal reencoded JSON failed: %v", err)
+			}
+			if !reflect.DeepEqual(origJSON, reencJSON) {
+				t.Errorf("Normalized JSON mismatch: got %+v, want %+v", reencJSON, origJSON)
 			}
 		})
 	}
@@ -192,10 +331,88 @@ func TestZeroValueResponses(t *testing.T) {
 				t.Fatalf("Encode failed: %v", err)
 			}
 
-			// Misclassification check using old logic fallback just to prove it doesn't fail DecodeResponse explicitly
-			_, err = DecodeResponse(encoded)
+			decoded, err := DecodeResponse(encoded)
 			if err != nil {
 				t.Fatalf("DecodeResponse failed for zero-value %T: %v", msg, err)
+			}
+			if reflect.TypeOf(decoded) != reflect.TypeOf(msg) {
+				t.Fatalf("DecodeResponse misclassified: got %T, want %T", decoded, msg)
+			}
+		})
+	}
+}
+
+func TestDecodeHeuristicFallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		wantType reflect.Type
+	}{
+		{
+			name:     "executor_info with executor_id",
+			payload:  `{"type":"executor_info","request_id":"r1","executor_id":"e1"}`,
+			wantType: reflect.TypeOf(&ExecutorInfoResponse{}),
+		},
+		{
+			name:     "fork_workflow with new_workflow_id",
+			payload:  `{"type":"fork_workflow","request_id":"r2","new_workflow_id":"wf-fork"}`,
+			wantType: reflect.TypeOf(&ForkWorkflowResponse{}),
+		},
+		{
+			name:     "fork_from_failure with forked_workflow_ids",
+			payload:  `{"type":"fork_from_failure","request_id":"r3","forked_workflow_ids":["wf-1"]}`,
+			wantType: reflect.TypeOf(&ForkFromFailureResponse{}),
+		},
+		{
+			name:     "exist_pending_workflows with exist",
+			payload:  `{"type":"exist_pending_workflows","request_id":"r4","exist":true}`,
+			wantType: reflect.TypeOf(&ExistPendingWorkflowsResponse{}),
+		},
+		{
+			name:     "get_metrics with metrics",
+			payload:  `{"type":"get_metrics","request_id":"r5","metrics":[]}`,
+			wantType: reflect.TypeOf(&GetMetricsResponse{}),
+		},
+		{
+			name:     "export_workflow with serialized_workflow",
+			payload:  `{"type":"export_workflow","request_id":"r6","serialized_workflow":"data"}`,
+			wantType: reflect.TypeOf(&ExportWorkflowResponse{}),
+		},
+		{
+			name:     "backfill_schedule with workflow_ids",
+			payload:  `{"type":"backfill_schedule","request_id":"r7","workflow_ids":["wf-1"]}`,
+			wantType: reflect.TypeOf(&BackfillScheduleResponse{}),
+		},
+		{
+			name:     "trigger_schedule with workflow_id",
+			payload:  `{"type":"trigger_schedule","request_id":"r8","workflow_id":"wf-1"}`,
+			wantType: reflect.TypeOf(&TriggerScheduleResponse{}),
+		},
+		{
+			name:     "get_workflow_events with events",
+			payload:  `{"type":"get_workflow_events","request_id":"r9","events":[]}`,
+			wantType: reflect.TypeOf(&GetWorkflowEventsResponse{}),
+		},
+		{
+			name:     "get_workflow_notifications with notifications",
+			payload:  `{"type":"get_workflow_notifications","request_id":"r10","notifications":[]}`,
+			wantType: reflect.TypeOf(&GetWorkflowNotificationsResponse{}),
+		},
+		{
+			name:     "get_workflow_streams with streams",
+			payload:  `{"type":"get_workflow_streams","request_id":"r11","streams":[]}`,
+			wantType: reflect.TypeOf(&GetWorkflowStreamsResponse{}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := Decode([]byte(tt.payload))
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+			if reflect.TypeOf(msg) != tt.wantType {
+				t.Fatalf("Decode returned %T, want %v", msg, tt.wantType)
 			}
 		})
 	}
@@ -203,6 +420,10 @@ func TestZeroValueResponses(t *testing.T) {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+func stringPtr(s string) *string {
+	return &s
 }
 
 func TestSpecCoversAllMessageTypes(t *testing.T) {

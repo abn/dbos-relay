@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1438,5 +1439,99 @@ func TestHub_LeaseOwnershipAndRenewal(t *testing.T) {
 	}
 	if !lastTouch.LeaseExpiresAt.Valid {
 		t.Fatal("expected touch LeaseExpiresAt to be valid")
+	}
+}
+
+func TestHub_ReadPump_ZeroValueResponse(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{
+		ExecutorDeadline: 5 * time.Second,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	// Read executor_info request from Relay
+	_, _, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("failed to read executor_info request: %v", err)
+	}
+
+	// Send executor_info response
+	infoResp := protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: "handshake-req",
+		},
+		ExecutorID:         "exec-zero-val",
+		ApplicationVersion: "1.0.0",
+	}
+	infoBytes, err := protocol.Encode(&infoResp)
+	if err != nil {
+		t.Fatalf("failed to encode handshake response: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, infoBytes); err != nil {
+		t.Fatalf("failed to write handshake response: %v", err)
+	}
+
+	// Give registration a moment to complete
+	time.Sleep(50 * time.Millisecond)
+
+	// In a goroutine, respond to the dispatch with a bare frame
+	go func() {
+		readCtx, readCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer readCancel()
+		_, data, err := conn.Read(readCtx)
+		if err != nil {
+			return
+		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return
+		}
+		var reqID string
+		_ = json.Unmarshal(raw["request_id"], &reqID)
+
+		// Send zero-value get_workflow response frame
+		bareResp := fmt.Sprintf(`{"type":"get_workflow","request_id":"%s"}`, reqID)
+		_ = conn.Write(readCtx, websocket.MessageText, []byte(bareResp))
+	}()
+
+	dispatchReq := &protocol.GetWorkflowRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeGetWorkflow,
+			RequestID: "req-wf-zero",
+		},
+		WorkflowID: "non-existent-wf",
+	}
+	appID := store.apps["test-app"].ID
+	dispatchResp, err := h.Dispatch(ctx, appID, dispatchReq)
+	if err != nil {
+		t.Fatalf("Dispatch failed: %v", err)
+	}
+
+	wfResp, ok := dispatchResp.(*protocol.GetWorkflowResponse)
+	if !ok {
+		t.Fatalf("expected *protocol.GetWorkflowResponse, got %T", dispatchResp)
+	}
+	if wfResp.Output != nil {
+		t.Errorf("expected Output to be nil, got %v", wfResp.Output)
 	}
 }
