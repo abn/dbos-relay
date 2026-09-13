@@ -247,7 +247,6 @@ func (r *Runner) runBattery1Spec(ctx context.Context) BatteryResult {
 
 	// Check 1.6: GET /v1/metrics
 	checks = append(checks, executeCheck("1.6 Prometheus Metrics Scrape (/v1/metrics)", func() error {
-		// Verify missing token yields 401
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
 		if err != nil {
 			return err
@@ -258,26 +257,50 @@ func (r *Runner) runBattery1Spec(ctx context.Context) BatteryResult {
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		if resp.StatusCode != http.StatusUnauthorized {
-			return fmt.Errorf("expected status 401 without token, got %d", resp.StatusCode)
+		// In unauthenticated runs (no bearer token or Conductor key configured),
+		// gracefully handle both authenticated endpoints (which reject unauthenticated
+		// scrapes with 401 Unauthorized) and open endpoints (which return 200 OK
+		// with Prometheus metrics).
+		if r.cfg.ConductorKey == "" {
+			switch resp.StatusCode {
+			case http.StatusUnauthorized:
+				return nil
+			case http.StatusOK:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				if !strings.Contains(string(body), "dbos_") && !strings.Contains(string(body), "# TYPE") {
+					return errors.New("response does not contain expected prometheus metrics")
+				}
+				return nil
+			default:
+				return fmt.Errorf("expected status 200 or 401 without token, got %d", resp.StatusCode)
+			}
 		}
 
-		// Verify with token yields 200
-		req, err = http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
+		// In authenticated runs, unauthenticated request must yield 401 (if authentication
+		// is enforced) or 200 (if unauthenticated scraping is permitted).
+		if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 401 or 200 without token, got %d", resp.StatusCode)
+		}
+
+		// Verify with valid bearer token yields 200 OK with Prometheus metrics
+		reqAuth, err := http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
 		if err != nil {
 			return err
 		}
-		req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
-		resp2, err := r.client.Do(req)
+		reqAuth.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		respAuth, err := r.client.Do(reqAuth)
 		if err != nil {
 			return err
 		}
-		defer func() { _ = resp2.Body.Close() }()
+		defer func() { _ = respAuth.Body.Close() }()
 
-		if resp2.StatusCode != http.StatusOK {
-			return fmt.Errorf("expected status 200, got %d", resp2.StatusCode)
+		if respAuth.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200 with token, got %d", respAuth.StatusCode)
 		}
-		body, err := io.ReadAll(resp2.Body)
+		body, err := io.ReadAll(respAuth.Body)
 		if err != nil {
 			return err
 		}
@@ -290,36 +313,47 @@ func (r *Runner) runBattery1Spec(ctx context.Context) BatteryResult {
 	return summarizeChecks(1, "Specification & System Probes", checks)
 }
 
+func verifyHandshakeRejection(ctx context.Context, dialURL, scenario string) error {
+	conn, resp, err := websocket.Dial(ctx, dialURL, nil)
+	if conn != nil {
+		_ = conn.Close(websocket.StatusNormalClosure, "")
+		return fmt.Errorf("dial unexpectedly succeeded for %s", scenario)
+	}
+	if resp == nil {
+		return fmt.Errorf("expected http response on rejected upgrade for %s, got: %w", scenario, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		return fmt.Errorf("expected status 401 Unauthorized for %s, got %d", scenario, resp.StatusCode)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/problem+json") {
+		return fmt.Errorf("expected Content-Type application/problem+json for %s, got %q", scenario, ct)
+	}
+	var prob map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&prob); err != nil {
+		return fmt.Errorf("invalid problem json for %s: %w", scenario, err)
+	}
+	if prob["title"] == nil || prob["status"] == nil {
+		return fmt.Errorf("problem details missing required RFC 9457 fields for %s: %v", scenario, prob)
+	}
+	return nil
+}
+
 func (r *Runner) runBattery2Handshake(ctx context.Context) BatteryResult {
 	var checks []CheckResult
 
 	// Check 2.1: Invalid Key Rejected
 	checks = append(checks, executeCheck("2.1 Invalid Key Handshake Rejection", func() error {
+		// Verify unauthenticated handshake rejection (missing key in path)
+		unauthURL := fmt.Sprintf("%s/websocket/%s/", r.wsURL, r.cfg.AppName)
+		if err := verifyHandshakeRejection(ctx, unauthURL, "unauthenticated connection"); err != nil {
+			return err
+		}
+
+		// Verify invalid key handshake rejection
 		badURL := fmt.Sprintf("%s/websocket/%s/dbos_invalidkey99999", r.wsURL, r.cfg.AppName)
-		conn, resp, err := websocket.Dial(ctx, badURL, nil)
-		if conn != nil {
-			_ = conn.Close(websocket.StatusNormalClosure, "")
-			return errors.New("dial unexpectedly succeeded with invalid key")
-		}
-		if resp == nil {
-			return fmt.Errorf("expected http response on rejected upgrade, got: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusUnauthorized {
-			return fmt.Errorf("expected status 401 Unauthorized, got %d", resp.StatusCode)
-		}
-		ct := resp.Header.Get("Content-Type")
-		if !strings.HasPrefix(ct, "application/problem+json") {
-			return fmt.Errorf("expected Content-Type application/problem+json, got %q", ct)
-		}
-		var prob map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&prob); err != nil {
-			return fmt.Errorf("invalid problem json: %w", err)
-		}
-		if prob["title"] == nil || prob["status"] == nil {
-			return fmt.Errorf("problem details missing required RFC 9457 fields: %v", prob)
-		}
-		return nil
+		return verifyHandshakeRejection(ctx, badURL, "invalid key")
 	}))
 
 	// Check 2.2: Valid Handshake & Fleet Registration

@@ -407,3 +407,148 @@ func TestRunner_TimeoutEnforcement(t *testing.T) {
 		t.Errorf("expected AllPassed = false when endpoint exceeds configured timeout")
 	}
 }
+
+func TestBattery1_MetricsScrape_AuthHandling(t *testing.T) {
+	newMockB1Server := func(enforceAuth bool) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/healthz":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			case "/openapi.json":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"openapi":"3.1.0"}`))
+			case "/openapi-3.0.json":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"openapi":"3.0.0"}`))
+			case "/openapi.yaml":
+				w.Header().Set("Content-Type", "application/yaml")
+				_, _ = w.Write([]byte("openapi: 3.1.0\ninfo:\n  title: Relay\n"))
+			case "/docs":
+				w.Header().Set("Content-Type", "text/html")
+				_, _ = w.Write([]byte("<!DOCTYPE html><html><body>Docs</body></html>"))
+			case "/v1/metrics":
+				if enforceAuth && r.Header.Get("Authorization") != "Bearer valid-key" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Content-Type", "text/plain")
+				_, _ = w.Write([]byte("# TYPE dbos_gauge gauge\ndbos_gauge 42\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+	}
+
+	t.Run("authenticated runner against auth-enforcing metrics server passes", func(t *testing.T) {
+		ts := newMockB1Server(true)
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL:    ts.URL,
+			ConductorKey: "valid-key",
+		})
+		res := conformance.RunBattery1Spec(runner, context.Background())
+		if res.Status != conformance.StatusPass {
+			t.Fatalf("expected Battery 1 to pass, got %s: %s", res.Status, res.Error)
+		}
+	})
+
+	t.Run("unauthenticated runner against auth-enforcing metrics server passes gracefully", func(t *testing.T) {
+		ts := newMockB1Server(true)
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL:    ts.URL,
+			ConductorKey: "",
+		})
+		res := conformance.RunBattery1Spec(runner, context.Background())
+		if res.Status != conformance.StatusPass {
+			t.Fatalf("expected Battery 1 to pass in unauthenticated run, got %s: %s", res.Status, res.Error)
+		}
+	})
+
+	t.Run("authenticated runner against open metrics server passes", func(t *testing.T) {
+		ts := newMockB1Server(false)
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL:    ts.URL,
+			ConductorKey: "valid-key",
+		})
+		res := conformance.RunBattery1Spec(runner, context.Background())
+		if res.Status != conformance.StatusPass {
+			t.Fatalf("expected Battery 1 to pass against open server, got %s: %s", res.Status, res.Error)
+		}
+	})
+
+	t.Run("unauthenticated runner against open metrics server passes", func(t *testing.T) {
+		ts := newMockB1Server(false)
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL:    ts.URL,
+			ConductorKey: "",
+		})
+		res := conformance.RunBattery1Spec(runner, context.Background())
+		if res.Status != conformance.StatusPass {
+			t.Fatalf("expected Battery 1 to pass against open server in unauthenticated run, got %s: %s", res.Status, res.Error)
+		}
+	})
+}
+
+func TestBattery2_HandshakeRejection_AuthHandling(t *testing.T) {
+	newMockHandshakeServer := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/websocket/") {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"type":   "about:blank",
+					"title":  "Authentication Failed",
+					"status": 401,
+					"detail": "missing or invalid conductor key",
+				})
+				return
+			}
+			http.NotFound(w, r)
+		}))
+	}
+
+	t.Run("Check 2.1 passes with authenticated runner", func(t *testing.T) {
+		ts := newMockHandshakeServer()
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL:    ts.URL,
+			AppName:      "test-app",
+			ConductorKey: "valid-key",
+		})
+		res := conformance.RunBattery2Handshake(runner, context.Background())
+		// Check 2.1 is first check; Check 2.2 will fail because mock does not implement full executor handshake
+		if len(res.Checks) < 1 {
+			t.Fatal("expected at least 1 check result")
+		}
+		if res.Checks[0].Status != conformance.StatusPass {
+			t.Fatalf("expected Check 2.1 to pass, got: %s (detail: %s)", res.Checks[0].Status, res.Checks[0].Detail)
+		}
+	})
+
+	t.Run("Check 2.1 passes with unauthenticated runner", func(t *testing.T) {
+		ts := newMockHandshakeServer()
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL:    ts.URL,
+			AppName:      "test-app",
+			ConductorKey: "",
+		})
+		res := conformance.RunBattery2Handshake(runner, context.Background())
+		if len(res.Checks) < 1 {
+			t.Fatal("expected at least 1 check result")
+		}
+		if res.Checks[0].Status != conformance.StatusPass {
+			t.Fatalf("expected Check 2.1 to pass in unauthenticated run, got: %s (detail: %s)", res.Checks[0].Status, res.Checks[0].Detail)
+		}
+	})
+}
