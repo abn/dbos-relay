@@ -4,10 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"gopkg.in/yaml.v3"
+
+	"github.com/abn/relay/internal/dataplane"
+	"github.com/abn/relay/internal/declarative"
+	"github.com/abn/relay/internal/store/gen"
 )
 
 func TestCommandTreeSubcommandsExist(t *testing.T) {
@@ -225,5 +231,57 @@ func TestApplyEnvOut_GitIgnore(t *testing.T) {
 		t.Errorf("expected error when targeting tracked file README.md, got nil")
 	} else if !strings.Contains(err.Error(), "refusing to write secrets") {
 		t.Errorf("expected refusal message, got: %v", err)
+	}
+}
+
+func TestRegisterDeclarativeDataPlanes(t *testing.T) {
+	t.Setenv("TEST_APP_DATA_PLANE_URL", "postgres://user:pass@localhost:5432/appdb")
+
+	app1ID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	app2ID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+	app3ID := pgtype.UUID{Bytes: [16]byte{3}, Valid: true}
+
+	appMap := map[string]gen.Application{
+		"app-direct": {ID: app1ID, Name: "app-direct"},
+		"app-env":    {ID: app2ID, Name: "app-env"},
+		"app-unset":  {ID: app3ID, Name: "app-unset"},
+	}
+
+	dataPlanes := map[string]declarative.DataPlane{
+		"app-direct": {
+			ConnectionURL:        "postgres://user:pass@localhost:5432/directdb",
+			Mode:                 "read_only",
+			StatementTimeoutSecs: 10,
+			MaxConnections:       4,
+		},
+		"app-env": {
+			ConnectionStringFrom: &declarative.ConnectionSource{Env: "TEST_APP_DATA_PLANE_URL"},
+			Mode:                 "read_only",
+			StatementTimeoutSecs: 5,
+			MaxConnections:       2,
+		},
+		"app-unset": {
+			ConnectionStringFrom: &declarative.ConnectionSource{Env: "UNSET_DATA_PLANE_URL_VAR"},
+		},
+		"app-nonexistent": {
+			ConnectionURL: "postgres://user:pass@localhost:5432/nonexistent",
+		},
+	}
+
+	dpManager := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return nil, nil
+	})
+	logger := slog.Default()
+
+	registerDeclarativeDataPlanes(logger, dpManager, dataPlanes, appMap)
+
+	if !dpManager.HasDataPlane(app1ID) {
+		t.Errorf("expected data plane registered for app-direct")
+	}
+	if !dpManager.HasDataPlane(app2ID) {
+		t.Errorf("expected data plane registered for app-env using secret indirection")
+	}
+	if dpManager.HasDataPlane(app3ID) {
+		t.Errorf("expected app-unset data plane not registered due to missing env variable")
 	}
 }

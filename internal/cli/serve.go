@@ -103,20 +103,7 @@ func newServeCommand() *cobra.Command {
 					for _, a := range allApps {
 						appMap[a.Name] = a
 					}
-					for appName, dp := range decCfg.DataPlanes {
-						app, ok := appMap[appName]
-						if !ok {
-							continue
-						}
-						timeout := time.Duration(dp.StatementTimeoutSecs) * time.Second
-						_ = dpManager.RegisterApp(dataplane.AppConfig{
-							ApplicationID:    app.ID,
-							DatabaseURL:      dp.ConnectionURL,
-							Mode:             dataplane.Mode(dp.Mode),
-							StatementTimeout: timeout,
-							MaxConnections:   dp.MaxConnections,
-						})
-					}
+					registerDeclarativeDataPlanes(logger, dpManager, decCfg.DataPlanes, appMap)
 				} else {
 					logger.Warn("failed to load declarative config for data plane", "path", configPath, "error", err)
 				}
@@ -175,5 +162,29 @@ func newServeCommand() *cobra.Command {
 				return nil
 			}
 		},
+	}
+}
+
+func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Manager, dataPlanes map[string]declarative.DataPlane, appMap map[string]gen.Application) {
+	for appName, dp := range dataPlanes {
+		app, ok := appMap[appName]
+		if !ok {
+			continue
+		}
+		dbURL, err := dp.ResolveConnectionURL()
+		if err != nil {
+			logger.Warn("failed to resolve data plane connection URL", "app", appName, "error", err)
+			continue
+		}
+		timeout := time.Duration(dp.StatementTimeoutSecs) * time.Second
+		if err := dpManager.RegisterApp(dataplane.AppConfig{
+			ApplicationID:    app.ID,
+			DatabaseURL:      dbURL,
+			Mode:             dataplane.Mode(dp.Mode),
+			StatementTimeout: timeout,
+			MaxConnections:   dp.MaxConnections,
+		}); err != nil {
+			logger.Warn("failed to register data plane", "app", appName, "error", err)
+		}
 	}
 }
