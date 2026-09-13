@@ -8,9 +8,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,5 +196,77 @@ func TestOIDCValidator_RejectsTamperedSignature(t *testing.T) {
 	_, err := validator.Validate(context.Background(), tampered)
 	if err == nil {
 		t.Fatal("expected error on tampered signature")
+	}
+}
+
+func TestOIDCValidator_ClockSkewLeeway(t *testing.T) {
+	mock := newMockOIDCServer(t)
+	validator := auth.NewOIDCValidator(mock.server.URL, "test-audience", mock.server.Client())
+
+	// Token expired 30s ago: within 60s leeway, should pass
+	withinLeeway := mock.mintToken(t, map[string]any{
+		"sub": "user-leeway-1",
+		"iss": mock.server.URL,
+		"aud": "test-audience",
+		"exp": time.Now().Add(-30 * time.Second).Unix(),
+	})
+	claims, err := validator.Validate(context.Background(), withinLeeway)
+	if err != nil {
+		t.Fatalf("expected token expired within leeway to pass, got err: %v", err)
+	}
+	if claims.Subject != "user-leeway-1" {
+		t.Fatalf("expected subject user-leeway-1, got %s", claims.Subject)
+	}
+
+	// Token expired 90s ago: exceeds 60s leeway, must fail
+	exceedsLeeway := mock.mintToken(t, map[string]any{
+		"sub": "user-leeway-2",
+		"iss": mock.server.URL,
+		"aud": "test-audience",
+		"exp": time.Now().Add(-90 * time.Second).Unix(),
+	})
+	_, err = validator.Validate(context.Background(), exceedsLeeway)
+	if err == nil {
+		t.Fatal("expected error for token expiring beyond 60s leeway")
+	}
+
+	// Token with nbf 30s in future: within 60s leeway, should pass
+	nbfWithin := mock.mintToken(t, map[string]any{
+		"sub": "user-leeway-3",
+		"iss": mock.server.URL,
+		"aud": "test-audience",
+		"exp": time.Now().Add(time.Hour).Unix(),
+		"nbf": time.Now().Add(30 * time.Second).Unix(),
+	})
+	claims, err = validator.Validate(context.Background(), nbfWithin)
+	if err != nil {
+		t.Fatalf("expected token with future nbf within leeway to pass, got err: %v", err)
+	}
+	if claims.Subject != "user-leeway-3" {
+		t.Fatalf("expected subject user-leeway-3, got %s", claims.Subject)
+	}
+}
+
+func TestOIDCValidator_NegativeCaching(t *testing.T) {
+	mock := newMockOIDCServer(t)
+	validator := auth.NewOIDCValidator(mock.server.URL, "test-audience", mock.server.Client())
+
+	// Token signed with an unknown kid
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"non-existent-kid","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"user-x","iss":"` + mock.server.URL + `","aud":"test-audience","exp":` + fmt.Sprintf("%d", time.Now().Add(time.Hour).Unix()) + `}`))
+	fakeToken := header + "." + payload + ".fakeSig"
+
+	_, err := validator.Validate(context.Background(), fakeToken)
+	if err == nil {
+		t.Fatal("expected error for unknown kid")
+	}
+
+	// Second validation should hit negative cache
+	_, err = validator.Validate(context.Background(), fakeToken)
+	if err == nil {
+		t.Fatal("expected error on second attempt for unknown kid")
+	}
+	if !strings.Contains(err.Error(), "negative cache") {
+		t.Fatalf("expected error to mention negative cache, got: %v", err)
 	}
 }
