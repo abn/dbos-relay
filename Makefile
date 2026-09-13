@@ -48,10 +48,10 @@ vet: lint/sdk-isolation lint/examples-isolation ## Run static analysis
 	go vet ./...
 	golangci-lint run
 
-lint/sdk-isolation: ## Verify tests/verifysdk imports no fakes, mocks, or fake clock packages
-	@if go list -deps ./tests/verifysdk/... | grep -E 'github\.com/abn/relay/internal/.*(fake|mock|clock)'; then \
-		echo "ERROR: tests/verifysdk must not import fakes, mocks, or clock packages from internal/" >&2; \
-		exit 1; \
+lint/sdk-isolation: ## Verify the tests/verifysdk test binary links no fakes, mocks, or fake clock packages
+	@deps=$$(go list -deps -test ./tests/verifysdk/... | grep -E 'github\.com/abn/relay/internal/.*(fake|mock|clock)' || true); \
+	if [ -n "$$deps" ]; then \
+		echo "ERROR: tests/verifysdk links fake/mock/clock packages:" >&2; echo "$$deps" >&2; exit 1; \
 	fi
 
 lint/examples-isolation: ## Verify examples contain no websocket libraries or fake protocol frames
@@ -130,7 +130,7 @@ verify-live: ## Run live database verification suite against real PostgreSQL
 	go test -v -count=1 -run TestRouter_LiveDatabase ./internal/router/...
 	go test -v -count=1 ./internal/declarative/...
 
-verify-sdk: build ## Run real multi-SDK sample app integration suite under Podman compose
+verify-sdk: build lint/sdk-isolation lint/examples-isolation ## Run real multi-SDK sample app integration suite under Podman compose
 	@if [ ! -f deploy/.env ] || [ -z "$$(grep RELAY_API_KEY deploy/.env 2>/dev/null)" ]; then \
 		KEY="dbos_sec_$$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"; \
 		echo "RELAY_API_KEY=$$KEY" > deploy/.env; \
