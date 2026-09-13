@@ -1484,3 +1484,45 @@ func TestIdentity_WriteHandlers_Execution(t *testing.T) {
 	}
 	_ = joinerUser
 }
+
+func TestUserRegistration_Authorization(t *testing.T) {
+	idp := newMockIdP(t)
+	store := newMemoryStore()
+	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
+	ts := setupServer(store, true, validator)
+	defer ts.Close()
+
+	// 1. Unauthenticated registration returns 401
+	unauthReq, _ := http.NewRequest("POST", ts.URL+"/v2/users", strings.NewReader(`{"name":"testuser"}`))
+	unauthReq.Header.Set("Content-Type", "application/json")
+	unauthResp, err := http.DefaultClient.Do(unauthReq)
+	if err != nil {
+		t.Fatalf("unauthenticated registration failed: %v", err)
+	}
+	_ = unauthResp.Body.Close()
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for unauthenticated registration, got %d", unauthResp.StatusCode)
+	}
+
+	// 2. Non-admin API key registration returns 403
+	keyPlain, keyRec, _ := auth.Mint()
+	_, _ = store.CreateAPIKey(context.Background(), storegen.CreateAPIKeyParams{
+		Lookup:           keyRec.Lookup,
+		KeyHash:          keyRec.Hash,
+		Name:             "test-key",
+		ApplicationNames: []string{"test-app"},
+		Permissions:      []string{"application.write"},
+	})
+
+	apiKeyReq, _ := http.NewRequest("POST", ts.URL+"/v2/users", strings.NewReader(`{"name":"squatted-user"}`))
+	apiKeyReq.Header.Set("Authorization", "Bearer "+keyPlain)
+	apiKeyReq.Header.Set("Content-Type", "application/json")
+	apiKeyResp, err := http.DefaultClient.Do(apiKeyReq)
+	if err != nil {
+		t.Fatalf("API key registration request failed: %v", err)
+	}
+	_ = apiKeyResp.Body.Close()
+	if apiKeyResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for non-admin API key user registration, got %d", apiKeyResp.StatusCode)
+	}
+}

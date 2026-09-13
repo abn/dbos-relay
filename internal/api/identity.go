@@ -147,6 +147,14 @@ func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserR
 }
 
 func (s *Server) handleRegisterUser(ctx context.Context, request gen.RegisterUserRequestObject) (gen.RegisterUserResponseObject, error) {
+	identity, ok := auth.IdentityFromContext(ctx)
+	if !ok || identity == nil {
+		return gen.RegisterUserdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusUnauthorized,
+			Body:       MakeErrorModel(http.StatusUnauthorized, "Unauthorized", "Not authenticated"),
+		}, nil
+	}
+
 	if request.Body == nil || request.Body.Name == "" {
 		return gen.RegisterUserdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
@@ -154,8 +162,24 @@ func (s *Server) handleRegisterUser(ctx context.Context, request gen.RegisterUse
 		}, nil
 	}
 
+	// An API key cannot register arbitrary users unless it is an admin
+	if identity.IsAPIKey && !isAdmin(ctx) {
+		return gen.RegisterUserdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusForbidden,
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin permission required to register users with API key"),
+		}, nil
+	}
+
 	subject := request.Body.Name
 	email := ""
+	if !isAdmin(ctx) {
+		if identity.Subject != "" {
+			subject = identity.Subject
+		}
+		if identity.Email != "" {
+			email = identity.Email
+		}
+	}
 
 	user, err := s.store.UpsertUser(ctx, storegen.UpsertUserParams{
 		Subject:  subject,
