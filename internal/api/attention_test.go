@@ -35,6 +35,10 @@ func (m *mockAttentionStore) GetOrganisationByName(ctx context.Context, name str
 	return m.org, nil
 }
 
+func (m *mockAttentionStore) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (storegen.Organisation, error) {
+	return m.org, nil
+}
+
 func (m *mockAttentionStore) GetApplicationByName(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 	return m.app, nil
 }

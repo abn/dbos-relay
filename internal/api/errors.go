@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/router"
@@ -10,7 +11,9 @@ import (
 
 // MakeErrorModel constructs a standard RFC 9457 ErrorModel.
 func MakeErrorModel(status int, title, detail string) gen.ErrorModel {
-	if detail == "no rows in result set" {
+	if status == http.StatusInternalServerError {
+		detail = "internal server error"
+	} else if strings.Contains(detail, "no rows") || strings.Contains(detail, "SQLSTATE") || strings.Contains(detail, "pgx") || strings.Contains(detail, "postgres://") {
 		detail = title
 	}
 	status64 := int64(status)

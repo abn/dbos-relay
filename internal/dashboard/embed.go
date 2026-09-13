@@ -96,5 +96,5 @@ func isAPIRoute(p string) bool {
 		strings.HasPrefix(p, "/schemas/") ||
 		strings.HasPrefix(p, "/openapi") ||
 		p == "/healthz" ||
-		p == "/docs"
+		strings.HasPrefix(p, "/docs")
 }

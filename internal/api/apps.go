@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -526,6 +528,24 @@ func (s *Server) ListAlertingRules(ctx context.Context, request gen.ListAlerting
 	return gen.ListAlertingRules200JSONResponse(out), nil
 }
 
+func isBlockedDestinationURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return true
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.Equal(net.ParseIP("169.254.169.254")) {
+			return true
+		}
+	}
+	return false
+}
+
 // CreateAlertingRule creates an alerting rule.
 func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlertingRuleRequestObject) (gen.CreateAlertingRuleResponseObject, error) {
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
@@ -590,7 +610,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 		minInterval = request.Body.MinIntervalSecs
 	}
 
-	// Reject secret_from in RuleMetadata over REST (operator declarative only)
+	// Reject secret_from and blocked destination URLs in RuleMetadata over REST
 	if request.Body != nil && request.Body.RuleMetadata != nil {
 		if metaMap, ok := request.Body.RuleMetadata.(map[string]any); ok {
 			if dests, ok := metaMap["destinations"].([]any); ok {
@@ -601,6 +621,14 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 								StatusCode: http.StatusBadRequest,
 								Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "secret_from is only permitted in operator declarative manifests"),
 							}, nil
+						}
+						if u, ok := dMap["url"].(string); ok && u != "" {
+							if isBlockedDestinationURL(u) {
+								return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
+									StatusCode: http.StatusBadRequest,
+									Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "destination URL points to a blocked address"),
+								}, nil
+							}
 						}
 					}
 				}
@@ -736,8 +764,13 @@ func sanitizeAlertMetadata(meta any) any {
 
 		t, _ := newDMap["type"].(string)
 		if u, ok := newDMap["url"].(string); ok && u != "" {
-			if t == "slack" || t == "pagerduty" {
-				newDMap["url"] = "[REDACTED]"
+			if t == "slack" || t == "webhook" {
+				parsed, err := url.Parse(u)
+				if err != nil || parsed.Host == "" {
+					newDMap["url"] = "[REDACTED]"
+				} else {
+					newDMap["url"] = fmt.Sprintf("%s://%s/...", parsed.Scheme, parsed.Host)
+				}
 			}
 		}
 

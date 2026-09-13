@@ -45,11 +45,16 @@ func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string
 		return pgtype.UUID{}, err
 	}
 
-	if !auth.Verify(conductorKey, keyRecord.KeyHash) {
+	if !auth.AuthenticateKey(conductorKey, keyRecord.KeyHash) {
 		return pgtype.UUID{}, errors.New("invalid conductor key")
 	}
 
 	_ = q.TouchAPIKeyLastUsed(ctx, keyRecord.ID)
+
+	// Validate permissions: if permissions are restricted, websocket.connect is required.
+	if len(keyRecord.Permissions) > 0 && !auth.HasPermission(keyRecord.Permissions, auth.PermWebsocketConnect) {
+		return pgtype.UUID{}, errors.New("key does not have websocket.connect permission")
+	}
 
 	// Validate scope: application_names empty means all apps.
 	allowed := false
@@ -98,7 +103,7 @@ func HandleAuthError(w http.ResponseWriter, r *http.Request, err error) {
 		problem.Write(w, &problem.Problem{Status: http.StatusUnauthorized, Title: "Authentication Failed", Detail: err.Error()})
 		return
 	}
-	if strings.Contains(err.Error(), "does not have access") {
+	if strings.Contains(err.Error(), "does not have access") || strings.Contains(err.Error(), "permission") {
 		problem.Write(w, &problem.Problem{Status: http.StatusForbidden, Title: "Forbidden", Detail: err.Error()})
 		return
 	}

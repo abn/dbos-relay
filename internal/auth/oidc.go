@@ -78,11 +78,15 @@ type OIDCValidator struct {
 	audience   string
 	httpClient *http.Client
 
-	mu        sync.RWMutex
-	jwksURI   string
-	keys      map[string]*rsa.PublicKey
-	fetchedAt time.Time
-	cacheTTL  time.Duration
+	mu            sync.RWMutex
+	jwksURI       string
+	keys          map[string]*rsa.PublicKey
+	fetchedAt     time.Time
+	lastAttemptAt time.Time
+	cacheTTL      time.Duration
+	negCache      map[string]time.Time
+
+	fetchMu sync.Mutex
 }
 
 // NewOIDCValidator constructs a new OIDCValidator.
@@ -95,15 +99,28 @@ func NewOIDCValidator(issuer, audience string, hc *http.Client) *OIDCValidator {
 		audience:   audience,
 		httpClient: hc,
 		keys:       make(map[string]*rsa.PublicKey),
+		negCache:   make(map[string]time.Time),
 		cacheTTL:   10 * time.Minute,
 	}
 }
 
 // Init fetches the JWKS immediately, returning an error if it fails.
 func (v *OIDCValidator) Init(ctx context.Context) error {
+	v.fetchMu.Lock()
+	defer v.fetchMu.Unlock()
+
+	jwksURI, newKeys, err := v.fetchJWKS(ctx, "")
+	if err != nil {
+		return err
+	}
+
 	v.mu.Lock()
-	defer v.mu.Unlock()
-	return v.refreshKeySetLocked(ctx)
+	v.jwksURI = jwksURI
+	v.keys = newKeys
+	v.fetchedAt = time.Now()
+	v.lastAttemptAt = time.Now()
+	v.mu.Unlock()
+	return nil
 }
 
 // SetCacheTTL adjusts the key cache expiration time (useful in tests).
@@ -174,7 +191,7 @@ func (v *OIDCValidator) Validate(ctx context.Context, rawToken string) (*Claims,
 	}
 
 	now := time.Now().Unix()
-	const leeway = 5 * 60 // 5 minutes leeway for clock skew
+	const leeway = 60 // 60 seconds leeway for clock skew
 	if claims.ExpiresAt > 0 && now > claims.ExpiresAt+leeway {
 		return nil, ErrTokenExpired
 	}
@@ -213,89 +230,115 @@ func verifySignature(pub *rsa.PublicKey, alg string, content, sig []byte) error 
 }
 
 func (v *OIDCValidator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+	const negTTL = 30 * time.Second
+
+	// 1. Fast path under read lock
 	v.mu.RLock()
 	key, exists := v.keys[kid]
 	fresh := time.Since(v.fetchedAt) < v.cacheTTL
+	negTime, isNeg := v.negCache[kid]
+	negFresh := isNeg && time.Since(negTime) < negTTL
 	v.mu.RUnlock()
 
-	if exists && fresh {
-		if key == nil {
-			return nil, fmt.Errorf("%w: kid %q (negative cache)", ErrUnknownKey, kid)
-		}
+	if exists && fresh && key != nil {
 		return key, nil
 	}
+	if negFresh {
+		return nil, fmt.Errorf("%w: kid %q (negative cache)", ErrUnknownKey, kid)
+	}
 
-	// Refresh key set
+	// 2. Fetch lock ensures at most one network fetch at a time without blocking readers
+	v.fetchMu.Lock()
+	defer v.fetchMu.Unlock()
+
+	// Double check under read lock
+	v.mu.RLock()
+	if key, exists := v.keys[kid]; exists && time.Since(v.fetchedAt) < v.cacheTTL && key != nil {
+		v.mu.RUnlock()
+		return key, nil
+	}
+	if negTime, isNeg := v.negCache[kid]; isNeg && time.Since(negTime) < negTTL {
+		v.mu.RUnlock()
+		return nil, fmt.Errorf("%w: kid %q (negative cache)", ErrUnknownKey, kid)
+	}
+	if time.Since(v.lastAttemptAt) < 5*time.Second {
+		v.mu.RUnlock()
+		return nil, fmt.Errorf("%w: kid %q (throttled)", ErrUnknownKey, kid)
+	}
+	cachedJwksURI := v.jwksURI
+	v.mu.RUnlock()
+
+	// 3. HTTP fetch outside v.mu
+	fetchCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	newJwksURI, newKeys, err := v.fetchJWKS(fetchCtx, cachedJwksURI)
+
+	// 4. Update state under write lock
 	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	// Double check after acquire
-	if key, exists := v.keys[kid]; exists && time.Since(v.fetchedAt) < v.cacheTTL {
-		if key == nil {
-			return nil, fmt.Errorf("%w: kid %q (negative cache)", ErrUnknownKey, kid)
-		}
+	v.lastAttemptAt = time.Now()
+	if err == nil {
+		v.jwksURI = newJwksURI
+		v.keys = newKeys
+		v.fetchedAt = time.Now()
+		v.negCache = make(map[string]time.Time)
+	}
+	if key, exists := v.keys[kid]; exists && key != nil {
+		v.mu.Unlock()
 		return key, nil
 	}
+	v.negCache[kid] = time.Now()
+	v.mu.Unlock()
 
-	if err := v.refreshKeySetLocked(ctx); err != nil {
+	if err != nil && len(v.keys) == 0 {
 		return nil, fmt.Errorf("%w: %w", ErrKeySetUnavailable, err)
 	}
-
-	if key, exists := v.keys[kid]; exists && key != nil {
-		return key, nil
-	}
-
-	// Negative cache
-	v.keys[kid] = nil
-
 	return nil, fmt.Errorf("%w: kid %q", ErrUnknownKey, kid)
 }
 
-func (v *OIDCValidator) refreshKeySetLocked(ctx context.Context) error {
-	if v.jwksURI == "" {
+func (v *OIDCValidator) fetchJWKS(ctx context.Context, currentJwksURI string) (string, map[string]*rsa.PublicKey, error) {
+	jwksURI := currentJwksURI
+	if jwksURI == "" {
 		discoveryURL := v.issuer + "/.well-known/openid-configuration"
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
 
 		resp, err := v.httpClient.Do(req)
 		if err != nil {
-			return fmt.Errorf("discovery request failed: %w", err)
+			return "", nil, fmt.Errorf("discovery request failed: %w", err)
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("discovery endpoint returned %s", resp.Status)
+			return "", nil, fmt.Errorf("discovery endpoint returned %s", resp.Status)
 		}
 
 		var doc struct {
 			JwksURI string `json:"jwks_uri"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-			return fmt.Errorf("decoding discovery doc: %w", err)
+			return "", nil, fmt.Errorf("decoding discovery doc: %w", err)
 		}
 		if doc.JwksURI == "" {
-			return errors.New("discovery document missing jwks_uri")
+			return "", nil, errors.New("discovery document missing jwks_uri")
 		}
-		v.jwksURI = doc.JwksURI
+		jwksURI = doc.JwksURI
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURI, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURI, nil)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
 	resp, err := v.httpClient.Do(req)
 	if err != nil {
-		v.jwksURI = "" // Clear to force rediscovery
-		return fmt.Errorf("jwks request failed: %w", err)
+		return "", nil, fmt.Errorf("jwks request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		v.jwksURI = "" // Clear to force rediscovery
-		return fmt.Errorf("jwks endpoint returned %s", resp.Status)
+		return "", nil, fmt.Errorf("jwks endpoint returned %s", resp.Status)
 	}
 
 	var jwks struct {
@@ -309,7 +352,7 @@ func (v *OIDCValidator) refreshKeySetLocked(ctx context.Context) error {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
-		return fmt.Errorf("decoding jwks: %w", err)
+		return "", nil, fmt.Errorf("decoding jwks: %w", err)
 	}
 
 	newKeys := make(map[string]*rsa.PublicKey)
@@ -342,10 +385,8 @@ func (v *OIDCValidator) refreshKeySetLocked(ctx context.Context) error {
 	}
 
 	if len(newKeys) == 0 {
-		return errors.New("no valid RSA keys found in JWKS")
+		return "", nil, errors.New("no valid RSA keys found in JWKS")
 	}
 
-	v.keys = newKeys
-	v.fetchedAt = time.Now()
-	return nil
+	return jwksURI, newKeys, nil
 }

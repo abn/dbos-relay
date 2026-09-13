@@ -70,8 +70,11 @@ func TestHealthzReportsDatabaseState(t *testing.T) {
 		if prob.Title != "database unavailable" {
 			t.Errorf("problem title = %q, want \"database unavailable\"", prob.Title)
 		}
-		if prob.Detail != "connection refused" {
-			t.Errorf("problem detail = %q, want \"connection refused\"", prob.Detail)
+		if prob.Detail != "database unavailable" {
+			t.Errorf("problem detail = %q, want \"database unavailable\"", prob.Detail)
+		}
+		if strings.Contains(rec.Body.String(), "connection refused") {
+			t.Errorf("leaked driver error in healthz response")
 		}
 	})
 }
@@ -157,12 +160,52 @@ func TestDocsEndpoint(t *testing.T) {
 	if !strings.Contains(contentType, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", contentType)
 	}
-	if rec.Body.Len() == 0 {
+	body := rec.Body.String()
+	if len(body) == 0 {
 		t.Fatal("expected non-empty html body")
 	}
-	if !strings.Contains(rec.Body.String(), "/openapi.json") {
+	if !strings.Contains(body, "/openapi.json") {
 		t.Errorf("docs page does not reference /openapi.json")
 	}
+	if strings.Contains(body, "http://") || strings.Contains(body, "https://") {
+		t.Errorf("docs page references external third-party origins: %s", body)
+	}
+	if !strings.Contains(body, "/docs/swagger-ui.css") {
+		t.Errorf("docs page does not reference /docs/swagger-ui.css")
+	}
+	if !strings.Contains(body, "/docs/swagger-ui-bundle.js") {
+		t.Errorf("docs page does not reference /docs/swagger-ui-bundle.js")
+	}
+
+	t.Run("swagger css asset", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/docs/swagger-ui.css", nil)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if !strings.Contains(rec.Header().Get("Content-Type"), "text/css") {
+			t.Errorf("Content-Type = %q, want text/css", rec.Header().Get("Content-Type"))
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatal("expected non-empty css body")
+		}
+	})
+
+	t.Run("swagger js asset", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/docs/swagger-ui-bundle.js", nil)
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+			t.Errorf("Content-Type = %q, want javascript", rec.Header().Get("Content-Type"))
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatal("expected non-empty js body")
+		}
+	})
 }
 
 func TestSchemasEndpoint(t *testing.T) {
@@ -214,6 +257,10 @@ func (f *fakeQuerier) GetOrganisationByName(ctx context.Context, name string) (g
 		return gen.Organisation{ID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, Name: "test-org"}, nil
 	}
 	return gen.Organisation{}, errors.New("not found")
+}
+
+func (f *fakeQuerier) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (gen.Organisation, error) {
+	return gen.Organisation{ID: id, Name: "test-org"}, nil
 }
 
 func (f *fakeQuerier) GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
