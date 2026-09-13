@@ -6,6 +6,7 @@ var (
 	ExecuteCheck             = executeCheck
 	WaitForExecutorHealthy   = (*Runner).waitForExecutorHealthy
 	WaitForExecutorUnhealthy = (*Runner).waitForExecutorUnhealthy
+	RunBattery1Spec          = (*Runner).runBattery1Spec
 	RunBattery2Handshake     = (*Runner).runBattery2Handshake
 	RunBattery4Control       = (*Runner).runBattery4Control
 	RunBattery6Recovery      = (*Runner).runBattery6Recovery
