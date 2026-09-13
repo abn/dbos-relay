@@ -68,7 +68,7 @@ that require it.
 **Metrics** (`internal/metrics`). An OpenMetrics endpoint over executor and
 request counters.
 
-**Dashboard** (`console/`, served by `internal/dashboard`). The web interface,
+**Dashboard** (served by `internal/dashboard`). The web interface,
 talking only to the HTTP API. It has no database access, ever. In accordance
 with project terminology conventions, Relay's web interface is named the
 dashboard; Console refers strictly to the upstream vendor product.

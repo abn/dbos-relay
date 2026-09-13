@@ -1,7 +1,7 @@
 ---
 type: Decision
 title: Dashboard web stack
-description: Use zero-dependency vanilla JavaScript and bespoke SVG visualization for the embedded web console.
+description: Use zero-dependency vanilla JavaScript runtime with esbuild asset bundling and bespoke SVG visualization for the embedded web dashboard.
 status: accepted
 ---
 
@@ -9,23 +9,28 @@ status: accepted
 
 ## Context
 
-Relay embeds a web dashboard (`console/`) for inspecting applications,
-executors, workflows, and step executions. The initial exploration considered
-framework baselines (such as SvelteKit) and automated OpenAPI type generation.
+Relay embeds a web dashboard (served by `internal/dashboard`) for inspecting
+applications, executors, workflows, and step executions. The initial exploration
+considered heavy framework baselines (such as SvelteKit) and automated OpenAPI
+type generation.
 
-However, adding npm framework dependencies introduces build complexity, supply-chain
-risks, and version drift against Relay's single-binary embed model.
+However, complex client-side framework runtimes introduce runtime overhead,
+supply-chain risks, and unnecessary complexity for Relay's single-binary embed
+model.
 
 ## Decision
 
-Relay implements the web dashboard as a zero-dependency vanilla JS application:
+Relay implements the web dashboard as a lightweight vanilla JavaScript client with an esbuild asset compilation step:
 
-1. **Framework**: Vanilla JavaScript using DOM templates and native browser APIs, with no npm dependencies.
-2. **DAG visualization**: Bespoke SVG renderer (`WorkflowDAG.js`) tailored to DBOS workflow step graphs.
-3. **Styling**: Hand-written CSS without external utility frameworks.
-4. **Types**: Client models in `console/src/lib/api/types.ts` are maintained manually against Relay OpenAPI schemas rather than generated via external node tooling.
+1. **Runtime framework**: Vanilla JavaScript in the browser using standard DOM templates and native browser APIs, with zero runtime UI framework dependencies.
+2. **Build and bundling**: Uses `esbuild` as a development dependency via `node build.js` to bundle modular client scripts into a single standalone IIFE distribution bundle (`internal/dashboard/dist/assets/app.js`), verified with `node --check`.
+3. **DAG visualization**: Bespoke SVG renderer (`WorkflowDAG.js`) tailored to DBOS workflow step graphs.
+4. **Styling**: Hand-written CSS without external utility frameworks.
+5. **Types**: Client models in `src/lib/api/types.ts` are maintained directly against Relay OpenAPI schemas rather than generated via heavy external node tooling.
 
 ## Consequences
 
-- The build requires no external npm packages or node toolchains.
-- TypeScript client types in `console/src/lib/api/types.ts` are maintained manually when the API contract changes.
+- The client runtime requires zero external framework libraries in the user's browser.
+- Building dashboard assets from source requires Node.js and `esbuild` (configured as a devDependency in `package.json`).
+- Pre-built distribution assets are checked into `internal/dashboard/dist` and embedded via Go's `//go:embed`, allowing standard Go binary builds to succeed without requiring Node or npm on the host.
+- TypeScript client types in `src/lib/api/types.ts` are maintained manually when the API contract changes.

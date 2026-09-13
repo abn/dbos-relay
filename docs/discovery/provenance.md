@@ -20,3 +20,4 @@ No claim is derived from proprietary binaries or non-public materials.
 | Argus dashboard UI package | Dashboard components | https://github.com/tmarkovski/dbos-argus commit 53cf15bdbea0b68f8ac2dd1e593539e864c08788 (MIT) | 2026-09-08 |
 | API key format & prefix | Key generation, lookup, and hash verification | dbosctl auth, dbos-transact-ts conductor client | 2026-09-08 |
 | Unauthenticated public OpenAPI access | API spec serving | HTTP 200 without auth or license click-through from cloud.dbos.dev | 2026-09-08 |
+| Workflow cancellation & resume SQL semantics | Architecture dataplane | https://github.com/dbos-inc/dbos-transact-go commit ab56911fdd78552e1e7fe648cff7c831a1e760c8 (dbos/internal/sysdb/system_database.go) | 2026-09-08 |

@@ -62,6 +62,9 @@ executors on a schedule, and a check that every started workflow reaches a
 terminal state exactly once. It runs in CI for any change to liveness or
 routing.
 
-Timing defaults, the grace period (default 60s timeout, 20s ping interval),
-and per-application settings that override them are defined normatively in the
-[Executor WebSocket Protocol](../protocol/executor-ws.md).
+Relay implements a default executor timeout of 60 seconds (`executorTimeoutSecs`)
+with a 20-second ping heartbeat interval. These defaults may be configured per
+application in `relay.yaml` or overridden by application conductor settings.
+When an executor connection is interrupted and the timeout duration elapses
+without reconnection, the executor is declared dead, and its orphaned workflows
+are scheduled for recovery dispatch to a healthy peer.

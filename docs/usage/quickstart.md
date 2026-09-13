@@ -10,7 +10,7 @@ its unauthenticated endpoints.
 
 ## Prerequisites
 
-- Go 1.26 or later (as required by `go.mod`)
+- Go 1.26.7 or later (as required by `go.mod`)
 - Docker or Podman (for running the local database container)
 - `curl`
 
@@ -39,11 +39,13 @@ Relay's `serve` command also applies migrations automatically at startup, making
 Create an initial API key:
 
 ```bash
-./bin/relay apikey create --org acme --name test-key
+./bin/relay apikey create --org local --name test-key
 ```
 
 Relay outputs the plaintext key once (prefixed with `dbos_`). Store this key
-securely; Relay only persists its SHA-256 hash.
+securely; Relay only persists its SHA-256 hash. In default self-hosted mode
+without an external identity provider, Relay resolves requests to the implicit
+`local` organization.
 
 ## 4. Run the server
 
@@ -118,7 +120,7 @@ The sample applications in `examples/` wrap these settings using `RELAY_URL` and
 Once an application connects, you can query the active executors for that application:
 
 ```bash
-curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/executors
+curl -fsS http://localhost:8090/v2/orgs/local/apps/my-app/executors
 ```
 
 ## 8. Querying workflows and resources
@@ -127,25 +129,25 @@ Relay serves the Conductor v2 REST surface. Query workflows for an application:
 
 ```bash
 # Search workflows
-curl -fsS -X POST http://localhost:8090/v2/orgs/acme/apps/my-app/workflows/search \
+curl -fsS -X POST http://localhost:8090/v2/orgs/local/apps/my-app/workflows/search \
   -H "Content-Type: application/json" \
   -d '{"limit": 10}'
 
 # Inspect a specific workflow
-curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/workflows/{workflowId}
+curl -fsS http://localhost:8090/v2/orgs/local/apps/my-app/workflows/{workflowId}
 
 # List workflow execution steps
-curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/workflows/{workflowId}/steps
+curl -fsS http://localhost:8090/v2/orgs/local/apps/my-app/workflows/{workflowId}/steps
 ```
 
 Query application queues and schedules:
 
 ```bash
 # List queues
-curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/queues
+curl -fsS http://localhost:8090/v2/orgs/local/apps/my-app/queues
 
 # List schedules
-curl -fsS http://localhost:8090/v2/orgs/acme/apps/my-app/schedules
+curl -fsS http://localhost:8090/v2/orgs/local/apps/my-app/schedules
 ```
 
 ## 9. Operating with dbosctl

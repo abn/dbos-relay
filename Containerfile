@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
 
@@ -20,6 +20,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 USER 65532:65532
 
 COPY --from=builder /bin/relay /bin/relay
+COPY LICENSE NOTICE THIRD-PARTY-LICENSES.md /
 
 EXPOSE 8090
 

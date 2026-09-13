@@ -7,7 +7,7 @@ status: decided
 
 # Dashboard component reuse evaluation
 
-Relay plans a self-hosted web dashboard (`console/`) embedded into the
+Relay plans a self-hosted web dashboard embedded into the
 Relay binary to provide visibility into applications, executors, workflows,
 steps, and queues. This document evaluates whether Relay should consume the
 external `@dbos-argus/ui` package from the `dbos-argus` project or build first-party
@@ -214,10 +214,16 @@ Relay will **not** consume or depend on `@dbos-argus/ui`.
 ## Outcome
 
 The No-Go decision on `@dbos-argus/ui` held in full. The web interface shipped as
-a zero-dependency vanilla JS console with no npm dependencies, avoiding
-supply-chain overhead. DAG visualization shipped as the permitted bespoke SVG DAG
-renderer (`WorkflowDAG.js`). UI styling and client API models are maintained directly
-in `console/src/` without external framework toolchains. See [ADR 0009](../adr/0009-dashboard-web-stack.md).
+a vanilla JavaScript client runtime without client-side UI framework dependencies,
+avoiding heavy browser-runtime overhead. DAG visualization shipped as the permitted
+bespoke SVG DAG renderer (`WorkflowDAG.js`). For production packaging, client assets
+are compiled and bundled using `esbuild` as a build-time development dependency via
+`node build.js` into standalone distribution artifacts in `internal/dashboard/dist/assets/`,
+and verified with `node --check`. UI styling and client API models are maintained
+directly without external framework toolchains. See [ADR 0009](../adr/0009-dashboard-web-stack.md).
 
 ## Addendum
-OIDC Login flow added.
+
+The web dashboard incorporates OIDC authentication support, allowing users to
+authenticate against the configured OpenID Connect provider and submit Bearer
+tokens on authenticated API routes.

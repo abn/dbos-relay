@@ -5,12 +5,12 @@ contract; this file is the operating detail behind it.
 
 ## Discovery before code
 
-- Phase 0 discovery documents come first. No server code is written until the
-  stack decision, the executor protocol specification, the vendored REST
-  contract, the permission model, the client behavioural notes, and the
-  interface reuse assessment are written and reviewed.
-- If a later phase reveals a gap in the protocol specification, fix the
-  specification first, then write the code.
+- Discovery and architecture specifications precede implementation. The
+  executor protocol specification, the vendored REST contract, the permission
+  model, the client behavioural notes, and the interface reuse assessment are
+  written and maintained as the single source of truth.
+- If an implementation reveals a gap in the protocol specification, fix the
+  specification first, then update the code.
 
 ## Provenance
 
@@ -71,5 +71,5 @@ contract; this file is the operating detail behind it.
 - A change is done only when `make check` passes and the relevant tests are
   green, with real captured output. Wiki changes are reflected in
   `docs/log.md`.
-- The internal progress log lives in `.agents/brain/outbox/` and never in the
-  wiki.
+- The internal progress log lives in the gitignored scratch area and never in
+  the wiki.
