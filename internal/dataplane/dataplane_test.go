@@ -3,6 +3,7 @@ package dataplane_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -291,4 +292,121 @@ func TestManager_AggregatesDispatch(t *testing.T) {
 	if res2.GetMessageType() != protocol.MessageTypeGetStepAggregates {
 		t.Fatalf("expected MessageTypeGetStepAggregates, got %s", res2.GetMessageType())
 	}
+}
+
+func TestManager_RegisterApp_NoDeadlockOnValidationError(t *testing.T) {
+	mgr := dataplane.NewManager(nil)
+	appID := pgtype.UUID{Bytes: [16]byte{1, 9, 9}, Valid: true}
+
+	// Invalid DatabaseURL must return error
+	err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "",
+	})
+	if err == nil {
+		t.Fatal("expected error for empty DatabaseURL, got nil")
+	}
+
+	// Manager must not be deadlocked: HasDataPlane and subsequent RegisterApp must proceed promptly
+	done := make(chan bool, 1)
+	go func() {
+		_ = mgr.HasDataPlane(appID)
+		_ = mgr.RegisterApp(dataplane.AppConfig{
+			ApplicationID: appID,
+			DatabaseURL:   "postgres://localhost:5432/test",
+		})
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// Success: no deadlock
+	case <-time.After(1 * time.Second):
+		t.Fatal("manager deadlocked after failed RegisterApp")
+	}
+}
+
+func TestManager_RegisterApp_Concurrency(t *testing.T) {
+	mgr := dataplane.NewManager(nil)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			appID := pgtype.UUID{Bytes: [16]byte{byte(idx), 1, 2}, Valid: true}
+			_ = mgr.RegisterApp(dataplane.AppConfig{
+				ApplicationID: appID,
+				DatabaseURL:   "postgres://localhost:5432/test",
+			})
+			_ = mgr.HasDataPlane(appID)
+			_ = mgr.RegisterApp(dataplane.AppConfig{
+				ApplicationID: appID,
+				DatabaseURL:   "postgres://localhost:5432/test",
+				Mode:          dataplane.ModeReadWrite,
+			})
+		}(i)
+	}
+	wg.Wait()
+}
+
+func TestManager_ConcurrentInitialization_WarmClient(t *testing.T) {
+	appA := pgtype.UUID{Bytes: [16]byte{20, 1, 1}, Valid: true}
+	appB := pgtype.UUID{Bytes: [16]byte{20, 1, 2}, Valid: true}
+
+	blockA := make(chan struct{})
+	mockB := &mockClient{
+		onDispatch: func(ctx context.Context, msg protocol.Message) (protocol.Message, error) {
+			return &protocol.ListWorkflowsResponse{
+				Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "b-resp"},
+			}, nil
+		},
+	}
+
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		if cfg.ApplicationID == appA {
+			<-blockA
+			return &mockClient{}, nil
+		}
+		return mockB, nil
+	})
+
+	// Register appB and warm it up
+	if err := mgr.RegisterApp(dataplane.AppConfig{ApplicationID: appB, DatabaseURL: "postgres://localhost/b"}); err != nil {
+		t.Fatalf("register appB failed: %v", err)
+	}
+
+	readMsg := &protocol.ListWorkflowsRequest{
+		Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-b-warm"},
+	}
+	if _, err := mgr.Dispatch(context.Background(), appB, readMsg); err != nil {
+		t.Fatalf("warm up dispatch for appB failed: %v", err)
+	}
+
+	// Register appA in background: client construction blocks on blockA
+	go func() {
+		_ = mgr.RegisterApp(dataplane.AppConfig{ApplicationID: appA, DatabaseURL: "postgres://localhost/a"})
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Dispatch appB while appA initialization is blocked: must return immediately
+	start := time.Now()
+	bMsg := &protocol.ListWorkflowsRequest{
+		Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-b-fast"},
+	}
+	res, err := mgr.Dispatch(context.Background(), appB, bMsg)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("appB dispatch failed: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil response for appB")
+	}
+	if elapsed > 100*time.Millisecond {
+		t.Fatalf("appB dispatch was blocked by appA initialization: took %v", elapsed)
+	}
+
+	close(blockA)
 }

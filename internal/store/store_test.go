@@ -96,3 +96,45 @@ func TestGetAPIKeyByLookupRevoked(t *testing.T) {
 		t.Fatalf("expected pgx.ErrNoRows for revoked key, got error: %v", err)
 	}
 }
+
+func TestStore_InTx(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	t.Run("commit", func(t *testing.T) {
+		err := s.InTx(ctx, func(q *gen.Queries) error {
+			_, createErr := q.CreateOrganisation(ctx, "tx_org_commit")
+			return createErr
+		})
+		if err != nil {
+			t.Fatalf("expected InTx to commit successfully, got error: %v", err)
+		}
+
+		org, err := s.Queries().GetOrganisationByName(ctx, "tx_org_commit")
+		if err != nil {
+			t.Fatalf("expected organisation to exist after commit: %v", err)
+		}
+		if org.Name != "tx_org_commit" {
+			t.Fatalf("expected organisation name tx_org_commit, got %s", org.Name)
+		}
+	})
+
+	t.Run("rollback", func(t *testing.T) {
+		expectedErr := errors.New("simulated transaction failure")
+		err := s.InTx(ctx, func(q *gen.Queries) error {
+			_, createErr := q.CreateOrganisation(ctx, "tx_org_rollback")
+			if createErr != nil {
+				return createErr
+			}
+			return expectedErr
+		})
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("expected InTx to return %v, got %v", expectedErr, err)
+		}
+
+		_, err = s.Queries().GetOrganisationByName(ctx, "tx_org_rollback")
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("expected organisation to be rolled back and not exist, got error: %v", err)
+		}
+	})
+}

@@ -2,8 +2,11 @@ package declarative_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/abn/relay/internal/declarative"
 	"github.com/abn/relay/internal/store"
@@ -25,7 +28,7 @@ alert_rules:
     metadata:
       threshold: 1
   - app: "order-service"
-    rule_type: "RecoveryFlapping"
+    rule_type: "SlowQueue"
     min_interval_secs: 300
     metadata:
       threshold: 3
@@ -236,5 +239,123 @@ func TestDiffAndApply_LiveDB(t *testing.T) {
 		if item.Kind == "Application" && item.Action != declarative.ActionUnchanged {
 			t.Errorf("expected application to be UNCHANGED, got %v", item)
 		}
+	}
+}
+
+func TestValidate_AlertRuleTypes_OpenAPISpecParity(t *testing.T) {
+	validTypes := []string{"WorkflowFailure", "SlowQueue", "UnresponsiveApplication"}
+	for _, rt := range validTypes {
+		t.Run("valid_"+rt, func(t *testing.T) {
+			cfg := &declarative.Config{
+				Version:      "1",
+				Organisation: "testorg",
+				Applications: []declarative.Application{{Name: "test-app"}},
+				AlertRules: []declarative.AlertRule{
+					{
+						App:      "test-app",
+						RuleType: rt,
+					},
+				},
+			}
+			if err := declarative.Validate(cfg); err != nil {
+				t.Fatalf("expected rule type %q to be valid, got error: %v", rt, err)
+			}
+		})
+	}
+
+	invalidTypes := []string{"RecoveryFlapping", "StrandedVersion", "InvalidType", ""}
+	for _, rt := range invalidTypes {
+		t.Run("invalid_"+rt, func(t *testing.T) {
+			cfg := &declarative.Config{
+				Version:      "1",
+				Organisation: "testorg",
+				Applications: []declarative.Application{{Name: "test-app"}},
+				AlertRules: []declarative.AlertRule{
+					{
+						App:      "test-app",
+						RuleType: rt,
+					},
+				},
+			}
+			if err := declarative.Validate(cfg); err == nil {
+				t.Fatalf("expected rule type %q to be rejected, but Validate succeeded", rt)
+			}
+		})
+	}
+}
+
+func TestApply_TransactionalRollback_LiveDB(t *testing.T) {
+	url, err := testdb.URL("declarative")
+	if err != nil {
+		t.Fatalf("deriving test database url: %v", err)
+	}
+	if url == "" {
+		t.Skip("RELAY_TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	s, err := store.Open(ctx, url)
+	if err != nil {
+		t.Fatalf("opening test store: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("migrating store: %v", err)
+	}
+	defer func() {
+		_ = s.Truncate(context.Background())
+	}()
+
+	orgName := "auditorg2"
+
+	// Config with invalid second application name violating database check constraint
+	failingCfg := &declarative.Config{
+		Version:      "1",
+		Organisation: orgName,
+		Applications: []declarative.Application{
+			{Name: "app_gamma"},
+			{Name: "INVALID_UPPERCASE_NAME"},
+		},
+	}
+
+	// Apply should fail mid-way when inserting the invalid application
+	_, applyErr := declarative.Apply(ctx, s, failingCfg)
+	if applyErr == nil {
+		t.Fatal("expected Apply with invalid application name to fail, but it succeeded")
+	}
+
+	// Assert transactional rollback: organisation does not exist
+	_, err = s.Queries().GetOrganisationByName(ctx, orgName)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected organisation %q to not exist after rollback, got err: %v", orgName, err)
+	}
+
+	// Corrected config
+	validCfg := &declarative.Config{
+		Version:      "1",
+		Organisation: orgName,
+		Applications: []declarative.Application{
+			{Name: "app_gamma"},
+			{Name: "app_delta"},
+		},
+	}
+
+	// Subsequent apply must succeed and generate usable API keys
+	plan, err := declarative.Apply(ctx, s, validCfg)
+	if err != nil {
+		t.Fatalf("expected corrected Apply to succeed, got error: %v", err)
+	}
+	if len(plan.GeneratedKeys) == 0 {
+		t.Fatal("expected plan.GeneratedKeys to be non-empty after fresh apply")
+	}
+
+	org, err := s.Queries().GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		t.Fatalf("expected organisation %q to exist after successful apply: %v", orgName, err)
+	}
+	apps, err := s.Queries().ListApplicationsByOrganisation(ctx, org.ID)
+	if err != nil || len(apps) != 2 {
+		t.Fatalf("expected 2 applications, got %d (err: %v)", len(apps), err)
 	}
 }

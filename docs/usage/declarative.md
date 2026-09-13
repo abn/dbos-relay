@@ -39,7 +39,7 @@ alert_rules:
         - type: "slack"
           url: "https://hooks.slack.com/services/..."
   - app: "order-service"
-    rule_type: "RecoveryFlapping"
+    rule_type: "SlowQueue"
     min_interval_secs: 300
     metadata:
       threshold: 3
@@ -75,7 +75,7 @@ The declarative manifest schema supports the following fields:
   * `executor_timeout_secs`: Liveness timeout in seconds before an executor is declared dead.
 * `alert_rules`: List of alerting rule specifications:
   * `app`: Target application name.
-  * `rule_type`: Rule classifier (`UnresponsiveApplication`, `RecoveryFlapping`, `StrandedVersion`).
+  * `rule_type`: Rule classifier (`WorkflowFailure`, `SlowQueue`, `UnresponsiveApplication`).
   * `receiving_app`: Application handling notification dispatch.
   * `min_interval_secs`: Notification rate limit interval in seconds.
   * `metadata`: Type-specific configuration dictionary (e.g. destinations, thresholds).
@@ -113,7 +113,7 @@ Sample output:
   [UNCHANGED] Organisation (production)
 + [CREATE] Application (order-service)
 + [CREATE] AlertRule (order-service/UnresponsiveApplication)
-+ [CREATE] AlertRule (order-service/RecoveryFlapping)
++ [CREATE] AlertRule (order-service/SlowQueue)
   [UNCHANGED] DataPlane (order-service): mode=read
 Plan: 3 to create, 0 to delete, 2 unchanged.
 ```

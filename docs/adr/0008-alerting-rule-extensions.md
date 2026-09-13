@@ -1,26 +1,30 @@
 ---
 type: Decision
-title: ADR 0008 - Alerting Rule Extensions
-description: Extend built-in metrics and alerting with RecoveryFlapping and StrandedVersion rule types.
+title: ADR 0008 - Alerting Rule Types Alignment with OpenAPI Specification
+description: Reconcile supported alerting rule types with the OpenAPI specification.
 status: accepted
 ---
 
-# ADR 0008: Alerting Rule Extensions
+# ADR 0008: Alerting Rule Types Alignment with OpenAPI Specification
 
 ## Status
 Accepted
 
 ## Context
-The system provides built-in metrics and alerting for `WorkflowFailure`, `SlowQueue`, and `UnresponsiveApplication`. We are expanding this to support two new scenarios critical for long-running workflows and multi-version deployments:
+Upstream DBOS Transact and Conductor define three alerting rule types in their OpenAPI specification:
+`WorkflowFailure`, `SlowQueue`, and `UnresponsiveApplication`.
 
-1. **RecoveryFlapping**: Workflows that repeatedly fail and recover within a short time window.
-2. **StrandedVersion**: Workflows that remain active on an old application version long after a new version is deployed.
+Relay previously considered custom alert rule types (`RecoveryFlapping` and `StrandedVersion`). However, the OpenAPI specification and the REST write endpoints only permit the three standardized rule types. Admitting non-standard rule types through declarative configuration introduces schema drift and causes strictly validating OpenAPI client SDKs to fail when querying alerting rules.
 
 ## Decision
-We extend the alert rule definitions and delivery payloads to include `RecoveryFlapping` and `StrandedVersion` rule types.
-These types are added to the REST read/write schema and the declarative configuration parser.
+Relay reconciles its alerting rule types strictly with the upstream OpenAPI specification enum:
+1. `WorkflowFailure`
+2. `SlowQueue`
+3. `UnresponsiveApplication`
+
+Declarative configuration validation enforces this enum, rejecting unspec'd rule types at configuration time.
 
 ## Consequences
-- The declarative YAML configuration parser has been updated to accept the new types.
-- The [metrics and alerting discovery documentation](../discovery/metrics-alerting.md) has been updated to reflect the new `enum` values and metadata structures.
-- Clients relying on strict enum checking for alerting rules will need to accept the two new types.
+- Complete wire and schema parity with upstream Conductor is preserved across REST and declarative workflows.
+- Generated API clients decode alerting rule responses without enum validation errors.
+- Any future alert rule extensions require upstream protocol additions or namespaced custom endpoints.

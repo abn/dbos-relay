@@ -36,7 +36,7 @@ page additions, deprecations, and structural refactors.
 * **Update**: Propagated caller context, statement timeouts, and connection pool bounds to data-plane client instances.
 * **Update**: Added transactional mutation support and reconciliation in declarative engine.
 * **Update**: Isolated per-application initialisation with dedicated mutexes and failure backoff in data-plane manager.
-* **Update**: Added fleet workflow and step aggregate dispatch in data-plane manager and documented control plane alerting rule extensions in [ADR 0008](adr/0008-alerting-rule-extensions.md).
+* **Update**: Added fleet workflow and step aggregate dispatch in data-plane manager and reconciled declarative alert rule types with OpenAPI specification enum in [ADR 0008](adr/0008-alerting-rule-extensions.md).
 * **Update**: Replaced regex dashboard bundling with an esbuild pipeline and added bundle parse validation.
 * **Update**: Hardened dashboard against HTML injection in inline event handlers and configured Content Security Policy headers.
 * **Update**: Aligned dashboard API key management model with OpenAPI specification schemas.

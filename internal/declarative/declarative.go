@@ -254,10 +254,10 @@ func Validate(cfg *Config) error {
 			return fmt.Errorf("alert rule receiving_app %q not found in configuration", rule.ReceivingApp)
 		}
 		switch rule.RuleType {
-		case "UnresponsiveApplication", "WorkflowFailure", "SlowQueue", "RecoveryFlapping", "StrandedVersion":
+		case "UnresponsiveApplication", "WorkflowFailure", "SlowQueue":
 			// valid
 		default:
-			return fmt.Errorf("unknown alert rule type %q", rule.RuleType)
+			return fmt.Errorf("unknown alert rule type %q: must be WorkflowFailure, SlowQueue, or UnresponsiveApplication", rule.RuleType)
 		}
 	}
 
