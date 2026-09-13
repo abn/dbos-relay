@@ -179,6 +179,22 @@ func (r *conformanceProbeRunner) runBattery1(ctx context.Context) ConformanceBat
 	}))
 
 	checks = append(checks, executeConformanceCheck("1.4 Prometheus Metrics Exposition (/v1/metrics)", func() error {
+		if r.conductorKey != "" {
+			unauthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
+			if err != nil {
+				return err
+			}
+			unauthResp, err := r.client.Do(unauthReq)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = unauthResp.Body.Close() }()
+
+			if unauthResp.StatusCode != http.StatusUnauthorized {
+				return fmt.Errorf("expected status 401 without token, got %d", unauthResp.StatusCode)
+			}
+		}
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.httpURL+"/v1/metrics", nil)
 		if err != nil {
 			return err
