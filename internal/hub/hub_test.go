@@ -1535,3 +1535,28 @@ func TestHub_ReadPump_ZeroValueResponse(t *testing.T) {
 		t.Errorf("expected Output to be nil, got %v", wfResp.Output)
 	}
 }
+
+func TestHub_ForkNotRetriedOnTimeout(t *testing.T) {
+	forkReq := &protocol.ForkWorkflowRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeForkWorkflow,
+			RequestID: "req-fork-timeout",
+		},
+		Body: protocol.ForkWorkflowRequestBody{
+			WorkflowID: "wf-123",
+		},
+	}
+	if isSafeToRetry(forkReq) {
+		t.Fatalf("expected ForkWorkflowRequest to not be safe to retry on timeout")
+	}
+
+	forkFailReq := &protocol.ForkFromFailureRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeForkFromFailure,
+			RequestID: "req-fork-fail-timeout",
+		},
+	}
+	if isSafeToRetry(forkFailReq) {
+		t.Fatalf("expected ForkFromFailureRequest to not be safe to retry on timeout")
+	}
+}

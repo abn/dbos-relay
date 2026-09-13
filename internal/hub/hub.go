@@ -426,9 +426,7 @@ func isSafeToRetry(req protocol.Message) bool {
 		protocol.MessageTypeListQueues,
 		protocol.MessageTypeGetQueue,
 		protocol.MessageTypeCancel,
-		protocol.MessageTypeResume,
-		protocol.MessageTypeForkWorkflow,
-		protocol.MessageTypeForkFromFailure:
+		protocol.MessageTypeResume:
 		return true
 	default:
 		return false
