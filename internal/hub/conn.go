@@ -34,6 +34,7 @@ type ExecutorConn struct {
 
 	unregister func()
 	closeOnce  sync.Once
+	closed     chan struct{}
 
 	pingInterval time.Duration
 	pongTimeout  time.Duration
@@ -60,6 +61,7 @@ func NewExecutorConn(
 		conn:               conn,
 		mux:                mux,
 		unregister:         unregister,
+		closed:             make(chan struct{}),
 		pingInterval:       pingInterval,
 		pongTimeout:        executorPingWait,
 	}
@@ -90,8 +92,19 @@ func (c *ExecutorConn) WriteMessage(ctx context.Context, msg protocol.Message) e
 func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 	defer func() { _ = c.Close() }()
 
+	stopWatcher := make(chan struct{})
+	defer close(stopWatcher)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = c.Close()
+		case <-c.closed:
+		case <-stopWatcher:
+		}
+	}()
+
 	for {
-		typ, data, err := c.conn.Read(ctx)
+		typ, data, err := c.conn.Read(context.WithoutCancel(ctx))
 		if err != nil {
 			return
 		}
@@ -139,6 +152,8 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-c.closed:
+			return
 		case <-ticker.C:
 			pingCtx, pingCancel := context.WithTimeout(ctx, timeout)
 			err := c.conn.Ping(pingCtx)
@@ -162,6 +177,7 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 func (c *ExecutorConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
+		close(c.closed)
 		c.mux.CancelAll(fmt.Errorf("connection closed"))
 		if c.unregister != nil {
 			c.unregister()

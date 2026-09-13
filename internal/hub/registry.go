@@ -58,10 +58,10 @@ func (r *Registry) Register(conn *ExecutorConn) {
 	appMap[conn.executorID] = conn
 }
 
-// DrainAll removes and returns all active executor connections without closing them.
+// DrainAll snapshots and returns all active executor connections without prematurely removing them.
 func (r *Registry) DrainAll() []*ExecutorConn {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	var conns []*ExecutorConn
 	for _, appMap := range r.byApp {
@@ -69,8 +69,6 @@ func (r *Registry) DrainAll() []*ExecutorConn {
 			conns = append(conns, conn)
 		}
 	}
-	r.byApp = make(map[pgtype.UUID]map[string]*ExecutorConn)
-	r.rrApp = make(map[pgtype.UUID]uint64)
 	return conns
 }
 

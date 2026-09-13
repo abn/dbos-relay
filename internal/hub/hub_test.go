@@ -19,6 +19,7 @@ import (
 
 	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/config"
+	"github.com/abn/relay/internal/fakeexecutor"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/store/gen"
 )
@@ -176,12 +177,14 @@ type mockHubStore struct {
 	disconnectCtxErrs []error
 	upserted          []gen.UpsertExecutorParams
 	touches           []gen.TouchExecutorLastSeenParams
+	executors         map[string]gen.Executor
 	mu                sync.Mutex
 }
 
 func newMockHubStore() *mockHubStore {
 	store := &mockHubStore{
 		memoryAuthStore: *newMemoryAuthStore(),
+		executors:       make(map[string]gen.Executor),
 	}
 	lookup := auth.Lookup("test-key")
 	store.keys[lookup] = gen.ApiKey{
@@ -198,11 +201,14 @@ func (m *mockHubStore) UpsertExecutor(ctx context.Context, arg gen.UpsertExecuto
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.upserted = append(m.upserted, arg)
-	return gen.Executor{
+	ex := gen.Executor{
 		ExecutorID:      arg.ExecutorID,
+		Status:          "connected",
 		OwnerInstanceID: arg.OwnerInstanceID,
 		LeaseExpiresAt:  arg.LeaseExpiresAt,
-	}, nil
+	}
+	m.executors[arg.ExecutorID] = ex
+	return ex, nil
 }
 
 func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.DisconnectExecutorParams) (gen.Executor, error) {
@@ -210,7 +216,10 @@ func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.Disconnec
 	defer m.mu.Unlock()
 	m.disconnected = append(m.disconnected, arg)
 	m.disconnectCtxErrs = append(m.disconnectCtxErrs, ctx.Err())
-	return gen.Executor{}, nil
+	ex := m.executors[arg.ExecutorID]
+	ex.Status = "disconnected"
+	m.executors[arg.ExecutorID] = ex
+	return ex, nil
 }
 
 func (m *mockHubStore) TouchExecutorLastSeen(ctx context.Context, arg gen.TouchExecutorLastSeenParams) error {
@@ -328,32 +337,37 @@ func TestHub_HandshakeTimeout(t *testing.T) {
 		defer func(conn *websocket.Conn) { _ = conn.Close(websocket.StatusNormalClosure, "") }(c)
 	}
 
-	// Wait past the handshake timeout
-	time.Sleep(300 * time.Millisecond)
+	// Wait past the handshake timeout (100ms timeout + buffer)
+	time.Sleep(250 * time.Millisecond)
 
-	// Assert all 25 sockets are closed by the server
+	// Assert all 25 sockets were closed by the server with StatusPolicyViolation.
+	// If the server handshake timeout is missing or broken, c.Read times out with DeadlineExceeded.
 	for i, c := range conns {
-		readCtx, readCancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		closed := false
-		for {
-			_, _, err := c.Read(readCtx)
-			if err != nil {
-				closed = true
-				break
-			}
+		readCtx, readCancel := context.WithTimeout(ctx, 1*time.Second)
+		// Drain the initial prompt frame sent by server if not yet read
+		_, _, err := c.Read(readCtx)
+		if err == nil {
+			_, _, err = c.Read(readCtx)
 		}
 		readCancel()
-		if !closed {
-			t.Errorf("expected client %d connection to be closed by server", i)
+		if errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("client %d timed out waiting for server to close socket: server never closed stalled connection", i)
+		}
+		if websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
+			t.Fatalf("client %d expected StatusPolicyViolation (%d), got err=%v (close status %d)",
+				i, websocket.StatusPolicyViolation, err, websocket.CloseStatus(err))
 		}
 	}
 
-	// Assert runtime stack has no Hub.ServeHTTP frames lingering
+	// Wait a moment for handler goroutines to unwind after observing connection closure
+	time.Sleep(50 * time.Millisecond)
+
+	// Assert runtime stack has no Hub.ServeHTTP frames lingering after close
 	buf := make([]byte, 1024*1024)
 	n := runtime.Stack(buf, true)
 	stack := string(buf[:n])
-	if strings.Contains(stack, "(*Hub).ServeHTTP") {
-		t.Errorf("expected no lingering Hub.ServeHTTP goroutines, but found in stack: %s", stack)
+	if strings.Contains(stack, "(*Hub).ServeHTTP") || strings.Contains(stack, "hub.ServeHTTP") {
+		t.Fatalf("expected no lingering Hub.ServeHTTP goroutines, but found in stack: %s", stack)
 	}
 }
 
@@ -1079,6 +1093,7 @@ func TestHub_Close_DeadlockSafety(t *testing.T) {
 }
 
 func TestHub_Close_DisconnectWritesNotCancelled(t *testing.T) {
+	t.Log("executor is internal/fakeexecutor protocol stand-in, not a real DBOS SDK")
 	store := newMockHubStore()
 	cfg := &config.Config{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -1087,39 +1102,23 @@ func TestHub_Close_DisconnectWritesNotCancelled(t *testing.T) {
 	server := httptest.NewServer(h)
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil {
-		t.Fatalf("failed to dial: %v", err)
+	fe := fakeexecutor.New(fakeexecutor.Options{
+		URL:          server.URL,
+		AppName:      "test-app",
+		ConductorKey: "test-key",
+		ExecutorID:   "exec-shutdown-disconnect",
+	})
+	if err := fe.Connect(ctx); err != nil {
+		t.Fatalf("failed to connect fakeexecutor: %v", err)
 	}
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
 
-	typ, data, err := conn.Read(ctx)
-	if err != nil || typ != websocket.MessageText {
-		t.Fatalf("failed to read prompt: %v", err)
-	}
-	msg, _ := protocol.Decode(data)
-	infoReq := msg.(*protocol.ExecutorInfoRequest)
-
-	infoResp := &protocol.ExecutorInfoResponse{
-		Envelope: protocol.Envelope{
-			Type:      protocol.MessageTypeExecutorInfo,
-			RequestID: infoReq.RequestID,
-		},
-		ExecutorID:         "exec-shutdown-disconnect",
-		ApplicationVersion: "v1.0.0",
-	}
-	respData, _ := protocol.Encode(infoResp)
-	if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
-		t.Fatalf("failed to write info response: %v", err)
-	}
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- fe.Run(ctx)
+	}()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -1133,13 +1132,27 @@ func TestHub_Close_DisconnectWritesNotCancelled(t *testing.T) {
 		t.Fatalf("Hub.Close failed: %v", err)
 	}
 
-	time.Sleep(50 * time.Millisecond)
+	var runErr error
+	select {
+	case runErr = <-runErrCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fakeexecutor.Run to exit after Hub.Close")
+	}
+
+	if websocket.CloseStatus(runErr) != websocket.StatusNormalClosure {
+		t.Fatalf("expected websocket StatusNormalClosure (%d), got error: %v (close status %d)",
+			websocket.StatusNormalClosure, runErr, websocket.CloseStatus(runErr))
+	}
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	if len(store.disconnected) == 0 {
-		t.Fatal("expected DisconnectExecutor to be called during shutdown")
+	if len(store.disconnected) != 1 {
+		t.Fatalf("expected DisconnectExecutor to be called exactly once, got %d", len(store.disconnected))
+	}
+
+	if store.executors["exec-shutdown-disconnect"].Status != "disconnected" {
+		t.Fatalf("expected executor status to be 'disconnected', got %q", store.executors["exec-shutdown-disconnect"].Status)
 	}
 
 	for i, ctxErr := range store.disconnectCtxErrs {
