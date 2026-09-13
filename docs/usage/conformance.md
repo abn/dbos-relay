@@ -19,7 +19,7 @@ fake executor peer to simulate SDK connectivity during the tests.
 
 ## Batteries tested
 
-The conformance suite evaluates 8 distinct batteries:
+The conformance suite evaluates 8 distinct batteries (for detailed per-check specifications, see the [Conformance Batteries Specification](../discovery/Batteries.md)):
 
 1. **Specification & System Probes**: Validates `/healthz`, `/openapi.json`,
    `/openapi-3.0.json`, `/openapi.yaml`, `/docs`, and Prometheus `/v1/metrics`.
@@ -30,7 +30,7 @@ The conformance suite evaluates 8 distinct batteries:
 3. **REST & Wire Multiplexing (Observability)**: Tests dispatching queries for
    workflows, workflow details, and step executions over WebSockets.
 4. **Workflow Control Operations**: Verifies workflow mutations (`cancel`, `resume`,
-   and `restart`).
+   and `fork_workflow`).
 5. **Queues & Schedules Operations**: Verifies listing and pausing/resuming queues
    and schedules.
 6. **Workflow Recovery & Liveness Lifecycle**: Tests disconnect detection and

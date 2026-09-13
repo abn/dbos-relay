@@ -238,11 +238,13 @@ The `ruleMetadata` object holds condition thresholds and evaluation parameters. 
      * `application_name`: Name of the unresponsive application.
      * `connected_executor_count`: String count of connected executors (typically `"0"`).
 
+Per ADR 0008, Relay aligns its alerting rule types strictly with the upstream OpenAPI specification enum (`WorkflowFailure`, `SlowQueue`, `UnresponsiveApplication`). Declarative manifests and REST write endpoints enforce this enum, rejecting unspec'd rule types at configuration time to prevent schema drift and client validation failures.
+
 ### Alert delivery wire protocol
 
 When an alert condition is met and the minimum interval (`minIntervalSecs`) has elapsed since `lastFiredAt`, Relay delivers the alert over the WebSocket connection of the designated receiving application.
 
-#### WebSocket request: `alert`
+#### WebSocket notification: `alert`
 
 ```json
 {
@@ -259,16 +261,7 @@ When an alert condition is met and the minimum interval (`minIntervalSecs`) has 
 }
 ```
 
-#### WebSocket response: `alert`
-
-```json
-{
-  "type": "alert",
-  "request_id": "7b79d282-3e28-4e56-91e8-3a9a7a92b02a",
-  "success": true,
-  "error": null
-}
-```
+Per the normative WebSocket protocol specification (`docs/protocol/executor-ws.md:209-212`), `alert` is a unidirectional notification frame dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:590-595`). No response frame is required or expected. If an envelope error occurs during delivery, the wire envelope error field is `error_message` (never `error` or `payload`).
 
 If the application has registered an alert handler (`@DBOS.alert_handler`, `dbos.SetAlertHandler`, `DBOS.setAlertHandler`), the handler executes. If no handler is registered, the SDK automatically logs the alert as a warning.
 
@@ -306,12 +299,13 @@ In high-availability (HA) multi-node deployments, Relay nodes run behind a load 
 1. **Executor Ownership**:
    * Each executor establishes an outbound WebSocket connection to the cluster.
    * The load balancer routes the connection to any Relay node.
-   * The receiving node records ownership and a connection lease in the shared Postgres database.
+   * The receiving node records ownership and a connection lease in the shared Postgres database (`instances` table). Surviving instances adopt expired leases upon heartbeat timeout.
    * Exactly one Relay node owns an executor WebSocket at any given time.
-2. **Inbound Dispatch**:
+2. **Inbound Dispatch and Forwarding**:
    * External client requests (from `dbosctl`, the dashboard, or HTTP APIs) land on an arbitrary Relay node via the load balancer.
    * If the target executor is owned by the node that received the HTTP request, it dispatches the message directly across the local WebSocket.
-   * If the target executor is owned by a peer node, the local node reads the owner address from the database and forwards the request directly to that peer over HTTP.
+   * If the target executor is owned by a peer node, the local node reads the owner address from the database, signs the payload using HMAC-SHA256 with a timestamp, and forwards the request directly to `/internal/v1/forward/{appID}` on that peer over HTTP.
+   * Forwarded requests carry an `X-Relay-Forward-Hop` header. Requests with `hop >= 1` are rejected with HTTP 409 Conflict to prevent forwarding loops. Signatures verify with a maximum allowed timestamp drift of 30 seconds.
    * The owning peer dispatches the request to the executor over the WebSocket, receives the reply, and responds to the forwarding peer.
 
 ### Peer forwarding addressing and environment configuration
@@ -327,4 +321,4 @@ Peer-to-peer forwarding traffic flows directly between Relay nodes and does not 
 
 * **Peer Routability**: Every node in the cluster must be able to establish direct TCP connections to `<DBOS__ADVERTISE_ADDRESS>:<DBOS__CONDUCTOR_PORT>` on all peer nodes.
 * **Database Consistency**: All nodes must connect to the same PostgreSQL instance or high-availability database cluster (`DBOS__CONDUCTOR_DB_URL`).
-* **Authentication**: Internal peer requests carry an internal authentication signature or header to ensure requests originate from verified cluster members.
+* **Authentication and Integrity**: Internal peer requests are authenticated via HMAC-SHA256 signatures, validated with bounded timestamp drift (30 seconds) and loop prevention headers (`X-Relay-Forward-Hop`).

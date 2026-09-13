@@ -16,9 +16,11 @@ are actively connected.
 Direct database access is governed by strict architectural boundaries:
 
 * **Official SDK client only**: Relay communicates with an application's system database exclusively
-  through the official DBOS Go SDK client library. Relay never issues raw SQL queries (`SELECT * FROM dbos.*`).
-* **Default read-only**: Data plane connections default to `read` mode. Mutation operations (cancellations,
-  restarts, resume) are rejected unless the operator explicitly opts in to `read-write` mode.
+  through the official DBOS Go SDK client library (`github.com/dbos-inc/dbos-transact-golang/dbos`). Relay never issues raw SQL queries (`SELECT * FROM dbos.*`).
+* **Default read-only**: Data plane connections default to `read` mode. Mutation operations (`CancelWorkflow`,
+  `ResumeWorkflow`, `ForkWorkflow`) are rejected unless the operator explicitly opts in to `read-write` mode.
+* **Schema safety and migration immunity**: The SDK client constructor (`dbos.NewClient`) hardcodes `SkipMigrations: true`, guaranteeing Relay never executes migrations against customer application databases. When establishing connections, it calls `VerifyMigrations`. If the target database schema version is newer than Relay's Go SDK version expects, it operates safely without error. If the schema version is older, it fails fast with `*models.UnmigratedDatabaseError` and refuses connection, leaving the schema untouched.
+* **Deferred operations and serialization boundary**: Inter-workflow communication and event retrieval (`GetEvent`, `Send`, `Enqueue`, `ReadStream`) are deferred in v1 (returning HTTP 501 Not Implemented or HTTP 503) due to cross-language serialization boundaries between Go, Python, TypeScript, and Java runtimes.
 * **Executor precedence**: When a live executor is connected, requests are routed to the executor over
   WebSocket. The data plane acts as a fallback when no executors are reachable.
 * **Auditable responses**: Internal routing tracks source attribution (`internal/router.ServedFromTracker`).
@@ -92,6 +94,10 @@ WHERE workflow_uuid = $1
 Any live executor polling `_dbos_internal_queue` via `DequeueWorkflows` picks up the resumed workflow
 and executes remaining steps.
 
+### Fork semantics
+
+WebSocket fork requests (`fork_workflow`) and data-plane fork mutations apply identical workflow initialization semantics. The data-plane client invokes `client.ForkWorkflow` (`internal/dataplane/client.go`), creating a new workflow record with state copied up to the requested step index and enqueued for execution on `_dbos_internal_queue`.
+
 ### Durable sleep and message receive during cancellation
 
 When a running workflow is cancelled via the data plane while suspended in a durable sleep (`sleep`)
@@ -120,11 +126,9 @@ in external HTTP response headers (`X-Relay-Served-From`) and Prometheus metrics
 
 ## Operational metrics and alerting
 
-Under the planned observability specification, Relay records the source that fulfilled each request
-in the `relay_requests_served_total` metric with the `served_from` label (`executor` or `database`).
-In the initial release, the metrics endpoint emits `dbos_conductor_v1_executor_count`;
-fallback ratio alert rules (such as `RelayHighDatabaseFallbackRatio`) are designed for the
-observability tier and will activate when the corresponding counter series is enabled:
+Application-level Conductor alerting rules are strictly constrained to the standardized OpenAPI enum (`WorkflowFailure`, `SlowQueue`, `UnresponsiveApplication`) per ADR 0008.
+
+Independent of application-level alerting rules, Relay records the source that fulfilled each request in the `relay_requests_served_total` metric with the `served_from` label (`executor` or `database`). In the initial release, the metrics endpoint emits `dbos_conductor_v1_executor_count`; fallback ratio alert rules (such as `RelayHighDatabaseFallbackRatio`) are designed for the observability tier and will activate when the corresponding counter series is enabled:
 
 ```yaml
 # deploy/observability/prometheus/relay-alerts.yaml (planned rule)
