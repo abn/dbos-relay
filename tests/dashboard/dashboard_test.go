@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -524,5 +526,280 @@ func TestDashboard_BundleParses(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("node --check failed: %v\nOutput: %s", err, string(output))
+	}
+}
+
+func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
+	clientBytes, err := os.ReadFile("../../console/src/lib/api/client.ts")
+	if err != nil {
+		t.Fatalf("reading client.ts: %v", err)
+	}
+
+	specBytes, err := os.ReadFile("../../api/spec/openapi-3.0.json")
+	if err != nil {
+		t.Fatalf("reading openapi-3.0.json: %v", err)
+	}
+
+	var spec struct {
+		Paths map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(specBytes, &spec); err != nil {
+		t.Fatalf("unmarshaling openapi spec: %v", err)
+	}
+
+	re := regexp.MustCompile("`(/v2/[^`]+)`")
+	matches := re.FindAllStringSubmatch(string(clientBytes), -1)
+	if len(matches) == 0 {
+		t.Fatalf("expected to find /v2/ templates in client.ts")
+	}
+
+	placeholderRe := regexp.MustCompile(`\$\{encodeURIComponent\(([^)]+)\)\}`)
+
+	for _, m := range matches {
+		rawPath := m[1]
+		if idx := strings.Index(rawPath, "${qs"); idx != -1 {
+			rawPath = rawPath[:idx]
+		}
+		if idx := strings.Index(rawPath, "?"); idx != -1 {
+			rawPath = rawPath[:idx]
+		}
+		normalized := placeholderRe.ReplaceAllString(rawPath, "{$1}")
+
+		normalized = strings.ReplaceAll(normalized, "{orgName}", "{orgName}")
+		normalized = strings.ReplaceAll(normalized, "{appName}", "{appName}")
+		normalized = strings.ReplaceAll(normalized, "{workflowId}", "{workflowId}")
+		normalized = strings.ReplaceAll(normalized, "{queueName}", "{queueName}")
+		normalized = strings.ReplaceAll(normalized, "{scheduleName}", "{scheduleName}")
+		normalized = strings.ReplaceAll(normalized, "{ruleId}", "{ruleId}")
+		normalized = strings.ReplaceAll(normalized, "{name}", "{tokenName}")
+		normalized = strings.ReplaceAll(normalized, "{org}", "{orgName}")
+		normalized = strings.ReplaceAll(normalized, "{app}", "{appName}")
+		normalized = strings.ReplaceAll(normalized, "{id}", "{workflowId}")
+
+		if strings.Contains(normalized, "/restart") {
+			t.Errorf("found dead /restart template: %s", normalized)
+		}
+
+		if _, exists := spec.Paths[normalized]; !exists {
+			t.Errorf("template %s (normalized: %s) does not exist in OpenAPI spec", m[1], normalized)
+		}
+	}
+}
+
+func TestDashboard_TokenContractParity(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v2/orgs/{orgName}/tokens", func(w http.ResponseWriter, r *http.Request) {
+		tokens := []map[string]any{
+			{
+				"tokenName":   "deploy-key",
+				"createdAt":   "2026-09-12T12:00:00Z",
+				"permissions": []string{"application.read", "application.write"},
+				"appIds":      []string{"order-service"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(tokens)
+	})
+
+	var revokedToken string
+	mux.HandleFunc("DELETE /v2/orgs/{orgName}/tokens/{tokenName}", func(w http.ResponseWriter, r *http.Request) {
+		revokedToken = r.PathValue("tokenName")
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// 1. Fetch tokens and verify wire format matches Token schema
+	resp, err := http.Get(ts.URL + "/v2/orgs/default/tokens")
+	if err != nil {
+		t.Fatalf("GET tokens failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var tokens []struct {
+		TokenName   string   `json:"tokenName"`
+		CreatedAt   string   `json:"createdAt"`
+		Permissions []string `json:"permissions"`
+		AppIds      []string `json:"appIds"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokens); err != nil {
+		t.Fatalf("decoding tokens: %v", err)
+	}
+
+	if len(tokens) != 1 || tokens[0].TokenName != "deploy-key" || len(tokens[0].AppIds) != 1 || tokens[0].AppIds[0] != "order-service" {
+		t.Fatalf("unexpected token data: %+v", tokens)
+	}
+
+	// 2. Revoke token by name
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/v2/orgs/default/tokens/"+tokens[0].TokenName, nil)
+	delResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE token failed: %v", err)
+	}
+	_ = delResp.Body.Close()
+
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 No Content, got %d", delResp.StatusCode)
+	}
+	if revokedToken != "deploy-key" {
+		t.Fatalf("expected revokedToken deploy-key, got %q", revokedToken)
+	}
+
+	// 3. Verify built bundle reads tokenName and appIds
+	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	if err != nil {
+		t.Fatalf("reading app.js bundle: %v", err)
+	}
+	bundleStr := string(bundleBytes)
+	if !strings.Contains(bundleStr, "tokenName") {
+		t.Errorf("bundle should reference tokenName")
+	}
+	if !strings.Contains(bundleStr, "appIds") {
+		t.Errorf("bundle should reference appIds")
+	}
+}
+
+func TestDashboard_ForkWorkflowContract(t *testing.T) {
+	var requestedStartStep int
+	var receivedAuthHeader string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork", func(w http.ResponseWriter, r *http.Request) {
+		receivedAuthHeader = r.Header.Get("Authorization")
+		var body struct {
+			StartStep int `json:"startStep"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		requestedStartStep = body.StartStep
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"workflowId":"wf-forked-uuid-42"}`))
+	})
+
+	dashHandler := dashboard.Handler(mux)
+	ts := httptest.NewServer(dashHandler)
+	defer ts.Close()
+
+	forkURL := ts.URL + "/v2/orgs/default/apps/test-app/workflows/wf-orig-1/fork"
+	req, _ := http.NewRequest(http.MethodPost, forkURL, strings.NewReader(`{"startStep":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer dbos_sec_testtoken")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST fork failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d", resp.StatusCode)
+	}
+	if receivedAuthHeader != "Bearer dbos_sec_testtoken" {
+		t.Errorf("expected Authorization header passed through, got %q", receivedAuthHeader)
+	}
+	if requestedStartStep != 0 {
+		t.Errorf("expected startStep 0, got %d", requestedStartStep)
+	}
+
+	var res struct {
+		WorkflowID string `json:"workflowId"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&res)
+	if res.WorkflowID != "wf-forked-uuid-42" {
+		t.Errorf("expected workflowId wf-forked-uuid-42, got %q", res.WorkflowID)
+	}
+}
+
+func TestDashboard_AuthenticationFlow(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/orgs/default/apps", func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"Authorization header required"}`))
+			return
+		}
+		if authHeader != "Bearer dbos_sec_validkey" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[{"name":"demo-app"}]`))
+	})
+
+	dashHandler := dashboard.Handler(mux)
+	ts := httptest.NewServer(dashHandler)
+	defer ts.Close()
+
+	// 1. Unauthenticated request to /v2/ returns 401
+	unauthResp, err := http.Get(ts.URL + "/v2/orgs/default/apps")
+	if err != nil {
+		t.Fatalf("GET /v2 failed: %v", err)
+	}
+	_ = unauthResp.Body.Close()
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized for unauthenticated /v2, got %d", unauthResp.StatusCode)
+	}
+
+	// 2. Authenticated request with Bearer key returns 200
+	authReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/v2/orgs/default/apps", nil)
+	authReq.Header.Set("Authorization", "Bearer dbos_sec_validkey")
+	authResp, err := http.DefaultClient.Do(authReq)
+	if err != nil {
+		t.Fatalf("GET with auth failed: %v", err)
+	}
+	_ = authResp.Body.Close()
+	if authResp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK for authenticated /v2, got %d", authResp.StatusCode)
+	}
+
+	// 3. Static asset loads without auth and includes auth support in bundle
+	assetResp, err := http.Get(ts.URL + "/assets/app.js")
+	if err != nil {
+		t.Fatalf("GET app.js failed: %v", err)
+	}
+	defer func() { _ = assetResp.Body.Close() }()
+	if assetResp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 for app.js, got %d", assetResp.StatusCode)
+	}
+
+	bundleBytes, err := io.ReadAll(assetResp.Body)
+	if err != nil {
+		t.Fatalf("reading app.js body: %v", err)
+	}
+	bundle := string(bundleBytes)
+	if !strings.Contains(bundle, "relay_api_key") {
+		t.Errorf("bundle should support relay_api_key session storage")
+	}
+	if !strings.Contains(bundle, "setApiKey") {
+		t.Errorf("bundle should include setApiKey")
+	}
+	if !strings.Contains(bundle, "renderAuthRequired") {
+		t.Errorf("bundle should include renderAuthRequired")
+	}
+}
+
+func TestDashboard_ChildWorkflowXSSSanitization(t *testing.T) {
+	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+
+	// Ensure zero inline onclick handlers exist in the compiled bundle
+	if strings.Contains(bundle, "onclick=") {
+		t.Errorf("compiled bundle contains inline onclick= handlers")
+	}
+
+	// Verify child workflow navigation uses data-action rather than inline script
+	if !strings.Contains(bundle, "data-action=\\\"viewChildWorkflow\\\"") && !strings.Contains(bundle, `data-action="viewChildWorkflow"`) {
+		t.Errorf("bundle should use data-action for viewChildWorkflow")
+	}
+	if !strings.Contains(bundle, "data-child-wf-id") {
+		t.Errorf("bundle should use data-child-wf-id")
 	}
 }

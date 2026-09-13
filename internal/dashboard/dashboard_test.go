@@ -143,3 +143,51 @@ func TestAPIRoutesPassThrough(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboard_SecurityHeaders(t *testing.T) {
+	handler := dashboard.Handler(nil)
+
+	testCases := []struct {
+		name       string
+		path       string
+		wantStatus int
+	}{
+		{name: "root index", path: "/", wantStatus: http.StatusOK},
+		{name: "static asset", path: "/assets/app.js", wantStatus: http.StatusOK},
+		{name: "spa fallback", path: "/workflows", wantStatus: http.StatusOK},
+		{name: "missing asset with ext", path: "/assets/nonexistent.js", wantStatus: http.StatusNotFound},
+		{name: "missing image asset", path: "/nope.png", wantStatus: http.StatusNotFound},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("expected status %d for %s, got %d", tc.wantStatus, tc.path, w.Code)
+			}
+
+			if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Errorf("expected X-Content-Type-Options: nosniff for %s, got %q", tc.path, got)
+			}
+			if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+				t.Errorf("expected X-Frame-Options: DENY for %s, got %q", tc.path, got)
+			}
+			if got := w.Header().Get("Referrer-Policy"); got != "no-referrer" {
+				t.Errorf("expected Referrer-Policy: no-referrer for %s, got %q", tc.path, got)
+			}
+			csp := w.Header().Get("Content-Security-Policy")
+			if !strings.Contains(csp, "script-src 'self'") {
+				t.Errorf("expected CSP to contain script-src 'self' for %s, got %q", tc.path, csp)
+			}
+			if !strings.Contains(csp, "style-src 'self' 'unsafe-inline'") {
+				t.Errorf("expected CSP to contain style-src 'self' 'unsafe-inline' for %s, got %q", tc.path, csp)
+			}
+			if !strings.Contains(csp, "frame-ancestors 'none'") {
+				t.Errorf("expected CSP to contain frame-ancestors 'none' for %s, got %q", tc.path, csp)
+			}
+		})
+	}
+}

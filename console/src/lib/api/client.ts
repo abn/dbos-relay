@@ -12,6 +12,8 @@ import type {
   Schedule,
   AlertingRule,
   CreateAlertInput,
+  Token,
+  TokenCreated,
   ApiKey,
   WorkflowSearchQuery,
 } from "./types.js";
@@ -176,20 +178,18 @@ export class ApiClient {
   }
 
 
-  async forkWorkflow(org: string, app: string, id: string, startStep: number): Promise<any> {
-    const res = await fetch(`/v2/orgs/${org}/apps/${app}/workflows/${id}/fork`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ startStep })
-    });
-    if (!res.ok) throw new Error("fork failed");
-    return res.json();
-  }
-
-  async restartWorkflow(orgName: string, appName: string, workflowId: string): Promise<{ workflowId: string }> {
+  async forkWorkflow(
+    org: string,
+    app: string,
+    id: string,
+    startStep: number
+  ): Promise<{ workflowId: string }> {
     return this.request<{ workflowId: string }>(
-      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/restart`,
-      { method: "POST", body: "{}" }
+      `/v2/orgs/${encodeURIComponent(org)}/apps/${encodeURIComponent(app)}/workflows/${encodeURIComponent(id)}/fork`,
+      {
+        method: "POST",
+        body: JSON.stringify({ startStep }),
+      }
     );
   }
 
@@ -261,8 +261,8 @@ export class ApiClient {
   }
 
   // API Keys (Tokens)
-  async listAPIKeys(orgName: string): Promise<ApiKey[]> {
-    return this.request<ApiKey[]>(`/v2/orgs/${encodeURIComponent(orgName)}/tokens`);
+  async listAPIKeys(orgName: string): Promise<Token[]> {
+    return this.request<Token[]>(`/v2/orgs/${encodeURIComponent(orgName)}/tokens`);
   }
 
   async createAPIKey(
@@ -270,8 +270,8 @@ export class ApiClient {
     name: string,
     permissions: string[] = ["*"],
     appNames: string[] = []
-  ): Promise<{ token: string; tokenName: string }> {
-    return this.request<{ token: string; tokenName: string }>(
+  ): Promise<TokenCreated> {
+    return this.request<TokenCreated>(
       `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
       {
         method: "POST",
