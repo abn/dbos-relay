@@ -3,6 +3,7 @@ package conformance_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -223,5 +224,186 @@ func TestRunner_RunCheckFailure(t *testing.T) {
 	}
 	if report.TotalFail != 1 {
 		t.Errorf("expected TotalFail = 1, got %d", report.TotalFail)
+	}
+}
+
+func TestRunner_PollHelpers(t *testing.T) {
+	t.Run("waitForExecutorHealthy succeeds when executor is healthy", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"executorId": "test-exec-1", "status": "HEALTHY"},
+			})
+		}))
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL: ts.URL,
+			OrgName:   "testorg",
+			AppName:   "testapp",
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		err := conformance.WaitForExecutorHealthy(runner, ctx, "test-exec-1")
+		if err != nil {
+			t.Fatalf("expected healthy executor to succeed, got: %v", err)
+		}
+	})
+
+	t.Run("waitForExecutorHealthy times out when executor is missing", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		}))
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL: ts.URL,
+			OrgName:   "testorg",
+			AppName:   "testapp",
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		err := conformance.WaitForExecutorHealthy(runner, ctx, "test-exec-1")
+		if err == nil {
+			t.Fatal("expected timeout error when executor is missing, got nil")
+		}
+	})
+
+	t.Run("waitForExecutorUnhealthy succeeds when executor is DISCONNECTED or DEAD", func(t *testing.T) {
+		for _, status := range []string{"DISCONNECTED", "DEAD"} {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode([]map[string]any{
+					{"executorId": "test-exec-dead", "status": status},
+				})
+			}))
+
+			runner := conformance.NewRunner(conformance.Config{
+				TargetURL: ts.URL,
+				OrgName:   "testorg",
+				AppName:   "testapp",
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+
+			err := conformance.WaitForExecutorUnhealthy(runner, ctx, "test-exec-dead")
+			cancel()
+			ts.Close()
+			if err != nil {
+				t.Fatalf("expected status %s to succeed, got: %v", status, err)
+			}
+		}
+	})
+
+	t.Run("waitForExecutorUnhealthy handles executor_id field name", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"executor_id": "test-exec-dead", "status": "DEAD"},
+			})
+		}))
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL: ts.URL,
+			OrgName:   "testorg",
+			AppName:   "testapp",
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		err := conformance.WaitForExecutorUnhealthy(runner, ctx, "test-exec-dead")
+		if err != nil {
+			t.Fatalf("expected executor_id format to succeed, got: %v", err)
+		}
+	})
+
+	t.Run("waitForExecutorUnhealthy does not succeed immediately on empty list or healthy executor", func(t *testing.T) {
+		tsEmpty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		}))
+		defer tsEmpty.Close()
+
+		runnerEmpty := conformance.NewRunner(conformance.Config{
+			TargetURL: tsEmpty.URL,
+			OrgName:   "testorg",
+			AppName:   "testapp",
+		})
+		ctxEmpty, cancelEmpty := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancelEmpty()
+
+		err := conformance.WaitForExecutorUnhealthy(runnerEmpty, ctxEmpty, "test-exec-dead")
+		if err == nil {
+			t.Fatal("expected timeout when list is empty, got nil")
+		}
+
+		tsHealthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"executorId": "test-exec-dead", "status": "HEALTHY"},
+			})
+		}))
+		defer tsHealthy.Close()
+
+		runnerHealthy := conformance.NewRunner(conformance.Config{
+			TargetURL: tsHealthy.URL,
+			OrgName:   "testorg",
+			AppName:   "testapp",
+		})
+		ctxHealthy, cancelHealthy := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancelHealthy()
+
+		err = conformance.WaitForExecutorUnhealthy(runnerHealthy, ctxHealthy, "test-exec-dead")
+		if err == nil {
+			t.Fatal("expected timeout when executor is HEALTHY, got nil")
+		}
+	})
+}
+
+func TestBattery7_RuleValidationFailures(t *testing.T) {
+	t.Run("missing ID in rule creation fails check", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"ruleType": "WorkflowFailure",
+			})
+		}))
+		defer ts.Close()
+
+		runner := conformance.NewRunner(conformance.Config{
+			TargetURL: ts.URL,
+			OrgName:   "testorg",
+			AppName:   "testapp",
+		})
+		res := conformance.RunBattery7Alerting(runner, context.Background())
+		if res.Status == conformance.StatusPass {
+			t.Fatal("expected Battery 7 to fail when rule ID is missing from create response")
+		}
+	})
+}
+
+func TestRunner_TimeoutEnforcement(t *testing.T) {
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status": "ok"}`))
+	}))
+	defer slowServer.Close()
+
+	cfg := conformance.Config{
+		TargetURL:      slowServer.URL,
+		Timeout:        50 * time.Millisecond,
+		SkipBatteryIDs: []int{2, 3, 4, 5, 6, 7, 8},
+	}
+	runner := conformance.NewRunner(cfg)
+	report, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	if report.AllPassed {
+		t.Errorf("expected AllPassed = false when endpoint exceeds configured timeout")
 	}
 }
