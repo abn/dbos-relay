@@ -21,18 +21,18 @@ import (
 )
 
 type mockStoreReader struct {
-	getOrgByNameFunc      func(ctx context.Context, name string) (storegen.Organisation, error)
-	getAppByNameFunc      func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error)
-	listAppsByOrgFunc     func(ctx context.Context, orgID pgtype.UUID) ([]storegen.Application, error)
-	upsertAppFunc         func(ctx context.Context, arg storegen.UpsertApplicationParams) (storegen.Application, error)
-	updateAppSettingsFunc func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error)
-	deleteAppFunc         func(ctx context.Context, arg storegen.DeleteApplicationParams) (storegen.Application, error)
+	getOrgByNameFunc       func(ctx context.Context, name string) (storegen.Organisation, error)
+	getAppByNameFunc       func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error)
+	listAppsByOrgFunc      func(ctx context.Context, orgID pgtype.UUID) ([]storegen.Application, error)
+	upsertAppFunc          func(ctx context.Context, arg storegen.UpsertApplicationParams) (storegen.Application, error)
+	updateAppSettingsFunc  func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error)
+	deleteAppFunc          func(ctx context.Context, arg storegen.DeleteApplicationParams) (storegen.Application, error)
 	listExecutorsByAppFunc func(ctx context.Context, appID pgtype.UUID) ([]storegen.Executor, error)
-	listAPIKeysFunc       func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
-	createAPIKeyFunc      func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
-	revokeAPIKeyFunc      func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
-	upsertOrgFunc         func(ctx context.Context, name string) (storegen.Organisation, error)
-	listAlertRulesFunc    func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
+	listAPIKeysFunc        func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
+	createAPIKeyFunc       func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
+	revokeAPIKeyFunc       func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
+	upsertOrgFunc          func(ctx context.Context, name string) (storegen.Organisation, error)
+	listAlertRulesFunc     func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
 }
 
 func (m *mockStoreReader) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {

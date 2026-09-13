@@ -9,12 +9,12 @@ import (
 
 func TestStateTransitions(t *testing.T) {
 	tests := []struct {
-		name        string
-		current     liveness.State
-		event       liveness.Event
-		wantState   liveness.State
-		wantAction  liveness.Action
-		wantErr     error
+		name       string
+		current    liveness.State
+		event      liveness.Event
+		wantState  liveness.State
+		wantAction liveness.Action
+		wantErr    error
 	}{
 		// 1. Connected state
 		{

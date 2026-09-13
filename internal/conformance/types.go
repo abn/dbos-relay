@@ -36,12 +36,12 @@ type BatteryResult struct {
 
 // Report holds the complete results of a conformance test run.
 type Report struct {
-	TargetURL string          `json:"target_url"`
-	Timestamp time.Time       `json:"timestamp"`
-	Batteries []BatteryResult `json:"batteries"`
-	TotalPass int             `json:"total_pass"`
-	TotalFail int             `json:"total_fail"`
-	TotalSkip int             `json:"total_skip"`
+	TargetURL     string          `json:"target_url"`
+	Timestamp     time.Time       `json:"timestamp"`
+	Batteries     []BatteryResult `json:"batteries"`
+	TotalPass     int             `json:"total_pass"`
+	TotalFail     int             `json:"total_fail"`
+	TotalSkip     int             `json:"total_skip"`
 	AllPassed     bool            `json:"all_passed"`
 	Duration      time.Duration   `json:"duration"`
 	SyntheticPeer bool            `json:"synthetic_peer"`
@@ -130,12 +130,12 @@ func (r *Report) FormatMarkdown(w io.Writer) error {
 
 // Config specifies the runtime options for a conformance test run.
 type Config struct {
-	TargetURL      string
-	ConductorKey   string
-	OrgName        string
-	AppName        string
-	Output         io.Writer
-	Verbose        bool
+	TargetURL        string
+	ConductorKey     string
+	OrgName          string
+	AppName          string
+	Output           io.Writer
+	Verbose          bool
 	Timeout          time.Duration
 	SkipBatteryIDs   []int
 	SkipReason       string

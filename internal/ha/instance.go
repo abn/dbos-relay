@@ -37,14 +37,14 @@ type ManagerOptions struct {
 
 // Manager manages the registration, heartbeat, and executor adoption for a Relay node.
 type Manager struct {
-	store    InstanceStore
-	opts     ManagerOptions
-	logger   *slog.Logger
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	id       pgtype.UUID
-	addr     string
-	port     int
+	store  InstanceStore
+	opts   ManagerOptions
+	logger *slog.Logger
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	id     pgtype.UUID
+	addr   string
+	port   int
 }
 
 // NewManager creates a new instance manager.

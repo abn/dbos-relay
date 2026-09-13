@@ -583,7 +583,6 @@ func TestChaos_LiveDatabase_FakeExecutorFailureDispatchesRecovery(t *testing.T) 
 	}
 }
 
-
 func (m *memoryStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }

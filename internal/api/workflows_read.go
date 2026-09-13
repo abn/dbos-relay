@@ -64,7 +64,6 @@ func parseTimeString(s *string) *time.Time {
 	return nil
 }
 
-
 func mapWorkflow(b protocol.ListWorkflowsResponseBody) gen.Workflow {
 	var status string
 	if b.Status != nil {

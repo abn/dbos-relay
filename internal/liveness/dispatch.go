@@ -15,10 +15,10 @@ import (
 )
 
 var (
-	ErrNoHealthyPeers           = errors.New("no healthy peer executors available for recovery")
-	ErrCrossTenantRecovery      = errors.New("cross-application or cross-organisation recovery refused")
+	ErrNoHealthyPeers            = errors.New("no healthy peer executors available for recovery")
+	ErrCrossTenantRecovery       = errors.New("cross-application or cross-organisation recovery refused")
 	ErrVersionMismatchDisallowed = errors.New("no peer running matching version and cross-version recovery is not permitted")
-	ErrRecoveryFailed           = errors.New("recovery failed across all available peer executors")
+	ErrRecoveryFailed            = errors.New("recovery failed across all available peer executors")
 )
 
 // Peer represents a connected candidate executor.

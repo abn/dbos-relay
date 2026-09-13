@@ -4,9 +4,9 @@ package alerting
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 

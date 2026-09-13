@@ -14,10 +14,10 @@ import (
 
 func newConformanceCommand() *cobra.Command {
 	var (
-		targetURL    string
-		conductorKey string
-		orgName      string
-		appName      string
+		targetURL        string
+		conductorKey     string
+		orgName          string
+		appName          string
 		reportPath       string
 		timeout          time.Duration
 		allowDestructive bool
@@ -57,9 +57,9 @@ against non-local targets.`,
 			}
 
 			cfg := conformance.Config{
-				TargetURL:    targetURL,
-				ConductorKey: conductorKey,
-				OrgName:      orgName,
+				TargetURL:        targetURL,
+				ConductorKey:     conductorKey,
+				OrgName:          orgName,
 				AppName:          appName,
 				Output:           cmd.OutOrStdout(),
 				Timeout:          timeout,

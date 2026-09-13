@@ -60,7 +60,7 @@ func (m *mockAlertStore) TouchAlertRuleLastFired(ctx context.Context, id pgtype.
 }
 
 type mockAlertDispatcher struct {
-	mu        sync.Mutex
+	mu         sync.Mutex
 	dispatched []protocol.Message
 }
 

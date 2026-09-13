@@ -16,7 +16,7 @@ import (
 )
 
 type mockStore struct {
-	err     error
+	err error
 }
 
 func (m *mockStore) Ping(_ context.Context) error {

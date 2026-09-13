@@ -28,7 +28,6 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-
 func TestListWorkflows(t *testing.T) {
 	t.Run("successful dispatch and model translation", func(t *testing.T) {
 		status := "SUCCESS"

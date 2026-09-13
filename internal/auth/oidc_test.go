@@ -118,10 +118,10 @@ func TestOIDCValidator_ArrayAudience(t *testing.T) {
 	validator := auth.NewOIDCValidator(mock.server.URL, "test-audience", mock.server.Client())
 
 	token := mock.mintToken(t, map[string]any{
-		"sub":  "user-123",
-		"iss":  mock.server.URL,
-		"aud":  []string{"other-aud", "test-audience"},
-		"exp":  time.Now().Add(time.Hour).Unix(),
+		"sub": "user-123",
+		"iss": mock.server.URL,
+		"aud": []string{"other-aud", "test-audience"},
+		"exp": time.Now().Add(time.Hour).Unix(),
 	})
 
 	claims, err := validator.Validate(context.Background(), token)

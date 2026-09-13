@@ -32,12 +32,12 @@ type ChannelDestination struct {
 
 // AlertNotification contains details of an alert to deliver to external channels.
 type AlertNotification struct {
-	RuleID      string            `json:"rule_id"`
-	RuleType    string            `json:"rule_type"`
-	AppName     string            `json:"app_name"`
-	Message     string            `json:"message"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	FiredAt     time.Time         `json:"fired_at"`
+	RuleID   string            `json:"rule_id"`
+	RuleType string            `json:"rule_type"`
+	AppName  string            `json:"app_name"`
+	Message  string            `json:"message"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+	FiredAt  time.Time         `json:"fired_at"`
 }
 
 // ChannelDispatcher dispatches alerts to external sinks like webhooks and Slack.

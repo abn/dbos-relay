@@ -55,8 +55,8 @@ func NewRunner(cfg Config) *Runner {
 func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	startTime := time.Now()
 	report := &Report{
-		TargetURL: r.httpURL,
-		Timestamp: startTime,
+		TargetURL:     r.httpURL,
+		Timestamp:     startTime,
 		Batteries:     make([]BatteryResult, 0, 8),
 		AllPassed:     true,
 		SyntheticPeer: true,

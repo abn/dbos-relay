@@ -42,7 +42,7 @@ const (
 var (
 	ErrReconnectingDeadExecutor = errors.New("cannot reconnect an executor that has been declared dead")
 	ErrAlreadyDeleted           = errors.New("cannot transition a deleted executor")
-	ErrInvalidTransition       = errors.New("invalid state transition")
+	ErrInvalidTransition        = errors.New("invalid state transition")
 )
 
 // Transition computes the next state and action as a pure function of current state and event.

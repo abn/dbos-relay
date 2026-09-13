@@ -168,7 +168,6 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					}
 				}
 
-
 				identity = &auth.UserIdentity{
 					Subject:  claims.Subject,
 					Username: user.Username,
@@ -183,8 +182,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			targetAppName := r.PathValue("appName")
 			isJoin := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/join")
 			if targetOrgName == "" && r.URL.Path == "/v2/users/me" {
-                // Allow /v2/users/me
-            } else if targetOrgName != "" {
+				// Allow /v2/users/me
+			} else if targetOrgName != "" {
 				// We have a target organization, let's verify access
 				org, err := server.store.GetOrganisationByName(r.Context(), targetOrgName)
 				if err != nil {
@@ -204,7 +203,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key does not belong to this organisation"})
 						return
 					}
-                    identity.OrgName = org.Name
+					identity.OrgName = org.Name
 
 					// App-scoped keys cannot access org-level routes (routes where appName is empty)
 					if len(identity.ApplicationNames) > 0 && targetAppName == "" {
@@ -218,8 +217,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						Username:       identity.Username,
 					})
 					if err != nil {
-                        problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: err.Error()})
-                        return
+						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: err.Error()})
+						return
 					}
 
 					identity.OrgName = org.Name
@@ -276,25 +275,25 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			} else {
 				// No org in path, might be like /v2/users/me, let's ensure primary org logic for OIDC users
 				if !identity.IsAPIKey {
-                    user, err := server.store.GetUserBySubject(r.Context(), identity.Subject)
-                    if err == nil {
-                        primaryOrg, err := server.store.GetUserPrimaryOrganisation(r.Context(), user.ID)
-                        if err != nil || primaryOrg.Name == "" {
-                            org, err := server.store.UpsertOrganisation(r.Context(), user.Username)
-                            if err == nil {
-                                _, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{
-                                    OrganisationID: org.ID,
-                                    UserID:         user.ID,
-                                    RoleName:       auth.RoleAdmin,
-                                })
-                                identity.OrgName = org.Name
-                                identity.Role = auth.RoleAdmin
-                            }
-                        } else {
-                            identity.OrgName = primaryOrg.Name
-                            identity.Role = primaryOrg.RoleName
-                        }
-                    }
+					user, err := server.store.GetUserBySubject(r.Context(), identity.Subject)
+					if err == nil {
+						primaryOrg, err := server.store.GetUserPrimaryOrganisation(r.Context(), user.ID)
+						if err != nil || primaryOrg.Name == "" {
+							org, err := server.store.UpsertOrganisation(r.Context(), user.Username)
+							if err == nil {
+								_, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{
+									OrganisationID: org.ID,
+									UserID:         user.ID,
+									RoleName:       auth.RoleAdmin,
+								})
+								identity.OrgName = org.Name
+								identity.Role = auth.RoleAdmin
+							}
+						} else {
+							identity.OrgName = primaryOrg.Name
+							identity.Role = primaryOrg.RoleName
+						}
+					}
 				}
 			}
 

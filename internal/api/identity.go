@@ -124,8 +124,8 @@ func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserR
 		SubscriptionPlan: "self-hosted",
 		CreatedAt:        user.CreatedAt.Time,
 		Role: &gen.RoleOutput{
-			Name:        roleName,
-			IsGlobal:    isGlobalRole(roleName),
+			Name:     roleName,
+			IsGlobal: isGlobalRole(roleName),
 			Permissions: func() []string {
 				role, err := s.store.GetRole(ctx, storegen.GetRoleParams{
 					OrganisationID: primaryOrg.ID,
@@ -325,7 +325,6 @@ func (s *Server) handleGenerateSecret(ctx context.Context, request gen.GenerateS
 	}, nil
 }
 
-
 func (s *Server) handleListMembers(ctx context.Context, request gen.ListMembersRequestObject) (gen.ListMembersResponseObject, error) {
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
@@ -345,24 +344,24 @@ func (s *Server) handleListMembers(ctx context.Context, request gen.ListMembersR
 
 	userMap := make(map[string]gen.RoleOutput)
 
-		// Fetch all roles for the org to map permissions
-		roles, _ := s.store.ListRoles(ctx, org.ID)
-		rolePerms := make(map[string][]string)
-		for _, r := range roles {
-			rolePerms[r.Name] = r.Permissions
-		}
+	// Fetch all roles for the org to map permissions
+	roles, _ := s.store.ListRoles(ctx, org.ID)
+	rolePerms := make(map[string][]string)
+	for _, r := range roles {
+		rolePerms[r.Name] = r.Permissions
+	}
 
-		for _, m := range members {
-			perms := rolePerms[m.RoleName]
-			if perms == nil {
-				perms = []string{}
-			}
-			userMap[m.Username] = gen.RoleOutput{
-				Name:        m.RoleName,
-				IsGlobal:    isGlobalRole(m.RoleName),
-				Permissions: perms,
-			}
+	for _, m := range members {
+		perms := rolePerms[m.RoleName]
+		if perms == nil {
+			perms = []string{}
 		}
+		userMap[m.Username] = gen.RoleOutput{
+			Name:        m.RoleName,
+			IsGlobal:    isGlobalRole(m.RoleName),
+			Permissions: perms,
+		}
+	}
 
 	return gen.ListMembers200JSONResponse{
 		OrgName: request.OrgName,

@@ -117,7 +117,6 @@ func (h *Hub) SetLivenessTracker(l LivenessTracker) {
 	h.liveness = l
 }
 
-
 func isValidIdentifier(s string, allowEmpty bool) bool {
 	if s == "" {
 		return allowEmpty

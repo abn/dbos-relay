@@ -259,26 +259,66 @@ func (s *dashboardTestStore) ListAllApplications(_ context.Context) ([]storegen.
 	return res, nil
 }
 
-func (s *dashboardTestStore) CreateUser(ctx context.Context, arg storegen.CreateUserParams) (storegen.User, error) { return storegen.User{}, nil }
-func (s *dashboardTestStore) UpsertUser(ctx context.Context, arg storegen.UpsertUserParams) (storegen.User, error) { return storegen.User{}, nil }
-func (s *dashboardTestStore) GetUserBySubject(ctx context.Context, subject string) (storegen.User, error) { return storegen.User{}, nil }
-func (s *dashboardTestStore) GetUserByUsername(ctx context.Context, username string) (storegen.User, error) { return storegen.User{}, nil }
-func (s *dashboardTestStore) GetUserByID(ctx context.Context, id pgtype.UUID) (storegen.User, error) { return storegen.User{}, nil }
-func (s *dashboardTestStore) ListMembersByOrganisation(ctx context.Context, organisationID pgtype.UUID) ([]storegen.ListMembersByOrganisationRow, error) { return nil, nil }
-func (s *dashboardTestStore) GetMember(ctx context.Context, arg storegen.GetMemberParams) (storegen.GetMemberRow, error) { return storegen.GetMemberRow{}, nil }
-func (s *dashboardTestStore) UpsertMemberRole(ctx context.Context, arg storegen.UpsertMemberRoleParams) (storegen.OrganisationMember, error) { return storegen.OrganisationMember{}, nil }
-func (s *dashboardTestStore) RemoveMember(ctx context.Context, arg storegen.RemoveMemberParams) (storegen.OrganisationMember, error) { return storegen.OrganisationMember{}, nil }
-func (s *dashboardTestStore) GetUserPrimaryOrganisation(ctx context.Context, userID pgtype.UUID) (storegen.GetUserPrimaryOrganisationRow, error) { return storegen.GetUserPrimaryOrganisationRow{}, nil }
-func (s *dashboardTestStore) ListRoles(ctx context.Context, organisationID pgtype.UUID) ([]storegen.Role, error) { return nil, nil }
-func (s *dashboardTestStore) GetRole(ctx context.Context, arg storegen.GetRoleParams) (storegen.Role, error) { return storegen.Role{}, nil }
-func (s *dashboardTestStore) CreateRole(ctx context.Context, arg storegen.CreateRoleParams) (storegen.Role, error) { return storegen.Role{}, nil }
-func (s *dashboardTestStore) DeleteRole(ctx context.Context, arg storegen.DeleteRoleParams) (storegen.Role, error) { return storegen.Role{}, nil }
-func (s *dashboardTestStore) ListDomainClaims(ctx context.Context, organisationID pgtype.UUID) ([]storegen.DomainClaim, error) { return nil, nil }
-func (s *dashboardTestStore) GetDomainClaim(ctx context.Context, domain string) (storegen.DomainClaim, error) { return storegen.DomainClaim{}, nil }
-func (s *dashboardTestStore) CreateDomainClaim(ctx context.Context, arg storegen.CreateDomainClaimParams) (storegen.DomainClaim, error) { return storegen.DomainClaim{}, nil }
-func (s *dashboardTestStore) DeleteDomainClaim(ctx context.Context, arg storegen.DeleteDomainClaimParams) (storegen.DomainClaim, error) { return storegen.DomainClaim{}, nil }
-func (s *dashboardTestStore) CreateAuditLog(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) { return storegen.AuditLog{}, nil }
-func (s *dashboardTestStore) ListAuditLogs(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error) { return nil, nil }
+func (s *dashboardTestStore) CreateUser(ctx context.Context, arg storegen.CreateUserParams) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (s *dashboardTestStore) UpsertUser(ctx context.Context, arg storegen.UpsertUserParams) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (s *dashboardTestStore) GetUserBySubject(ctx context.Context, subject string) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (s *dashboardTestStore) GetUserByUsername(ctx context.Context, username string) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (s *dashboardTestStore) GetUserByID(ctx context.Context, id pgtype.UUID) (storegen.User, error) {
+	return storegen.User{}, nil
+}
+func (s *dashboardTestStore) ListMembersByOrganisation(ctx context.Context, organisationID pgtype.UUID) ([]storegen.ListMembersByOrganisationRow, error) {
+	return nil, nil
+}
+func (s *dashboardTestStore) GetMember(ctx context.Context, arg storegen.GetMemberParams) (storegen.GetMemberRow, error) {
+	return storegen.GetMemberRow{}, nil
+}
+func (s *dashboardTestStore) UpsertMemberRole(ctx context.Context, arg storegen.UpsertMemberRoleParams) (storegen.OrganisationMember, error) {
+	return storegen.OrganisationMember{}, nil
+}
+func (s *dashboardTestStore) RemoveMember(ctx context.Context, arg storegen.RemoveMemberParams) (storegen.OrganisationMember, error) {
+	return storegen.OrganisationMember{}, nil
+}
+func (s *dashboardTestStore) GetUserPrimaryOrganisation(ctx context.Context, userID pgtype.UUID) (storegen.GetUserPrimaryOrganisationRow, error) {
+	return storegen.GetUserPrimaryOrganisationRow{}, nil
+}
+func (s *dashboardTestStore) ListRoles(ctx context.Context, organisationID pgtype.UUID) ([]storegen.Role, error) {
+	return nil, nil
+}
+func (s *dashboardTestStore) GetRole(ctx context.Context, arg storegen.GetRoleParams) (storegen.Role, error) {
+	return storegen.Role{}, nil
+}
+func (s *dashboardTestStore) CreateRole(ctx context.Context, arg storegen.CreateRoleParams) (storegen.Role, error) {
+	return storegen.Role{}, nil
+}
+func (s *dashboardTestStore) DeleteRole(ctx context.Context, arg storegen.DeleteRoleParams) (storegen.Role, error) {
+	return storegen.Role{}, nil
+}
+func (s *dashboardTestStore) ListDomainClaims(ctx context.Context, organisationID pgtype.UUID) ([]storegen.DomainClaim, error) {
+	return nil, nil
+}
+func (s *dashboardTestStore) GetDomainClaim(ctx context.Context, domain string) (storegen.DomainClaim, error) {
+	return storegen.DomainClaim{}, nil
+}
+func (s *dashboardTestStore) CreateDomainClaim(ctx context.Context, arg storegen.CreateDomainClaimParams) (storegen.DomainClaim, error) {
+	return storegen.DomainClaim{}, nil
+}
+func (s *dashboardTestStore) DeleteDomainClaim(ctx context.Context, arg storegen.DeleteDomainClaimParams) (storegen.DomainClaim, error) {
+	return storegen.DomainClaim{}, nil
+}
+func (s *dashboardTestStore) CreateAuditLog(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) {
+	return storegen.AuditLog{}, nil
+}
+func (s *dashboardTestStore) ListAuditLogs(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error) {
+	return nil, nil
+}
 
 func TestDashboard_LiveServerRootServesUI(t *testing.T) {
 	store := newDashboardTestStore()

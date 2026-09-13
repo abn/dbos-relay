@@ -84,7 +84,6 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		}
 	}
 
-
 	// Default to all catalog permissions if none requested
 	if len(permissions) == 0 {
 		permissions = auth.CatalogPermissions()

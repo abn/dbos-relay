@@ -494,7 +494,6 @@ func TestHA_InstanceCrashAndLeaseAdoption(t *testing.T) {
 	}
 }
 
-
 func (m *sharedStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }

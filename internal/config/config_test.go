@@ -74,7 +74,7 @@ func TestLoadInternalSecretUnset(t *testing.T) {
 
 	// When auth is enabled, RELAY_INTERNAL_SECRET is required.
 	_, err = config.Load(env(map[string]string{
-		"RELAY_DATABASE_URL": "postgres://localhost/relay",
+		"RELAY_DATABASE_URL":  "postgres://localhost/relay",
 		"RELAY_OIDC_ISSUER":   "https://issuer.example.com",
 		"RELAY_OIDC_AUDIENCE": "aud",
 	}))
@@ -89,7 +89,7 @@ func TestLoadInternalSecretUnset(t *testing.T) {
 func TestLoadOIDCRequiresAudience(t *testing.T) {
 	_, err := config.Load(env(map[string]string{
 		"RELAY_DATABASE_URL": "postgres://localhost/relay",
-		"RELAY_OIDC_ISSUER":   "https://issuer.example.com",
+		"RELAY_OIDC_ISSUER":  "https://issuer.example.com",
 	}))
 	if err == nil {
 		t.Fatal("want error when RELAY_OIDC_ISSUER is set without RELAY_OIDC_AUDIENCE")

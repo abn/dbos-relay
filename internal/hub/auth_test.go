@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coder/websocket"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/coder/websocket"
 
 	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/store/gen"

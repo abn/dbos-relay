@@ -10,17 +10,17 @@ type identityKey struct{}
 
 // UserIdentity represents the resolved caller of an authenticated request.
 type UserIdentity struct {
-	Subject  string
-	Username string
-	Email    string
-	IsAdmin  bool
-	OrgName  string
-	Role     string
-	Token    string
-	IsAPIKey bool
-	OrgID pgtype.UUID
+	Subject          string
+	Username         string
+	Email            string
+	IsAdmin          bool
+	OrgName          string
+	Role             string
+	Token            string
+	IsAPIKey         bool
+	OrgID            pgtype.UUID
 	ApplicationNames []string
-	Permissions []string
+	Permissions      []string
 }
 
 // WithIdentity stores the UserIdentity in ctx.

@@ -38,7 +38,6 @@ func (m *mockMetricsStore) GetAPIKeyByLookup(ctx context.Context, lookup string)
 func TestMetricsEndpoint_Scrape(t *testing.T) {
 	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
-
 	store := &mockMetricsStore{
 		apps: []gen.Application{
 			{

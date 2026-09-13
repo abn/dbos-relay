@@ -35,10 +35,10 @@ func TestOrganisationNameConstraint(t *testing.T) {
 
 	// Should fail: invalid names
 	invalidNames := []string{
-		"ab",           // too short
-		"Not-Lower",    // uppercase and hyphen
-		"has space",    // space
-		"",             // empty
+		"ab",        // too short
+		"Not-Lower", // uppercase and hyphen
+		"has space", // space
+		"",          // empty
 	}
 
 	for _, name := range invalidNames {
