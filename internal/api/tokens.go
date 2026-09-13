@@ -73,6 +73,12 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		}, nil
 	}
 
+	callerIdentity, _ := auth.IdentityFromContext(ctx)
+	isCallerAdmin := false
+	if callerIdentity != nil {
+		isCallerAdmin = callerIdentity.IsAdmin || callerIdentity.Role == auth.RoleAdmin
+	}
+
 	appNames := []string{}
 	permissions := []string{}
 	if request.Body != nil {
@@ -84,29 +90,21 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		}
 	}
 
-	// Default to all catalog permissions if none requested
-	if len(permissions) == 0 {
-		permissions = auth.CatalogPermissions()
-	}
-
-	// Subset checking if caller is constrained
-	callerIdentity, _ := auth.IdentityFromContext(ctx)
-	if callerIdentity != nil {
-		if !callerIdentity.IsAdmin && callerIdentity.Role != auth.RoleAdmin {
-			if !auth.HasPermission(callerIdentity.Permissions, auth.PermApplicationWrite) {
-				return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
-					StatusCode: http.StatusForbidden,
-					Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: application.write"),
-				}, nil
-			}
+	if callerIdentity != nil && !isCallerAdmin {
+		// Non-admin caller must have application.write to mint tokens
+		if !auth.HasPermission(callerIdentity.Permissions, auth.PermApplicationWrite) {
+			return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusForbidden,
+				Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: application.write"),
+			}, nil
 		}
 
-		// App-scoped caller can only mint tokens for a subset of their allowed apps
-		if callerIdentity.IsAPIKey && len(callerIdentity.ApplicationNames) > 0 {
+		// App-scoped caller cannot mint unscoped tokens or tokens outside their allowed apps
+		if len(callerIdentity.ApplicationNames) > 0 {
 			if len(appNames) == 0 {
 				return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 					StatusCode: http.StatusForbidden,
-					Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "App-scoped key cannot mint unscoped tokens"),
+					Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "App-scoped caller cannot mint unscoped tokens"),
 				}, nil
 			}
 			for _, app := range appNames {
@@ -120,22 +118,29 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 				if !found {
 					return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 						StatusCode: http.StatusForbidden,
-						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant app %q outside key scope", app)),
+						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant app %q outside caller scope", app)),
 					}, nil
 				}
 			}
 		}
 
-		// Permission-restricted caller can only mint permissions within their own scope
-		if callerIdentity.IsAPIKey && len(callerIdentity.Permissions) > 0 {
+		// Non-admin caller cannot grant permissions outside caller's own permissions
+		if len(permissions) == 0 {
+			permissions = append([]string{}, callerIdentity.Permissions...)
+		} else {
 			for _, perm := range permissions {
 				if !auth.HasPermission(callerIdentity.Permissions, perm) {
 					return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 						StatusCode: http.StatusForbidden,
-						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant permission %q outside key scope", perm)),
+						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant permission %q outside caller scope", perm)),
 					}, nil
 				}
 			}
+		}
+	} else {
+		// Admin caller: default to catalog permissions if none requested
+		if len(permissions) == 0 {
+			permissions = auth.CatalogPermissions()
 		}
 	}
 

@@ -602,6 +602,88 @@ func TestTokensAndPermissions(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateToken_ScopeAndPermissionClamping", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			createAPIKeyFunc: func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error) {
+				return storegen.ApiKey{ID: keyID, Name: arg.Name}, nil
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+
+		// Context with an app-scoped caller that has application.write for app-1 only
+		restrictedCtx := auth.WithIdentity(ctx, &auth.UserIdentity{
+			Subject:          "user-restricted",
+			IsAdmin:          false,
+			Role:             auth.RoleOperator,
+			ApplicationNames: []string{"app-1"},
+			Permissions:      []string{auth.PermApplicationWrite, auth.PermApplicationRead},
+		})
+
+		// 1. App-scoped caller cannot mint unscoped tokens (empty appNames)
+		unscopedApps := []string{}
+		resp1, err := srv.CreateToken(restrictedCtx, gen.CreateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "unscoped-token",
+			Body:      &gen.CreateTokenJSONRequestBody{AppNames: &unscopedApps},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob1, ok := resp1.(gen.CreateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob1.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for unscoped token mint by app-scoped caller, got %T (%d)", resp1, prob1.StatusCode)
+		}
+
+		// 2. App-scoped caller cannot mint token for an app outside its scope (app-2)
+		outOfScopeApps := []string{"app-2"}
+		resp2, err := srv.CreateToken(restrictedCtx, gen.CreateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "out-of-scope-token",
+			Body:      &gen.CreateTokenJSONRequestBody{AppNames: &outOfScopeApps},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob2, ok := resp2.(gen.CreateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob2.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for app outside scope, got %T (%d)", resp2, prob2.StatusCode)
+		}
+
+		// 3. Caller cannot mint permissions outside its scope (admin)
+		validApps := []string{"app-1"}
+		outOfScopePerms := []string{auth.RoleAdmin}
+		resp3, err := srv.CreateToken(restrictedCtx, gen.CreateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "admin-escalation-token",
+			Body:      &gen.CreateTokenJSONRequestBody{AppNames: &validApps, Permissions: &outOfScopePerms},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob3, ok := resp3.(gen.CreateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob3.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403 Forbidden for permission escalation, got %T (%d)", resp3, prob3.StatusCode)
+		}
+
+		// 4. In-scope minting succeeds
+		inScopePerms := []string{auth.PermApplicationRead}
+		resp4, err := srv.CreateToken(restrictedCtx, gen.CreateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "valid-in-scope-token",
+			Body:      &gen.CreateTokenJSONRequestBody{AppNames: &validApps, Permissions: &inScopePerms},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		createResp4, ok := resp4.(gen.CreateToken201JSONResponse)
+		if !ok || createResp4.TokenName != "valid-in-scope-token" {
+			t.Fatalf("expected 201 Created for valid in-scope token, got %T", resp4)
+		}
+	})
+
 	t.Run("DeleteToken success and not found", func(t *testing.T) {
 		revoked := false
 		store := &mockStoreReader{
