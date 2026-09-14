@@ -5,6 +5,8 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-14
 
+* **Update**: Reconciled [ADR 0004](adr/0004-data-plane-via-sdk-client.md) to delineate implemented connection pool sizing and per-query statement timeouts from planned scale-tier guardrails.
+* **Update**: Updated [Conductor Protocol (WebSocket)](protocol/executor-ws.md) section structure to explicitly document heartbeat, liveness, and timeout semantics.
 * **Update**: Added release checklist to [Maintainer guide](contribution/maintainers.md) specifying clean-room legal provenance verification and pre-release history hygiene requirements.
 
 ## 2026-09-13

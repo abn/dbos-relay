@@ -101,9 +101,10 @@ The implementation follows these rules:
    and Prometheus metrics (`relay_requests_served_total` with `served_from`
    label) are planned for the Scale and Observability tier to allow clients to
    distinguish database reads from live executor reports.
-10. **Connection guardrails**: Data-plane pools enforce bounded connections,
-    per-query statement timeouts, rate limits, and dedicated OpenMetrics counters
-    and latency histograms.
+10. **Connection guardrails**: Data-plane pools enforce bounded connections (`max_connections`)
+    and per-query statement timeouts (`statement_timeout_secs`). Additional scale-tier guardrails
+    (rate limits, read replica pool routing, and dedicated OpenMetrics counters and latency
+    histograms) are planned for the Scale and Observability tier.
 11. **Version pinning and consistency**: The Go SDK version is strictly pinned
     and validated against protocol tests to guarantee representation parity
     between socket reads and client reads.

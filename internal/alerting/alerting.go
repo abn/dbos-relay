@@ -87,38 +87,51 @@ func (e *Evaluator) Start(ctx context.Context, interval time.Duration) func() {
 	}
 }
 
-// EvaluateOnce executes a single evaluation pass over all applications and their rules.
+// EvaluateOnce executes an evaluation pass over all applications and their rules concurrently.
 func (e *Evaluator) EvaluateOnce(ctx context.Context) error {
 	apps, err := e.store.ListAllApplications(ctx)
 	if err != nil {
 		return fmt.Errorf("listing applications: %w", err)
 	}
 
+	var wg sync.WaitGroup
 	for _, app := range apps {
-		rules, err := e.store.ListAlertingRulesByApplication(ctx, app.ID)
-		if err != nil {
-			e.logger.Warn("failed to list rules for application", "app", app.Name, "error", err)
+		wg.Add(1)
+		go func(a gen.Application) {
+			defer wg.Done()
+			e.evaluateApp(ctx, a)
+		}(app)
+	}
+	wg.Wait()
+
+	return nil
+}
+
+func (e *Evaluator) evaluateApp(ctx context.Context, app gen.Application) {
+	appCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	rules, err := e.store.ListAlertingRulesByApplication(appCtx, app.ID)
+	if err != nil {
+		e.logger.Warn("failed to list rules for application", "app", app.Name, "error", err)
+		return
+	}
+
+	for _, rule := range rules {
+		if e.shouldThrottle(rule) {
 			continue
 		}
 
-		for _, rule := range rules {
-			if e.shouldThrottle(rule) {
-				continue
-			}
+		triggered, meta, err := e.evaluateRule(appCtx, app, rule)
+		if err != nil {
+			e.logger.Warn("evaluating rule failed", "ruleID", rule.ID, "type", rule.RuleType, "error", err)
+			continue
+		}
 
-			triggered, meta, err := e.evaluateRule(ctx, app, rule)
-			if err != nil {
-				e.logger.Warn("evaluating rule failed", "ruleID", rule.ID, "type", rule.RuleType, "error", err)
-				continue
-			}
-
-			if triggered {
-				e.fireAlert(ctx, rule, meta)
-			}
+		if triggered {
+			e.fireAlert(appCtx, rule, meta)
 		}
 	}
-
-	return nil
 }
 
 func (e *Evaluator) shouldThrottle(rule gen.AlertingRule) bool {

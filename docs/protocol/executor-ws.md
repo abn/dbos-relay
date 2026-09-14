@@ -214,7 +214,7 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
 
 * `restart`: Present in Python (`protocol.py:37`) and Java SDKs, but not implemented in Relay or the Go SDK.
 
-## Liveness and Timeout
+## Liveness, Heartbeat, and Timeout
 
 Relay and connected executors exchange heartbeats to maintain active connection health:
 

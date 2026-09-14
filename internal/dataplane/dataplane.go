@@ -25,6 +25,10 @@ const (
 )
 
 // AppConfig specifies connection and guardrail parameters for an application's system database.
+// Relay v1 actively enforces bounded connection pool sizing (MaxConnections) and per-query
+// cancellation and statement timeouts (StatementTimeout). Additional scale-tier guardrails,
+// including rate limits, read replica pool routing, and dedicated data-plane OpenMetrics
+// counters and latency histograms, are planned for a subsequent release.
 type AppConfig struct {
 	ApplicationID    pgtype.UUID
 	ApplicationName  string

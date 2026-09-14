@@ -469,3 +469,72 @@ func TestHTTPChannelDispatcher_Errors(t *testing.T) {
 		t.Fatal("expected error on unsupported channel type")
 	}
 }
+
+type delayedChannelDispatcher struct {
+	mu           sync.Mutex
+	delay        time.Duration
+	dispatchedCh chan string
+}
+
+func (d *delayedChannelDispatcher) Dispatch(ctx context.Context, dest alerting.ChannelDestination, notif alerting.AlertNotification) error {
+	if dest.Type == "slow" {
+		time.Sleep(d.delay)
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.dispatchedCh <- notif.AppName
+	return nil
+}
+
+func TestAlertEvaluator_ConcurrentTenantEvaluation(t *testing.T) {
+	appA := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	appB := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+
+	store := &mockAlertStore{
+		rules: []gen.AlertingRule{
+			{
+				ID:                     pgtype.UUID{Bytes: [16]byte{101}, Valid: true},
+				ApplicationID:          appA,
+				ReceivingApplicationID: appA,
+				RuleType:               "UnresponsiveApplication",
+				RuleMetadata: []byte(`{"destinations":[{"type":"slow","url":"http://slow.example"}]}`),
+			},
+			{
+				ID:                     pgtype.UUID{Bytes: [16]byte{102}, Valid: true},
+				ApplicationID:          appB,
+				ReceivingApplicationID: appB,
+				RuleType:               "UnresponsiveApplication",
+				RuleMetadata: []byte(`{"destinations":[{"type":"fast","url":"http://fast.example"}]}`),
+			},
+		},
+		executors: map[pgtype.UUID][]gen.Executor{
+			appA: {},
+			appB: {},
+		},
+	}
+
+	delayedDispatcher := &delayedChannelDispatcher{
+		delay:        100 * time.Millisecond,
+		dispatchedCh: make(chan string, 10),
+	}
+
+	evaluator := alerting.NewEvaluator(store, &mockAlertDispatcher{}, nil)
+	evaluator.SetChannelDispatcher(delayedDispatcher)
+
+	start := time.Now()
+	err := evaluator.EvaluateOnce(context.Background())
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("EvaluateOnce failed: %v", err)
+	}
+
+	// Two apps evaluated concurrently with a 100ms slow app should finish well under 200ms
+	if elapsed > 180*time.Millisecond {
+		t.Fatalf("expected concurrent evaluation under 180ms, took %v", elapsed)
+	}
+
+	if len(delayedDispatcher.dispatchedCh) != 2 {
+		t.Fatalf("expected 2 dispatched alerts, got %d", len(delayedDispatcher.dispatchedCh))
+	}
+}
