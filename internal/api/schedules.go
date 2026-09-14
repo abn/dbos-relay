@@ -65,6 +65,14 @@ func (s *Server) ListSchedules(ctx context.Context, request gen.ListSchedulesReq
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.ListSchedulesdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	schedules := make([]gen.Schedule, 0, len(resp.Output))
 	for _, sched := range resp.Output {
 		schedules = append(schedules, scheduleOutputToModel(sched))
@@ -100,14 +108,18 @@ func (s *Server) GetSchedule(ctx context.Context, request gen.GetScheduleRequest
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.GetScheduledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	if resp.Output == nil {
-		detail := fmt.Sprintf("schedule %q not found", request.ScheduleName)
-		if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
-			detail = *resp.ErrorMessage
-		}
 		return gen.GetScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Schedule not found", detail),
+			Body:       MakeErrorModel(http.StatusNotFound, "Schedule not found", fmt.Sprintf("schedule %q not found", request.ScheduleName)),
 		}, nil
 	}
 
@@ -141,14 +153,18 @@ func (s *Server) PauseSchedule(ctx context.Context, request gen.PauseScheduleReq
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.PauseScheduledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	if !resp.Success {
-		detail := "failed to pause schedule"
-		if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
-			detail = *resp.ErrorMessage
-		}
 		return gen.PauseScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
-			Body:       MakeErrorModel(http.StatusBadRequest, "Schedule Pause Failed", detail),
+			Body:       MakeErrorModel(http.StatusBadRequest, "Schedule Pause Failed", "failed to pause schedule"),
 		}, nil
 	}
 
@@ -182,14 +198,18 @@ func (s *Server) ResumeSchedule(ctx context.Context, request gen.ResumeScheduleR
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.ResumeScheduledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	if !resp.Success {
-		detail := "failed to resume schedule"
-		if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
-			detail = *resp.ErrorMessage
-		}
 		return gen.ResumeScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
-			Body:       MakeErrorModel(http.StatusBadRequest, "Schedule Resume Failed", detail),
+			Body:       MakeErrorModel(http.StatusBadRequest, "Schedule Resume Failed", "failed to resume schedule"),
 		}, nil
 	}
 
@@ -223,18 +243,22 @@ func (s *Server) TriggerSchedule(ctx context.Context, request gen.TriggerSchedul
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.TriggerScheduledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	var wfID string
 	if resp.WorkflowID != nil {
 		wfID = *resp.WorkflowID
 	}
 	if wfID == "" {
-		detail := "no workflow id returned for triggered schedule"
-		if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
-			detail = *resp.ErrorMessage
-		}
 		return gen.TriggerScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
-			Body:       MakeErrorModel(http.StatusBadRequest, "Trigger Schedule Failed", detail),
+			Body:       MakeErrorModel(http.StatusBadRequest, "Trigger Schedule Failed", "no workflow id returned for triggered schedule"),
 		}, nil
 	}
 
@@ -282,6 +306,14 @@ func (s *Server) BackfillSchedule(ctx context.Context, request gen.BackfillSched
 		return gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
 		}, nil
 	}
 

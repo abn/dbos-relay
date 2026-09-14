@@ -191,6 +191,39 @@ func TestListQueues(t *testing.T) {
 			t.Errorf("expected status 500, got %d", probResp.StatusCode)
 		}
 	})
+
+	t.Run("envelope error propagates error message", func(t *testing.T) {
+		errMsg := "queue executor internal error"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.ListQueuesResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeListQueues,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.ListQueues(context.Background(), gen.ListQueuesRequestObject{
+			OrgName: "my-org",
+			AppName: "my-app",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.ListQueuesdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
+		}
+	})
 }
 
 func TestGetQueue(t *testing.T) {
@@ -281,6 +314,40 @@ func TestGetQueue(t *testing.T) {
 		}
 		if probResp.Body.Detail == nil || *probResp.Body.Detail != "queue 'missing-queue' does not exist" {
 			t.Errorf("expected detail with error message, got %v", probResp.Body.Detail)
+		}
+	})
+
+	t.Run("envelope error non not found returns 400 with message", func(t *testing.T) {
+		errMsg := "partition error on queue"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.GetQueueResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeGetQueue,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.GetQueue(context.Background(), gen.GetQueueRequestObject{
+			OrgName:   "my-org",
+			AppName:   "my-app",
+			QueueName: "my-queue",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.GetQueuedefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
 		}
 	})
 
@@ -440,6 +507,39 @@ func TestListSchedules(t *testing.T) {
 		}
 		if probResp.StatusCode != http.StatusGatewayTimeout {
 			t.Errorf("expected status 504, got %d", probResp.StatusCode)
+		}
+	})
+
+	t.Run("envelope error propagates error message", func(t *testing.T) {
+		errMsg := "schedule executor failure"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.ListSchedulesResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeListSchedules,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.ListSchedules(context.Background(), gen.ListSchedulesRequestObject{
+			OrgName: "my-org",
+			AppName: "my-app",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.ListSchedulesdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
 		}
 	})
 }
@@ -839,6 +939,44 @@ func TestBackfillSchedule(t *testing.T) {
 		}
 		if probResp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+	})
+
+	t.Run("envelope error propagates error message", func(t *testing.T) {
+		errMsg := "invalid backfill interval"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.BackfillScheduleResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeBackfillSchedule,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.BackfillSchedule(context.Background(), gen.BackfillScheduleRequestObject{
+			OrgName:      "test-org",
+			AppName:      "test-app",
+			ScheduleName: "daily-sync",
+			Body: &gen.BackfillInputBody{
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
 		}
 	})
 }

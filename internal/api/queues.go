@@ -78,6 +78,14 @@ func (s *Server) ListQueues(ctx context.Context, request gen.ListQueuesRequestOb
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.ListQueuesdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	queues := make([]gen.Queue, 0, len(resp.Output))
 	for _, q := range resp.Output {
 		queues = append(queues, queueOutputToModel(q))
@@ -113,14 +121,18 @@ func (s *Server) GetQueue(ctx context.Context, request gen.GetQueueRequestObject
 		}, nil
 	}
 
+	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
+		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		return gen.GetQueuedefaultApplicationProblemPlusJSONResponse{
+			StatusCode: status,
+			Body:       errModel,
+		}, nil
+	}
+
 	if resp.Output == nil {
-		detail := fmt.Sprintf("queue %q not found", request.QueueName)
-		if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
-			detail = *resp.ErrorMessage
-		}
 		return gen.GetQueuedefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Queue not found", detail),
+			Body:       MakeErrorModel(http.StatusNotFound, "Queue not found", fmt.Sprintf("queue %q not found", request.QueueName)),
 		}, nil
 	}
 
