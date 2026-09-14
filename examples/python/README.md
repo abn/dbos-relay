@@ -14,6 +14,7 @@ This is a minimal DBOS Transact Python workflow application that connects to a D
 2. Export the required environment variables:
    ```bash
    export DBOS_APP_NAME="sample-app"
+   export DBOS_SYSTEM_DATABASE_URL="postgres://relay:relay@localhost:5432/relay?sslmode=disable"
    export RELAY_URL="http://localhost:8090"
    export RELAY_API_KEY="your-api-key"
    ```
@@ -21,4 +22,9 @@ This is a minimal DBOS Transact Python workflow application that connects to a D
 3. Launch the application:
    ```bash
    python main.py
+   ```
+
+4. Trigger a workflow:
+   ```bash
+   curl -X POST http://localhost:8081/trigger
    ```

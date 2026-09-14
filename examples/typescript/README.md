@@ -12,6 +12,7 @@ This is a minimal DBOS Transact TypeScript workflow application that connects to
 2. Export the required environment variables:
    ```bash
    export DBOS_APP_NAME="sample-app"
+   export DBOS_SYSTEM_DATABASE_URL="postgres://relay:relay@localhost:5432/relay?sslmode=disable"
    export RELAY_URL="http://localhost:8090"
    export RELAY_API_KEY="your-api-key"
    ```
@@ -20,4 +21,9 @@ This is a minimal DBOS Transact TypeScript workflow application that connects to
    ```bash
    npm run build
    npm start
+   ```
+
+4. Trigger a workflow:
+   ```bash
+   curl -X POST http://localhost:8082/trigger
    ```

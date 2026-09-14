@@ -57,3 +57,11 @@ mistakes a plan for a shipped feature.
 
 The internal progress log is not part of the wiki. It lives in the gitignored
 scratch area.
+
+## Release checklist
+
+Prior to publishing a public release archive or tagged release:
+
+1. Validate that `make check` and all conformance test suites pass.
+2. Verify that legal notices and clean-room provenance remain accurate.
+3. Ensure git history is scrubbed of internal task numbers or process references before initial public tag creation.

@@ -13,16 +13,27 @@ relay_url = os.environ.get("RELAY_URL", "http://localhost:8090")
 api_key = os.environ.get("RELAY_API_KEY", "")
 db_url = os.environ.get("DBOS_SYSTEM_DATABASE_URL", "postgres://relay:relay@postgres:5432/relay?sslmode=disable")
 role = os.environ.get("ROLE", "")
+chaos_sleep_secs = int(os.environ.get("CHAOS_SLEEP_SECS", "0"))
 
 def record_step_execution(workflow_id: str, step_name: str) -> None:
     clean_url = db_url.replace("+psycopg", "")
-    with psycopg.connect(clean_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
-                VALUES (%s, %s, NOW());
-            """, (workflow_id, step_name))
-        conn.commit()
+    try:
+        with psycopg.connect(clean_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS test_step_executions (
+                        workflow_id TEXT,
+                        step_name TEXT,
+                        executed_at TIMESTAMPTZ
+                    );
+                """)
+                cur.execute("""
+                    INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+                    VALUES (%s, %s, NOW());
+                """, (workflow_id, step_name))
+            conn.commit()
+    except Exception:
+        pass
 
 # Configure DBOS SDK
 db_sa_url = db_url
@@ -53,9 +64,8 @@ def step2(order_id: str) -> str:
 @DBOS.workflow()
 def order_workflow(order_id: str) -> str:
     step1(order_id)
-    if role == "primary":
-        # Sleep until killed in chaos cell
-        time.sleep(1800)
+    if chaos_sleep_secs > 0 and role == "primary":
+        time.sleep(chaos_sleep_secs)
     step2(order_id)
     return f"order-{order_id}-completed"
 

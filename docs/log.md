@@ -3,6 +3,10 @@
 This log tracks the evolution of the knowledge base and architectural capabilities:
 page additions, deprecations, and structural refactors.
 
+## 2026-09-14
+
+* **Update**: Added release checklist to [Maintainer guide](contribution/maintainers.md) specifying clean-room legal provenance verification and pre-release history hygiene requirements.
+
 ## 2026-09-13
 
 * **Update**: Reconciled executor lifecycle status definitions (`HEALTHY`, `DISCONNECTED`, `DEAD`, `Deleted`), heartbeat timing parameters (20s ping interval, 25s ping wait, 15s/30s pong timeout), and peer failover mechanics in [Recovery](architecture/recovery.md) and [Recovery timing parameters](discovery/recovery-params.md) to match the normative WebSocket protocol specification.

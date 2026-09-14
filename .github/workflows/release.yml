@@ -10,7 +10,34 @@ permissions:
   packages: write
 
 jobs:
+  preflight:
+    name: Release Gate & Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Quality and Conformance Checks
+        run: |
+          make check
+
+      - name: Verify Legal and Clean-Room Provenance
+        run: |
+          python3 .agents/scripts/check-okf.py
+          test -f NOTICE
+          grep -q "DBOS, Inc." NOTICE
+
   goreleaser:
+    name: Publish Release Artifacts
+    needs: [preflight]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
