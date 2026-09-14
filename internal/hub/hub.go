@@ -476,20 +476,35 @@ func (h *Hub) Dispatch(ctx context.Context, appID pgtype.UUID, req protocol.Mess
 		return nil, errors.New("request must have an ID")
 	}
 
+	deadline := h.config.ExecutorDeadline
+	if deadline <= 0 {
+		deadline = 60 * time.Second
+	}
+
+	// Establish total deadline budget if context does not already specify one.
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		ctx, cancel = context.WithTimeout(ctx, deadline)
+		defer cancel()
+	}
+
 	res, writeErr, dispatchErr := h.dispatchToConn(ctx, conn, reqID, req)
 	if dispatchErr == nil {
 		return res, nil
 	}
 
-	// Retry on an alternative healthy executor if write failed or if request is safe to retry on timeout
+	// Retry on an alternative healthy executor if write failed or if request is safe to retry on timeout,
+	// provided sufficient deadline budget remains.
 	if writeErr != nil || isSafeToRetry(req) {
-		altConn, altErr := h.registry.SelectExecutorWithExclusion(appID, conn.executorID)
-		if altErr == nil {
-			altRes, _, altDispatchErr := h.dispatchToConn(ctx, altConn, reqID, req)
-			if altDispatchErr == nil {
-				return altRes, nil
+		if d, ok := ctx.Deadline(); !ok || time.Until(d) >= 10*time.Millisecond {
+			altConn, altErr := h.registry.SelectExecutorWithExclusion(appID, conn.executorID)
+			if altErr == nil {
+				altRes, _, altDispatchErr := h.dispatchToConn(ctx, altConn, reqID, req)
+				if altDispatchErr == nil {
+					return altRes, nil
+				}
+				return nil, altDispatchErr
 			}
-			return nil, altDispatchErr
 		}
 	}
 

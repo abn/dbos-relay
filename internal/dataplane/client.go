@@ -22,6 +22,7 @@ type SDKClient struct {
 
 // NewSDKClient initializes an SDKClient backed by dbos.NewClient.
 // Provenance: dbos-inc/dbos-transact-golang (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8, dbos/dbos.go:742)
+// Note: Upstream DBOS Go SDK client requires system database schema version 107 or higher.
 func NewSDKClient(cfg AppConfig) (Client, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")

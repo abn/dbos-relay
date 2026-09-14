@@ -17,8 +17,9 @@ var (
 	ErrOrgNotFound     = errors.New("organisation not found")
 	ErrAppNotFound     = errors.New("application not found")
 	ErrNoLiveExecutor  = errors.New("no live executor connected")
-	ErrExecutorTimeout = errors.New("executor request timed out")
-	ErrExecutorError   = errors.New("executor returned an error")
+	ErrExecutorTimeout      = errors.New("executor request timed out")
+	ErrExecutorError        = errors.New("executor returned an error")
+	ErrOperationUnsupported = errors.New("operation not supported")
 )
 
 type AppResolver interface {
@@ -171,7 +172,10 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 			if errors.Is(dpErr, dataplane.ErrUnsupportedOperation) {
 				return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, dpErr)
 			}
-			return nil, fmt.Errorf("data-plane fallback failed: %w", dpErr)
+			if errors.Is(dpErr, context.DeadlineExceeded) || strings.Contains(strings.ToLower(dpErr.Error()), "timed out") {
+				return nil, fmt.Errorf("%w: data-plane statement timeout: %w", ErrExecutorTimeout, dpErr)
+			}
+			return nil, fmt.Errorf("%w: data-plane fallback failed: %w", ErrNoLiveExecutor, dpErr)
 		}
 
 		if isNoExecutor {

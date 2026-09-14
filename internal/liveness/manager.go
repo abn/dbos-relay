@@ -114,8 +114,38 @@ func (m *Manager) OnConnect(ctx context.Context, appID pgtype.UUID, executorID, 
 	return nil
 }
 
+// SetRecovery configures the recovery runner for the manager.
+func (m *Manager) SetRecovery(recovery RecoveryRunner) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recovery = recovery
+}
+
+// DeleteExecutor removes an executor from the manager's tracked state and delegates to the store if configured.
+func (m *Manager) DeleteExecutor(ctx context.Context, arg gen.DeleteExecutorParams) error {
+	m.mu.Lock()
+	key := executorKey(arg.ApplicationID, arg.ExecutorID)
+	delete(m.executors, key)
+	m.mu.Unlock()
+
+	if m.queries != nil {
+		return m.queries.DeleteExecutor(ctx, arg)
+	}
+	return nil
+}
+
+// EvictExecutor removes an executor from the manager's tracked in-memory state.
+func (m *Manager) EvictExecutor(appID pgtype.UUID, executorID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := executorKey(appID, executorID)
+	delete(m.executors, key)
+}
+
 // OnDisconnect handles executor disconnection, starting the grace period timer.
 func (m *Manager) OnDisconnect(ctx context.Context, appID pgtype.UUID, executorID string) {
+	timeout := m.resolveTimeout(ctx, appID)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -138,7 +168,6 @@ func (m *Manager) OnDisconnect(ctx context.Context, appID pgtype.UUID, executorI
 	exec.state = nextState
 
 	if action == ActionStartGraceTimer {
-		timeout := m.resolveTimeout(ctx, appID)
 		timer := m.clock.NewTimer(timeout)
 		exec.timer = timer
 

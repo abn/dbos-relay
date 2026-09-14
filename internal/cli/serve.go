@@ -62,8 +62,9 @@ func newServeCommand() *cobra.Command {
 				}
 			}()
 
-			dispatcher := liveness.NewRecoveryDispatcher(h, h, s.Queries(), liveness.DispatcherOptions{Logger: logger})
-			livenessMgr := liveness.NewManager(liveness.NewRealClock(), s.Queries(), dispatcher, logger)
+			livenessMgr := liveness.NewManager(liveness.NewRealClock(), s.Queries(), nil, logger)
+			dispatcher := liveness.NewRecoveryDispatcher(h, h, livenessMgr, liveness.DispatcherOptions{Logger: logger})
+			livenessMgr.SetRecovery(dispatcher)
 			h.SetLivenessTracker(livenessMgr)
 			defer livenessMgr.Stop()
 

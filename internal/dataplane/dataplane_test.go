@@ -1,8 +1,10 @@
 package dataplane_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -409,4 +411,28 @@ func TestManager_ConcurrentInitialization_WarmClient(t *testing.T) {
 	}
 
 	close(blockA)
+}
+
+func TestManager_EagerInitializationFailureLogsWarning(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	appID := pgtype.UUID{Bytes: [16]byte{9, 9, 9}, Valid: true}
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return nil, errors.New("connection refused to target application db")
+	})
+	mgr.SetLogger(logger)
+
+	err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://fake/db",
+	})
+	if err != nil {
+		t.Fatalf("RegisterApp failed: %v", err)
+	}
+
+	logOutput := buf.String()
+	if !bytes.Contains([]byte(logOutput), []byte("failed eager data-plane client initialization")) {
+		t.Fatalf("expected warning log on eager client init failure, got: %s", logOutput)
+	}
 }

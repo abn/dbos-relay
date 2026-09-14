@@ -552,6 +552,19 @@ func TestRouterErrorToModel(t *testing.T) {
 		}
 	})
 
+	t.Run("returns 501 on router.ErrOperationUnsupported", func(t *testing.T) {
+		status, errModel := api.RouterErrorToModel(router.ErrOperationUnsupported)
+		if status != http.StatusNotImplemented {
+			t.Errorf("expected status 501, got %d", status)
+		}
+		if errModel.Status == nil || *errModel.Status != int64(http.StatusNotImplemented) {
+			t.Errorf("expected error model status 501, got %v", errModel.Status)
+		}
+		if errModel.Title == nil || *errModel.Title != "Not Implemented" {
+			t.Errorf("expected title 'Not Implemented', got %v", errModel.Title)
+		}
+	})
+
 	t.Run("returns 500 on unexpected error", func(t *testing.T) {
 		status, _ := api.RouterErrorToModel(errors.New("something broke"))
 		if status != http.StatusInternalServerError {

@@ -3,6 +3,7 @@ package dataplane
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type DefaultManager struct {
 	initMu      map[pgtype.UUID]*sync.Mutex
 	lastInitErr map[pgtype.UUID]time.Time
 	factory     ClientFactory
+	logger      *slog.Logger
 }
 
 // NewManager creates a new DefaultManager with the provided client factory.
@@ -35,10 +37,21 @@ func NewManager(factory ClientFactory) *DefaultManager {
 		initMu:      make(map[pgtype.UUID]*sync.Mutex),
 		lastInitErr: make(map[pgtype.UUID]time.Time),
 		factory:     factory,
+		logger:      slog.Default(),
+	}
+}
+
+// SetLogger configures the logger for data-plane management events.
+func (m *DefaultManager) SetLogger(logger *slog.Logger) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if logger != nil {
+		m.logger = logger
 	}
 }
 
 // RegisterApp configures and activates data-plane connectivity for an application.
+// Note: The underlying DBOS Go SDK client requires system database schema version 107 or higher.
 func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	if cfg.DatabaseURL == "" {
 		return fmt.Errorf("database URL is required")
@@ -81,7 +94,14 @@ func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	} else {
 		m.mu.Lock()
 		m.lastInitErr[cfg.ApplicationID] = time.Now()
+		logger := m.logger
 		m.mu.Unlock()
+		if logger != nil {
+			logger.Warn("failed eager data-plane client initialization",
+				"applicationID", fmt.Sprintf("%x", cfg.ApplicationID.Bytes),
+				"error", err,
+			)
+		}
 	}
 
 	return nil

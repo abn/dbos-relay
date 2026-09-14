@@ -231,3 +231,104 @@ func TestManager_CustomApplicationTimeout(t *testing.T) {
 		t.Fatal("timed out waiting for recovery")
 	}
 }
+
+type delayedStoreQueries struct {
+	*mockStoreQueries
+	getAppStarted chan struct{}
+	getAppRelease chan struct{}
+}
+
+func (d *delayedStoreQueries) GetApplicationByID(ctx context.Context, id pgtype.UUID) (gen.Application, error) {
+	close(d.getAppStarted)
+	<-d.getAppRelease
+	return d.mockStoreQueries.GetApplicationByID(ctx, id)
+}
+
+func TestManager_OnDisconnect_DoesNotHoldLockDuringDBQuery(t *testing.T) {
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	delayedStore := &delayedStoreQueries{
+		mockStoreQueries: newMockStoreQueries(),
+		getAppStarted:    make(chan struct{}),
+		getAppRelease:    make(chan struct{}),
+	}
+	appID := pgtype.UUID{Bytes: [16]byte{20}, Valid: true}
+	delayedStore.apps[appID] = gen.Application{ID: appID}
+
+	mgr := liveness.NewManager(clock, delayedStore, nil, nil)
+	defer mgr.Stop()
+
+	ctx := context.Background()
+	_ = mgr.OnConnect(ctx, appID, "exec-dc-1", "v1.0.0")
+
+	// Call OnDisconnect asynchronously; it will enter resolveTimeout and block on getAppRelease
+	go func() {
+		mgr.OnDisconnect(ctx, appID, "exec-dc-1")
+	}()
+
+	// Wait until GetApplicationByID is in-flight
+	<-delayedStore.getAppStarted
+
+	// Verify another operation (OnConnect) is not blocked on manager mutex while DB query is running
+	connectDone := make(chan error, 1)
+	go func() {
+		connectDone <- mgr.OnConnect(ctx, appID, "exec-concurrent", "v1.0.0")
+	}()
+
+	select {
+	case err := <-connectDone:
+		if err != nil {
+			t.Fatalf("concurrent OnConnect failed: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("OnConnect blocked while OnDisconnect was executing database query")
+	}
+
+	// Release the DB query and finish
+	close(delayedStore.getAppRelease)
+}
+
+func TestManager_DeadExecutorEvictionAndReconnection(t *testing.T) {
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	store := newMockStoreQueries()
+	recovery := newMockRecoveryRunner()
+	mgr := liveness.NewManager(clock, store, recovery, nil)
+	defer mgr.Stop()
+
+	appID := pgtype.UUID{Bytes: [16]byte{21}, Valid: true}
+	execID := "exec-dead-evict"
+	ctx := context.Background()
+
+	if err := mgr.OnConnect(ctx, appID, execID, "v1.0.0"); err != nil {
+		t.Fatalf("initial connect failed: %v", err)
+	}
+
+	// Disconnect and let grace period expire
+	mgr.OnDisconnect(ctx, appID, execID)
+	clock.Advance(65 * time.Second)
+
+	select {
+	case <-recovery.ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovery")
+	}
+
+	// Verify executor is declared dead
+	err := mgr.OnConnect(ctx, appID, execID, "v1.0.0")
+	if !errors.Is(err, liveness.ErrReconnectingDeadExecutor) {
+		t.Fatalf("expected ErrReconnectingDeadExecutor while dead, got: %v", err)
+	}
+
+	// Delete/evict executor from manager (as triggered upon recovery ack)
+	err = mgr.DeleteExecutor(ctx, gen.DeleteExecutorParams{
+		ApplicationID: appID,
+		ExecutorID:    execID,
+	})
+	if err != nil {
+		t.Fatalf("DeleteExecutor failed: %v", err)
+	}
+
+	// Now executor can reconnect cleanly
+	if err := mgr.OnConnect(ctx, appID, execID, "v2.0.0"); err != nil {
+		t.Fatalf("reconnect after eviction failed: %v", err)
+	}
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/abn/relay/internal/dataplane"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/router"
 	"github.com/abn/relay/internal/store/gen"
@@ -302,5 +303,87 @@ func TestDispatch_UnclassifiedDispatcherError(t *testing.T) {
 	}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected %v, got %v", expectedErr, err)
+	}
+}
+
+type mockDataPlaneManager struct {
+	hasDataPlane bool
+	onDispatch   func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+}
+
+func (m *mockDataPlaneManager) HasDataPlane(appID pgtype.UUID) bool {
+	return m.hasDataPlane
+}
+
+func (m *mockDataPlaneManager) Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+	if m.onDispatch != nil {
+		return m.onDispatch(ctx, appID, msg)
+	}
+	return nil, nil
+}
+
+func TestDispatch_DataPlaneFallbackErrors(t *testing.T) {
+	ctx := context.Background()
+	orgID := testUUID(1)
+	appID := testUUID(2)
+
+	store := &mockStore{
+		getOrgFunc: func(ctx context.Context, name string) (gen.Organisation, error) {
+			return gen.Organisation{ID: orgID, Name: name}, nil
+		},
+		getAppFunc: func(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
+			return gen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+		},
+	}
+
+	// Dispatcher returns ErrNoLiveExecutor so fallback is triggered
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, router.ErrNoLiveExecutor
+		},
+	}
+
+	reqMsg := &protocol.Envelope{RequestID: "req-fallback"}
+
+	// 1. Unsupported operation maps to ErrNoLiveExecutor (yielding 503)
+	dpUnsupported := &mockDataPlaneManager{
+		hasDataPlane: true,
+		onDispatch: func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, dataplane.ErrUnsupportedOperation
+		},
+	}
+	r1 := router.New(store, dispatcher)
+	r1.SetDataPlane(dpUnsupported)
+	_, err := r1.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	if !errors.Is(err, router.ErrNoLiveExecutor) {
+		t.Fatalf("expected ErrNoLiveExecutor on dataplane.ErrUnsupportedOperation, got: %v", err)
+	}
+
+	// 2. Timeout maps to ErrExecutorTimeout
+	dpTimeout := &mockDataPlaneManager{
+		hasDataPlane: true,
+		onDispatch: func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+	r2 := router.New(store, dispatcher)
+	r2.SetDataPlane(dpTimeout)
+	_, err = r2.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	if !errors.Is(err, router.ErrExecutorTimeout) {
+		t.Fatalf("expected ErrExecutorTimeout on context.DeadlineExceeded, got: %v", err)
+	}
+
+	// 3. Connection refusal / other failure maps to ErrNoLiveExecutor
+	dpRefused := &mockDataPlaneManager{
+		hasDataPlane: true,
+		onDispatch: func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("dial tcp 127.0.0.1:5432: connect: connection refused")
+		},
+	}
+	r3 := router.New(store, dispatcher)
+	r3.SetDataPlane(dpRefused)
+	_, err = r3.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	if !errors.Is(err, router.ErrNoLiveExecutor) {
+		t.Fatalf("expected ErrNoLiveExecutor on connection refusal, got: %v", err)
 	}
 }

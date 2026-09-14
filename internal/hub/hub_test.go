@@ -1570,3 +1570,74 @@ func TestHub_NilLoggerDefault(t *testing.T) {
 	h.logger.Error("test error log")
 	h.logger.Debug("test debug log")
 }
+
+func TestHub_Dispatch_RetrySharesDeadlineBudget(t *testing.T) {
+	store := newMockHubStore()
+	cfg := &config.Config{
+		ExecutorDeadline: 30 * time.Millisecond,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsBase := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+	// Context with only 35ms total budget: primary takes 30ms, remaining 5ms is < 10ms threshold
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
+	defer cancel()
+
+	// Connect silent executor
+	silentConn, resp, err := websocket.Dial(ctx, wsBase, nil)
+	if err != nil {
+		t.Fatalf("failed to dial silent executor: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = silentConn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err := silentConn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("silent executor read prompt failed: %v", err)
+	}
+	msg, _ := protocol.Decode(data)
+	infoReq := msg.(*protocol.ExecutorInfoRequest)
+	infoResp := &protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "exec-silent-budget",
+		ApplicationVersion: "v1.0.0",
+	}
+	respBytes, _ := protocol.Encode(infoResp)
+	_ = silentConn.Write(ctx, websocket.MessageText, respBytes)
+
+	go func() {
+		for {
+			_, _, readErr := silentConn.Read(ctx)
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	appID := store.apps["test-app"].ID
+	req := &protocol.ListWorkflowsRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeListWorkflows,
+			RequestID: "req-budget-timeout",
+		},
+	}
+	_, err = h.Dispatch(ctx, appID, req)
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") && !strings.Contains(err.Error(), "deadline exceeded") {
+		t.Fatalf("expected timeout error, got %v", err)
+	}
+}
