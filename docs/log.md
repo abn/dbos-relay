@@ -5,6 +5,9 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-14
 
+* **Update**: Added startup lease reconciliation, periodic orphan adoption, and lease heartbeats to High Availability coordinator.
+* **Update**: Added recovery dispatch attempt recording for successes and failures, and verified pending workflow counts before deleting dead records on cross-version recovery.
+* **Update**: Added grace-period timer cancellation to eliminate goroutine leaks across executor disconnect and reconnect cycles.
 * **Update**: Aligned alerting rule evaluation for WorkflowFailure and SlowQueue with Conductor WebSocket queries (list_workflows and list_queued_workflows) over registered executors.
 * **Update**: Added SSRF dialer protection (blocking private, link-local, loopback, multicast, and non-HTTP/HTTPS destinations) and redirect re-validation for webhook, Slack, and PagerDuty alert channel dispatchers.
 * **Update**: Added OpenMetrics content negotiation and EOF termination to /v1/metrics while clarifying supported Scale-tier metric families in [Metrics and alerting surface](discovery/metrics-alerting.md).
