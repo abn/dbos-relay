@@ -12,11 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/liveness"
+	"github.com/abn/relay/internal/protocol"
 	storegen "github.com/abn/relay/internal/store/gen"
 )
 
@@ -55,7 +57,7 @@ func normalizeOrg(orgName string) string {
 	return orgName
 }
 
-func mapApplication(app storegen.Application, orgID pgtype.UUID) gen.Application {
+func mapApplication(app storegen.Application, orgID pgtype.UUID, lang *string) gen.Application {
 	var s appSettings
 	if len(app.Settings) > 0 {
 		_ = json.Unmarshal(app.Settings, &s)
@@ -75,6 +77,7 @@ func mapApplication(app storegen.Application, orgID pgtype.UUID) gen.Application
 		GcRowsThreshold:     s.GcRowsThreshold,
 		GcTimeThresholdMs:   s.GcTimeThresholdMs,
 		GlobalTimeoutMs:     s.GlobalTimeoutMs,
+		Language:            lang,
 	}
 }
 
@@ -166,7 +169,21 @@ func (s *Server) ListApps(ctx context.Context, request gen.ListAppsRequestObject
 
 	res := make([]gen.Application, 0, len(apps))
 	for _, a := range apps {
-		res = append(res, mapApplication(a, org.ID))
+		var lang *string
+		if execs, err := s.store.ListExecutorsByApplication(ctx, a.ID); err == nil {
+			for _, e := range execs {
+				if len(e.Metadata) > 0 {
+					var md map[string]interface{}
+					if err := json.Unmarshal(e.Metadata, &md); err == nil {
+						if l, ok := md["language"].(string); ok && l != "" {
+							lang = &l
+							break
+						}
+					}
+				}
+			}
+		}
+		res = append(res, mapApplication(a, org.ID, lang))
 	}
 
 	return gen.ListApps200JSONResponse(res), nil
@@ -207,7 +224,22 @@ func (s *Server) GetApp(ctx context.Context, request gen.GetAppRequestObject) (g
 		}, nil
 	}
 
-	return gen.GetApp200JSONResponse(mapApplication(app, org.ID)), nil
+	var lang *string
+	if execs, err := s.store.ListExecutorsByApplication(ctx, app.ID); err == nil {
+		for _, e := range execs {
+			if len(e.Metadata) > 0 {
+				var md map[string]interface{}
+				if err := json.Unmarshal(e.Metadata, &md); err == nil {
+					if l, ok := md["language"].(string); ok && l != "" {
+						lang = &l
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return gen.GetApp200JSONResponse(mapApplication(app, org.ID, lang)), nil
 }
 
 // RegisterApp registers a new application or updates an existing one.
@@ -340,6 +372,35 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 		}, nil
 	}
 
+	if s.router != nil && (settings.GcRowsThreshold != nil || settings.GcTimeThresholdMs != nil || settings.GlobalTimeoutMs != nil) {
+		nowMs := time.Now().UnixMilli()
+		body := protocol.RetentionRequestBody{}
+		if settings.GcRowsThreshold != nil {
+			rows := int(*settings.GcRowsThreshold)
+			body.GCRowsThreshold = &rows
+		}
+		if settings.GcTimeThresholdMs != nil {
+			cutoff := int(nowMs - int64(*settings.GcTimeThresholdMs))
+			body.GCCutoffEpochMs = &cutoff
+		}
+		if settings.GlobalTimeoutMs != nil {
+			cutoff := int(nowMs - int64(*settings.GlobalTimeoutMs))
+			body.TimeoutCutoffEpochMs = &cutoff
+		}
+		if settings.GcRowsThreshold != nil || settings.GcTimeThresholdMs != nil {
+			batchSize := 1000
+			body.GCBatchSize = &batchSize
+		}
+		retMsg := &protocol.RetentionRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeRetention,
+				RequestID: uuid.NewString(),
+			},
+			Body: body,
+		}
+		_, _ = s.router.Dispatch(ctx, orgName, request.AppName, retMsg)
+	}
+
 	return gen.UpdateApp204Response{}, nil
 }
 
@@ -385,77 +446,107 @@ func (s *Server) DeleteApp(ctx context.Context, request gen.DeleteAppRequestObje
 func (s *Server) ListAppVersions(ctx context.Context, request gen.ListAppVersionsRequestObject) (gen.ListAppVersionsResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 
-	org, err := s.store.GetOrganisationByName(ctx, orgName)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	if s.store != nil {
+		org, err := s.store.GetOrganisationByName(ctx, orgName)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+					StatusCode: http.StatusNotFound,
+					Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+				}, nil
+			}
 			return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusNotFound,
-				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 			}, nil
 		}
-		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
-		}, nil
-	}
 
-	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
-		OrganisationID: org.ID,
-		Name:           request.AppName,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+			OrganisationID: org.ID,
+			Name:           request.AppName,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+					StatusCode: http.StatusNotFound,
+					Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+				}, nil
+			}
 			return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusNotFound,
-				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 			}, nil
 		}
-		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
-		}, nil
-	}
 
-	execs, err := s.store.ListExecutorsByApplication(ctx, app.ID)
-	if err != nil {
-		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
-		}, nil
-	}
+		if s.router != nil {
+			reqMsg := &protocol.ListApplicationVersionsRequest{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeListApplicationVersions,
+					RequestID: uuid.NewString(),
+				},
+			}
+			resMsg, err := s.router.Dispatch(ctx, orgName, request.AppName, reqMsg)
+			if err == nil {
+				if listRes, ok := resMsg.(*protocol.ListApplicationVersionsResponse); ok && listRes.Output != nil {
+					versions := make([]gen.ApplicationVersion, 0, len(listRes.Output))
+					for _, v := range listRes.Output {
+						createdTime := time.UnixMilli(v.CreatedAt)
+						versionTime := time.UnixMilli(v.Timestamp)
+						versions = append(versions, gen.ApplicationVersion{
+							VersionId:        v.ID,
+							VersionName:      v.Name,
+							CreatedAt:        createdTime,
+							VersionTimestamp: versionTime,
+						})
+					}
+					return gen.ListAppVersions200JSONResponse(versions), nil
+				}
+			}
+		}
 
-	seen := make(map[string]bool)
-	versions := make([]gen.ApplicationVersion, 0)
-	for _, e := range execs {
-		if e.ApplicationVersion != "" && !seen[e.ApplicationVersion] {
-			seen[e.ApplicationVersion] = true
-			t := e.ConnectedAt.Time
+		execs, err := s.store.ListExecutorsByApplication(ctx, app.ID)
+		if err != nil {
+			return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+			}, nil
+		}
+
+		seen := make(map[string]bool)
+		versions := make([]gen.ApplicationVersion, 0)
+		for _, e := range execs {
+			if e.ApplicationVersion != "" && !seen[e.ApplicationVersion] {
+				seen[e.ApplicationVersion] = true
+				t := e.ConnectedAt.Time
+				versions = append(versions, gen.ApplicationVersion{
+					VersionId:        e.ApplicationVersion,
+					VersionName:      e.ApplicationVersion,
+					CreatedAt:        t,
+					VersionTimestamp: t,
+				})
+			}
+		}
+
+		var settings appSettings
+		if len(app.Settings) > 0 {
+			_ = json.Unmarshal(app.Settings, &settings)
+		}
+
+		if settings.LatestVersion != nil && *settings.LatestVersion != "" && !seen[*settings.LatestVersion] {
+			seen[*settings.LatestVersion] = true
+			t := app.CreatedAt.Time
 			versions = append(versions, gen.ApplicationVersion{
-				VersionId:        e.ApplicationVersion,
-				VersionName:      e.ApplicationVersion,
+				VersionId:        *settings.LatestVersion,
+				VersionName:      *settings.LatestVersion,
 				CreatedAt:        t,
 				VersionTimestamp: t,
 			})
 		}
+
+		return gen.ListAppVersions200JSONResponse(versions), nil
 	}
 
-	var settings appSettings
-	if len(app.Settings) > 0 {
-		_ = json.Unmarshal(app.Settings, &settings)
-	}
-
-	if settings.LatestVersion != nil && *settings.LatestVersion != "" && !seen[*settings.LatestVersion] {
-		seen[*settings.LatestVersion] = true
-		t := app.CreatedAt.Time
-		versions = append(versions, gen.ApplicationVersion{
-			VersionId:        *settings.LatestVersion,
-			VersionName:      *settings.LatestVersion,
-			CreatedAt:        t,
-			VersionTimestamp: t,
-		})
-	}
-
-	return gen.ListAppVersions200JSONResponse(versions), nil
+	return gen.ListAppVersions200JSONResponse([]gen.ApplicationVersion{}), nil
 }
 
 // SetLatestAppVersion sets the active/latest application version.
@@ -498,6 +589,17 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
 		}, nil
+	}
+
+	if s.router != nil {
+		reqMsg := &protocol.SetLatestApplicationVersionRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeSetLatestApplicationVersion,
+				RequestID: uuid.NewString(),
+			},
+			VersionName: request.Body.VersionName,
+		}
+		_, _ = s.router.Dispatch(ctx, orgName, request.AppName, reqMsg)
 	}
 
 	var settings appSettings
@@ -582,26 +684,233 @@ func (s *Server) ListExecutors(ctx context.Context, request gen.ListExecutorsReq
 
 // GetAutoscale returns autoscaling recommendations.
 func (s *Server) GetAutoscale(ctx context.Context, request gen.GetAutoscaleRequestObject) (gen.GetAutoscaleResponseObject, error) {
-	return gen.GetAutoscale200JSONResponse([]gen.QueueAutoscale{}), nil
+	if s.store == nil {
+		return gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
+		return gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	_, err = s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
+		return gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	return gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse{
+		StatusCode: http.StatusNotFound,
+		Body:       MakeErrorModel(http.StatusNotFound, "Not Found", "no autoscaling policy configured for application"),
+	}, nil
 }
 
 // GetAutoscaleVersion returns autoscaling recommendations for a specific version.
 func (s *Server) GetAutoscaleVersion(ctx context.Context, request gen.GetAutoscaleVersionRequestObject) (gen.GetAutoscaleVersionResponseObject, error) {
-	return gen.GetAutoscaleVersion200JSONResponse(gen.QueueAutoscale{}), nil
+	if s.store == nil {
+		return gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
+		return gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	_, err = s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
+		return gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	return gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse{
+		StatusCode: http.StatusNotFound,
+		Body:       MakeErrorModel(http.StatusNotFound, "Not Found", "no autoscaling policy configured for application"),
+	}, nil
 }
 
 // GetAutoscalingPolicy returns autoscaling policy.
 func (s *Server) GetAutoscalingPolicy(ctx context.Context, request gen.GetAutoscalingPolicyRequestObject) (gen.GetAutoscalingPolicyResponseObject, error) {
-	return gen.GetAutoscalingPolicy200JSONResponse(gen.PolicyOutputBody{}), nil
+	if s.store == nil {
+		return gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
+		return gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	_, err = s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
+		return gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	return gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+		StatusCode: http.StatusNotFound,
+		Body:       MakeErrorModel(http.StatusNotFound, "Not Found", "no autoscaling policy configured for application"),
+	}, nil
 }
 
 // SetAutoscalingPolicy sets autoscaling policy.
 func (s *Server) SetAutoscalingPolicy(ctx context.Context, request gen.SetAutoscalingPolicyRequestObject) (gen.SetAutoscalingPolicyResponseObject, error) {
-	return gen.SetAutoscalingPolicy200JSONResponse(gen.PolicyOutputBody{}), nil
+	if s.store == nil {
+		return gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
+		return gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	_, err = s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
+		return gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	return gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+		StatusCode: http.StatusBadRequest,
+		Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "autoscaling policies are managed by the container orchestrator"),
+	}, nil
 }
 
 // DeleteAutoscalingPolicy deletes autoscaling policy.
 func (s *Server) DeleteAutoscalingPolicy(ctx context.Context, request gen.DeleteAutoscalingPolicyRequestObject) (gen.DeleteAutoscalingPolicyResponseObject, error) {
+	if s.store == nil {
+		return gen.DeleteAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+	orgName := normalizeOrg(request.OrgName)
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.DeleteAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
+		return gen.DeleteAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	_, err = s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.AppName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.DeleteAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
+		return gen.DeleteAutoscalingPolicydefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
 	return gen.DeleteAutoscalingPolicy204Response{}, nil
 }
 

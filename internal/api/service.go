@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/abn/relay/api/spec"
 	"github.com/abn/relay/internal/api/gen"
@@ -181,6 +182,32 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 	})
 
 	if server != nil {
+		mux.HandleFunc("GET /v2/orgs/{orgName}/apps/{appName}/needs-attention", func(w http.ResponseWriter, r *http.Request) {
+			orgName := r.PathValue("orgName")
+			appName := r.PathValue("appName")
+			report, code, errModel := server.GetNeedsAttention(r.Context(), orgName, appName, 15*time.Minute)
+			title := "Error"
+			if errModel.Title != nil {
+				title = *errModel.Title
+			}
+			detail := ""
+			if errModel.Detail != nil {
+				detail = *errModel.Detail
+			}
+			if code != http.StatusOK {
+				problem.Write(w, &problem.Problem{
+					Type:   "about:blank",
+					Title:  title,
+					Status: code,
+					Detail: detail,
+				})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(report)
+		})
+
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 				problem.Write(w, &problem.Problem{
@@ -216,7 +243,7 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		})
 	}
 
-	return &problemHandler{handler: mux}
+	return &problemHandler{handler: mux, server: server}
 }
 
 type problemResponseWriter struct {
@@ -251,9 +278,34 @@ func (rw *problemResponseWriter) Write(b []byte) (int, error) {
 
 type problemHandler struct {
 	handler http.Handler
+	server  *Server
+}
+
+func isOAuthGatedPath(p string) bool {
+	p = strings.TrimSuffix(p, "/")
+	if p == "/v2/users" || p == "/v2/users/me" || p == "/v2/users/register" {
+		return true
+	}
+	parts := strings.Split(p, "/")
+	if len(parts) == 4 && parts[1] == "v2" && parts[2] == "orgs" && parts[3] != "" {
+		return true
+	}
+	if len(parts) >= 5 && parts[1] == "v2" && parts[2] == "orgs" {
+		switch parts[4] {
+		case "join", "secret", "secrets", "members", "roles", "users", "domain-claims", "audit-logs":
+			return true
+		}
+	}
+	return false
 }
 
 func (h *problemHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.server != nil && !h.server.authEnabled && isOAuthGatedPath(r.URL.Path) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(oidcNotAvailableError())
+		return
+	}
 	rw := &problemResponseWriter{ResponseWriter: w}
 	h.handler.ServeHTTP(rw, r)
 	if rw.intercept {
