@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/router"
+	storegen "github.com/abn/relay/internal/store/gen"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type mockRouter struct {
@@ -26,6 +29,20 @@ func (m *mockRouter) Dispatch(ctx context.Context, orgName, appName string, msg 
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+type mockMetricsStore struct {
+	StoreReader
+	org storegen.Organisation
+	app storegen.Application
+}
+
+func (m *mockMetricsStore) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {
+	return m.org, nil
+}
+
+func (m *mockMetricsStore) GetApplicationByName(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+	return m.app, nil
 }
 
 func TestListQueues(t *testing.T) {
@@ -174,6 +191,39 @@ func TestListQueues(t *testing.T) {
 			t.Errorf("expected status 500, got %d", probResp.StatusCode)
 		}
 	})
+
+	t.Run("envelope error propagates error message", func(t *testing.T) {
+		errMsg := "queue executor internal error"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.ListQueuesResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeListQueues,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.ListQueues(context.Background(), gen.ListQueuesRequestObject{
+			OrgName: "my-org",
+			AppName: "my-app",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.ListQueuesdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
+		}
+	})
 }
 
 func TestGetQueue(t *testing.T) {
@@ -264,6 +314,40 @@ func TestGetQueue(t *testing.T) {
 		}
 		if probResp.Body.Detail == nil || *probResp.Body.Detail != "queue 'missing-queue' does not exist" {
 			t.Errorf("expected detail with error message, got %v", probResp.Body.Detail)
+		}
+	})
+
+	t.Run("envelope error non not found returns 400 with message", func(t *testing.T) {
+		errMsg := "partition error on queue"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.GetQueueResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeGetQueue,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.GetQueue(context.Background(), gen.GetQueueRequestObject{
+			OrgName:   "my-org",
+			AppName:   "my-app",
+			QueueName: "my-queue",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.GetQueuedefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
 		}
 	})
 
@@ -423,6 +507,39 @@ func TestListSchedules(t *testing.T) {
 		}
 		if probResp.StatusCode != http.StatusGatewayTimeout {
 			t.Errorf("expected status 504, got %d", probResp.StatusCode)
+		}
+	})
+
+	t.Run("envelope error propagates error message", func(t *testing.T) {
+		errMsg := "schedule executor failure"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.ListSchedulesResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeListSchedules,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.ListSchedules(context.Background(), gen.ListSchedulesRequestObject{
+			OrgName: "my-org",
+			AppName: "my-app",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.ListSchedulesdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
 		}
 	})
 }
@@ -824,6 +941,44 @@ func TestBackfillSchedule(t *testing.T) {
 			t.Errorf("expected status 400, got %d", probResp.StatusCode)
 		}
 	})
+
+	t.Run("envelope error propagates error message", func(t *testing.T) {
+		errMsg := "invalid backfill interval"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.BackfillScheduleResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeBackfillSchedule,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.BackfillSchedule(context.Background(), gen.BackfillScheduleRequestObject{
+			OrgName:      "test-org",
+			AppName:      "test-app",
+			ScheduleName: "daily-sync",
+			Body: &gen.BackfillInputBody{
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected status 400, got %d", probResp.StatusCode)
+		}
+		if probResp.Body.Detail == nil || *probResp.Body.Detail != errMsg {
+			t.Errorf("expected detail %q, got %v", errMsg, probResp.Body.Detail)
+		}
+	})
 }
 
 func TestListMetrics(t *testing.T) {
@@ -842,6 +997,9 @@ func TestListMetrics(t *testing.T) {
 				}
 				if req.EndTime != end.Format(time.RFC3339) {
 					t.Errorf("expected endTime %s, got %s", end.Format(time.RFC3339), req.EndTime)
+				}
+				if req.MetricClass != "workflow_step_count" {
+					t.Errorf("expected MetricClass workflow_step_count, got %s", req.MetricClass)
 				}
 				if len(req.ApplicationName) != 1 || req.ApplicationName[0] != "analytics-app" {
 					t.Errorf("expected applicationName analytics-app, got %v", req.ApplicationName)
@@ -921,6 +1079,40 @@ func TestListMetrics(t *testing.T) {
 		}
 	})
 
+	t.Run("envelope error returns problem response", func(t *testing.T) {
+		errMsg := "application not found"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.GetMetricsResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeGetMetrics,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.ListMetrics(context.Background(), gen.ListMetricsRequestObject{
+			OrgName: "analytics-org",
+			AppName: "analytics-app",
+			Params: gen.ListMetricsParams{
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.ListMetricsdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected default problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected status 404, got %d", probResp.StatusCode)
+		}
+	})
+
 	t.Run("router error returns problem JSON", func(t *testing.T) {
 		r := &mockRouter{
 			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
@@ -949,4 +1141,120 @@ func TestListMetrics(t *testing.T) {
 			t.Errorf("expected status 404, got %d", probResp.StatusCode)
 		}
 	})
+
+	t.Run("resolves application UUID when store is available", func(t *testing.T) {
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.GetMetricsResponse{
+					Envelope: protocol.Envelope{
+						Type: protocol.MessageTypeGetMetrics,
+					},
+					Metrics: []protocol.MetricData{
+						{
+							MetricName: "step_execution_time",
+							MetricType: "step_count",
+							Value:      10.0,
+						},
+					},
+				}, nil
+			},
+		}
+
+		appUUID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
+		store := &mockMetricsStore{
+			org: storegen.Organisation{ID: pgtype.UUID{Valid: true}},
+			app: storegen.Application{
+				ID:   appUUID,
+				Name: "analytics-app",
+			},
+		}
+
+		server := NewServer(r, store, nil)
+		resp, err := server.ListMetrics(context.Background(), gen.ListMetricsRequestObject{
+			OrgName: "analytics-org",
+			AppName: "analytics-app",
+			Params: gen.ListMetricsParams{
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		jsonResp, ok := resp.(gen.ListMetrics200JSONResponse)
+		if !ok {
+			t.Fatalf("expected ListMetrics200JSONResponse, got %T", resp)
+		}
+		if len(jsonResp) != 1 {
+			t.Fatalf("expected 1 metric, got %d", len(jsonResp))
+		}
+		expectedUUID := formatUUID(appUUID)
+		if jsonResp[0].AppId != expectedUUID {
+			t.Errorf("expected appId %s, got %s", expectedUUID, jsonResp[0].AppId)
+		}
+	})
+}
+
+func TestIntToInt32Ptr(t *testing.T) {
+	// nil input
+	if got := intToInt32Ptr(nil); got != nil {
+		t.Errorf("expected nil for nil input, got %v", got)
+	}
+
+	// in-range positive
+	val42 := 42
+	if got := intToInt32Ptr(&val42); got == nil || *got != 42 {
+		t.Errorf("expected 42, got %v", got)
+	}
+
+	// in-range negative
+	valNeg := -100
+	if got := intToInt32Ptr(&valNeg); got == nil || *got != -100 {
+		t.Errorf("expected -100, got %v", got)
+	}
+
+	// max int clamping
+	valOverMax := int(int64(math.MaxInt32) + 500)
+	if got := intToInt32Ptr(&valOverMax); got == nil || *got != math.MaxInt32 {
+		t.Errorf("expected MaxInt32 (%d), got %v", math.MaxInt32, got)
+	}
+
+	// min int clamping
+	valUnderMin := int(int64(math.MinInt32) - 500)
+	if got := intToInt32Ptr(&valUnderMin); got == nil || *got != math.MinInt32 {
+		t.Errorf("expected MinInt32 (%d), got %v", math.MinInt32, got)
+	}
+}
+
+func TestScheduleOutputToModel_TimeParsing(t *testing.T) {
+	rfcTimeStr := "2026-03-15T12:30:00Z"
+	m1 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: &rfcTimeStr,
+	})
+	if m1.LastFiredAt == nil || m1.LastFiredAt.Year() != 2026 || m1.LastFiredAt.Month() != 3 || m1.LastFiredAt.Day() != 15 {
+		t.Errorf("failed to parse RFC3339 timestamp: %v", m1.LastFiredAt)
+	}
+
+	nanoTimeStr := "2026-03-15T12:30:00.123456789Z"
+	m2 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: &nanoTimeStr,
+	})
+	if m2.LastFiredAt == nil || m2.LastFiredAt.Nanosecond() != 123456789 {
+		t.Errorf("failed to parse RFC3339Nano timestamp: %v", m2.LastFiredAt)
+	}
+
+	msTimeStr := "1773577800000" // Unix ms
+	m3 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: &msTimeStr,
+	})
+	if m3.LastFiredAt == nil || m3.LastFiredAt.UnixMilli() != 1773577800000 {
+		t.Errorf("failed to parse ms timestamp: %v", m3.LastFiredAt)
+	}
+
+	m4 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: nil,
+	})
+	if m4.LastFiredAt != nil {
+		t.Errorf("expected nil LastFiredAt for nil input, got %v", m4.LastFiredAt)
+	}
 }

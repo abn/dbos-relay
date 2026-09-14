@@ -3,6 +3,10 @@ package router_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -481,6 +485,141 @@ func TestForward_BodyCapAndCheapRejection(t *testing.T) {
 		handler.ServeHTTP(w, req)
 		if w.Code != http.StatusRequestEntityTooLarge {
 			t.Fatalf("expected 413 Request Entity Too Large, got %d: %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestForward_ClockSkewAndDeadlineBounds(t *testing.T) {
+	secret := []byte("skew-test-secret")
+	body := []byte(`{"type":"get_workflow","request_id":"req-skew"}`)
+
+	var capturedDeadline time.Time
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, aID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			if dl, ok := ctx.Deadline(); ok {
+				capturedDeadline = dl
+			}
+			return &protocol.GetWorkflowResponse{
+				Envelope: protocol.Envelope{Type: protocol.MessageTypeGetWorkflow, RequestID: "req-skew"},
+			}, nil
+		},
+	}
+	handler := router.NewForwardHandler(dispatcher, secret, 30*time.Second)
+
+	// 1. Header deadline 60s in the past relative to sender timestamp -> rejected with 401 ErrExpiredDeadline
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		pastDeadline := time.Now().Add(-60 * time.Second)
+		router.SignRequest(req, body, secret, 0, pastDeadline)
+
+		_, _, err := router.VerifyRequest(req, body, secret, 30*time.Second)
+		if !errors.Is(err, router.ErrExpiredDeadline) {
+			t.Fatalf("VerifyRequest: expected ErrExpiredDeadline for past deadline, got %v", err)
+		}
+
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("handler: expected 401 for past deadline, got %d", w.Code)
+		}
+	}
+
+	// 2. Header deadline far in the future (120s) -> clamped to 60s maximum budget
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		futureDeadline := time.Now().Add(120 * time.Second)
+		router.SignRequest(req, body, secret, 0, futureDeadline)
+
+		now := time.Now()
+		_, extractedDeadline, err := router.VerifyRequest(req, body, secret, 30*time.Second)
+		if err != nil {
+			t.Fatalf("VerifyRequest failed: %v", err)
+		}
+		remaining := time.Until(extractedDeadline)
+		if remaining > 61*time.Second || remaining < 59*time.Second {
+			t.Fatalf("expected extracted deadline clamped around 60s, got remaining %v", remaining)
+		}
+
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("handler: expected 200, got %d", w.Code)
+		}
+		handlerRemaining := capturedDeadline.Sub(now)
+		if handlerRemaining > 61*time.Second || handlerRemaining < 59*time.Second {
+			t.Fatalf("expected dispatcher deadline clamped around 60s, got %v", handlerRemaining)
+		}
+	}
+
+	// 3. Sender clock 29s behind receiver clock (tolerated drift, sender budget 30s)
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		senderNow := time.Now().Add(-29 * time.Second)
+		senderDeadline := senderNow.Add(30 * time.Second) // Only 1s ahead of receiver clock!
+
+		// Manually sign with sender's clock
+		tsStr := fmt.Sprintf("%d", senderNow.Unix())
+		req.Header.Set(router.HeaderTimestamp, tsStr)
+		req.Header.Set(router.HeaderHop, "0")
+		req.Header.Set(router.HeaderNonce, "nonce-skew-behind")
+		req.Header.Set(router.HeaderDeadline, senderDeadline.Format(time.RFC3339Nano))
+		router.SignRequest(req, body, secret, 0, senderDeadline)
+		// Ensure timestamp reflects sender's clock
+		req.Header.Set(router.HeaderTimestamp, tsStr)
+		// Re-sign with exact headers
+		mac := hmac.New(sha256.New, secret)
+		payload := fmt.Sprintf("%s\n0\nPOST\n%s\nnonce-skew-behind\n%s\n%s", tsStr, req.URL.RequestURI(), req.Header.Get(router.HeaderDeadline), string(body))
+		mac.Write([]byte(payload))
+		req.Header.Set(router.HeaderSignature, hex.EncodeToString(mac.Sum(nil)))
+
+		now := time.Now()
+		_, extractedDeadline, err := router.VerifyRequest(req, body, secret, 30*time.Second)
+		if err != nil {
+			t.Fatalf("VerifyRequest with sender 29s behind failed: %v", err)
+		}
+		remaining := extractedDeadline.Sub(now)
+		if remaining < 28*time.Second || remaining > 32*time.Second {
+			t.Fatalf("expected remaining budget ~30s despite sender clock 29s behind, got %v", remaining)
+		}
+
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("handler with sender 29s behind: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+	}
+
+	// 4. Sender clock 29s ahead of receiver clock (tolerated drift, sender budget 30s)
+	{
+		req, _ := http.NewRequest(http.MethodPost, "/internal/v1/forward/07000000-0000-0000-0000-000000000000", bytes.NewReader(body))
+		senderNow := time.Now().Add(29 * time.Second)
+		senderDeadline := senderNow.Add(30 * time.Second) // 59s ahead of receiver clock
+
+		tsStr := fmt.Sprintf("%d", senderNow.Unix())
+		req.Header.Set(router.HeaderTimestamp, tsStr)
+		req.Header.Set(router.HeaderHop, "0")
+		req.Header.Set(router.HeaderNonce, "nonce-skew-ahead")
+		req.Header.Set(router.HeaderDeadline, senderDeadline.Format(time.RFC3339Nano))
+
+		mac := hmac.New(sha256.New, secret)
+		payload := fmt.Sprintf("%s\n0\nPOST\n%s\nnonce-skew-ahead\n%s\n%s", tsStr, req.URL.RequestURI(), req.Header.Get(router.HeaderDeadline), string(body))
+		mac.Write([]byte(payload))
+		req.Header.Set(router.HeaderSignature, hex.EncodeToString(mac.Sum(nil)))
+
+		now := time.Now()
+		_, extractedDeadline, err := router.VerifyRequest(req, body, secret, 30*time.Second)
+		if err != nil {
+			t.Fatalf("VerifyRequest with sender 29s ahead failed: %v", err)
+		}
+		remaining := extractedDeadline.Sub(now)
+		if remaining < 28*time.Second || remaining > 32*time.Second {
+			t.Fatalf("expected remaining budget ~30s despite sender clock 29s ahead, got %v", remaining)
+		}
+
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("handler with sender 29s ahead: expected 200, got %d: %s", w.Code, w.Body.String())
 		}
 	}
 }

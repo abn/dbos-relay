@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
@@ -16,19 +19,19 @@ import (
 
 // FlappingExecutor records an executor that has flapped and triggered multiple recovery dispatches.
 type FlappingExecutor struct {
-	ExecutorID    string    `json:"executor_id"`
-	RecoveryCount int64     `json:"recovery_count"`
-	LastRecovery  time.Time `json:"last_recovery"`
+	ExecutorID    string    `json:"executorId"`
+	RecoveryCount int64     `json:"recoveryCount"`
+	LastRecovery  time.Time `json:"lastRecovery"`
 }
 
 // NeedsAttentionReport aggregates workflows and executors requiring operator intervention.
 type NeedsAttentionReport struct {
-	FailedWorkflows     []gen.Workflow     `json:"failed_workflows"`
-	StuckWorkflows      []gen.Workflow     `json:"stuck_workflows"`
-	OrphanedWorkflows   []gen.Workflow     `json:"orphaned_workflows"`
-	StrandedForks       []gen.Workflow     `json:"stranded_forks"`
-	FlappingExecutors   []FlappingExecutor `json:"flapping_executors"`
-	TotalNeedsAttention int                `json:"total_needs_attention"`
+	FailedWorkflows     []gen.Workflow     `json:"failedWorkflows"`
+	StuckWorkflows      []gen.Workflow     `json:"stuckWorkflows"`
+	OrphanedWorkflows   []gen.Workflow     `json:"orphanedWorkflows"`
+	StrandedForks       []gen.Workflow     `json:"strandedForks"`
+	FlappingExecutors   []FlappingExecutor `json:"flappingExecutors"`
+	TotalNeedsAttention int                `json:"totalNeedsAttention"`
 }
 
 // RecoveryStore provides recovery history queries for flapping detection.
@@ -41,7 +44,10 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 	orgName = normalizeOrg(orgName)
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
-		return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", "organisation not found: "+orgName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", orgName))
+		}
+		return nil, http.StatusServiceUnavailable, MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable")
 	}
 
 	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
@@ -49,7 +55,10 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 		Name:           appName,
 	})
 	if err != nil {
-		return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", "application not found: "+appName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", appName))
+		}
+		return nil, http.StatusServiceUnavailable, MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable")
 	}
 
 	if stuckSLA <= 0 {
@@ -86,10 +95,12 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 			SortDesc: true,
 		},
 	}
-	if res, err := s.router.Dispatch(ctx, orgName, appName, failedReq); err == nil {
-		if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
-			for _, item := range wfRes.Output {
-				report.FailedWorkflows = append(report.FailedWorkflows, mapWorkflow(item))
+	if s.router != nil {
+		if res, err := s.router.Dispatch(ctx, orgName, appName, failedReq); err == nil {
+			if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
+				for _, item := range wfRes.Output {
+					report.FailedWorkflows = append(report.FailedWorkflows, mapWorkflow(item))
+				}
 			}
 		}
 	}
@@ -116,21 +127,23 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 		},
 	}
 	now := time.Now().UTC()
-	if res, err := s.router.Dispatch(ctx, orgName, appName, pendingReq); err == nil {
-		if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
-			for _, item := range wfRes.Output {
-				wf := mapWorkflow(item)
+	if s.router != nil {
+		if res, err := s.router.Dispatch(ctx, orgName, appName, pendingReq); err == nil {
+			if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
+				for _, item := range wfRes.Output {
+					wf := mapWorkflow(item)
 
-				// Check if orphaned by version
-				if item.ApplicationVersion != nil && *item.ApplicationVersion != "" {
-					if !activeVersions[*item.ApplicationVersion] && len(activeVersions) > 0 {
-						report.OrphanedWorkflows = append(report.OrphanedWorkflows, wf)
+					// Check if orphaned by version
+					if item.ApplicationVersion != nil && *item.ApplicationVersion != "" {
+						if !activeVersions[*item.ApplicationVersion] && len(activeVersions) > 0 {
+							report.OrphanedWorkflows = append(report.OrphanedWorkflows, wf)
+						}
 					}
-				}
 
-				// Check if stuck beyond SLA
-				if !wf.CreatedAt.IsZero() && now.Sub(wf.CreatedAt) > stuckSLA {
-					report.StuckWorkflows = append(report.StuckWorkflows, wf)
+					// Check if stuck beyond SLA
+					if !wf.CreatedAt.IsZero() && now.Sub(wf.CreatedAt) > stuckSLA {
+						report.StuckWorkflows = append(report.StuckWorkflows, wf)
+					}
 				}
 			}
 		}
@@ -148,13 +161,15 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 			SortDesc: true,
 		},
 	}
-	if res, err := s.router.Dispatch(ctx, orgName, appName, enqueuedReq); err == nil {
-		if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
-			for _, item := range wfRes.Output {
-				isFork := (item.ForkedFrom != nil && *item.ForkedFrom != "") || (item.WasForkedFrom != nil && *item.WasForkedFrom)
-				if isFork && item.ApplicationVersion != nil && *item.ApplicationVersion != "" {
-					if !activeVersions[*item.ApplicationVersion] && len(activeVersions) > 0 {
-						report.StrandedForks = append(report.StrandedForks, mapWorkflow(item))
+	if s.router != nil {
+		if res, err := s.router.Dispatch(ctx, orgName, appName, enqueuedReq); err == nil {
+			if wfRes, ok := res.(*protocol.ListWorkflowsResponse); ok && wfRes != nil {
+				for _, item := range wfRes.Output {
+					isFork := (item.ForkedFrom != nil && *item.ForkedFrom != "") || (item.WasForkedFrom != nil && *item.WasForkedFrom)
+					if isFork && item.ApplicationVersion != nil && *item.ApplicationVersion != "" {
+						if !activeVersions[*item.ApplicationVersion] && len(activeVersions) > 0 {
+							report.StrandedForks = append(report.StrandedForks, mapWorkflow(item))
+						}
 					}
 				}
 			}

@@ -25,7 +25,8 @@ func handleEnvelopeError(errMsg *string) (int, gen.ErrorModel) {
 	msg := *errMsg
 	status := http.StatusBadRequest
 	title := "Executor Error"
-	if strings.Contains(strings.ToLower(msg), "not found") {
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "not found") || strings.Contains(lower, "does not exist") {
 		status = http.StatusNotFound
 		title = "Not Found"
 	}

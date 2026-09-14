@@ -5,6 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-14
 
+* **Update**: Reconciled autoscale REST operations in [REST surface discovery](discovery/rest-surface.md) as uninstalled policy 404 Problem Details responses and deferred Tier 5 capabilities.
 * **Update**: Added startup lease reconciliation, periodic orphan adoption, and lease heartbeats to High Availability coordinator.
 * **Update**: Added recovery dispatch attempt recording for successes and failures, and verified pending workflow counts before deleting dead records on cross-version recovery.
 * **Update**: Added grace-period timer cancellation to eliminate goroutine leaks across executor disconnect and reconnect cycles.

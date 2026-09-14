@@ -38,6 +38,33 @@ func isAdmin(ctx context.Context) bool {
 	return identity.Role == auth.RoleAdmin
 }
 
+func (s *Server) writeAuditLog(ctx context.Context, orgID pgtype.UUID, action string, details interface{}) {
+	if s.store == nil {
+		return
+	}
+	var userID pgtype.UUID
+	username := "system"
+	if ident, ok := auth.IdentityFromContext(ctx); ok && ident != nil {
+		if ident.Username != "" {
+			username = ident.Username
+		}
+	}
+	var detBytes []byte
+	if details != nil {
+		detBytes, _ = json.Marshal(details)
+	}
+	if len(detBytes) == 0 {
+		detBytes = []byte("{}")
+	}
+	_, _ = s.store.CreateAuditLog(ctx, storegen.CreateAuditLogParams{
+		OrganisationID: orgID,
+		UserID:         userID,
+		Username:       username,
+		Action:         action,
+		Details:        detBytes,
+	})
+}
+
 func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserRequestObject) (gen.GetCurrentUserResponseObject, error) {
 	identity, ok := auth.IdentityFromContext(ctx)
 	if !ok || identity == nil {
@@ -428,6 +455,10 @@ func (s *Server) handleRemoveMember(ctx context.Context, request gen.RemoveMembe
 		}, nil
 	}
 
+	s.writeAuditLog(ctx, org.ID, "member:remove", map[string]interface{}{
+		"target_user": user.Username,
+	})
+
 	return gen.RemoveMember200JSONResponse{
 		Id:    formatUUID(user.ID),
 		Name:  user.Username,
@@ -471,6 +502,11 @@ func (s *Server) handleGrantRole(ctx context.Context, request gen.GrantRoleReque
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
+
+	s.writeAuditLog(ctx, org.ID, "role:grant", map[string]interface{}{
+		"target_user": user.Username,
+		"role":        request.RoleName,
+	})
 
 	return gen.GrantRole204Response{}, nil
 }
@@ -552,6 +588,10 @@ func (s *Server) handleCreateRole(ctx context.Context, request gen.CreateRoleReq
 		}, nil
 	}
 
+	s.writeAuditLog(ctx, org.ID, "role:create", map[string]interface{}{
+		"role": r.Name,
+	})
+
 	loc := fmt.Sprintf("/v2/orgs/%s/roles/%s", request.OrgName, r.Name)
 	return gen.CreateRole201JSONResponse{
 		Body: gen.CreateRoleOutputBody{
@@ -597,6 +637,10 @@ func (s *Server) handleDeleteRole(ctx context.Context, request gen.DeleteRoleReq
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
+
+	s.writeAuditLog(ctx, org.ID, "role:delete", map[string]interface{}{
+		"role": request.RoleName,
+	})
 
 	return gen.DeleteRole204Response{}, nil
 }
@@ -675,6 +719,10 @@ func (s *Server) handleRequestDomainClaim(ctx context.Context, request gen.Reque
 		username = identity.Username
 	}
 
+	s.writeAuditLog(ctx, org.ID, "domain_claim:create", map[string]interface{}{
+		"domain": dc.Domain,
+	})
+
 	return gen.RequestDomainClaim201JSONResponse{
 		Domain:      dc.Domain,
 		Id:          formatUUID(dc.ID),
@@ -712,6 +760,10 @@ func (s *Server) handleReleaseDomainClaim(ctx context.Context, request gen.Relea
 		}, nil
 	}
 
+	s.writeAuditLog(ctx, org.ID, "domain_claim:delete", map[string]interface{}{
+		"domain": request.Domain,
+	})
+
 	return gen.ReleaseDomainClaim204Response{}, nil
 }
 
@@ -738,8 +790,13 @@ func (s *Server) handleListAuditLogs(ctx context.Context, request gen.ListAuditL
 	}
 
 	limit := int64(50)
-	if request.Params.Limit != nil && *request.Params.Limit > 0 {
-		limit = *request.Params.Limit
+	if request.Params.Limit != nil {
+		raw := *request.Params.Limit
+		if raw > 1000 {
+			limit = 1000
+		} else if raw > 0 {
+			limit = raw
+		}
 	}
 	offset := int64(0)
 	if request.Params.Offset != nil && *request.Params.Offset > 0 {

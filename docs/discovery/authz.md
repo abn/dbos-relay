@@ -228,12 +228,12 @@ self-hosted local deployments where no OIDC identity provider is configured.
      `"test-key"`).
 4. **Absence of OAuth-gated endpoints**:
    * Operations marked with `x-dbos-requires-oauth: true` in the OpenAPI
-     specification are not registered on Relay's HTTP multiplexer in no-auth
-     mode.
+     specification respond with 404 Problem Details from their handlers in no-auth
+     mode, and any HTTP method targeting these routes is rejected with 404.
    * Probing or invoking an OAuth-gated endpoint returns `404 Not Found`.
    * The server never returns `401 Unauthorized` or `403 Forbidden` for
      unregistered identity endpoints.
-   * Gated operations (15 total, per `internal/api/oauth_gated.go`):
+   * Gated operations (16 total, per upstream dbos-ctl `internal/api/oauth_gated.go`):
      * `createRole` (`POST /v2/orgs/{orgName}/roles`)
      * `deleteRole` (`DELETE /v2/orgs/{orgName}/roles/{roleName}`)
      * `generateSecret` (`POST /v2/orgs/{orgName}/secrets`)

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/abn/relay/internal/api"
+	apigen "github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/problem"
 	"github.com/abn/relay/internal/store/gen"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -311,5 +312,121 @@ func TestListExecutors(t *testing.T) {
 
 	if resp[0]["executorId"] != "exec-1" {
 		t.Errorf("got executorId %v, want exec-1", resp[0]["executorId"])
+	}
+}
+
+func TestUnmatchedRouteReturns404ProblemJSON(t *testing.T) {
+	srv := api.NewServer(nil, &fakeQuerier{}, nil)
+	h := api.NewHandler(&mockStore{}, srv)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v2/nonexistent", nil)
+
+	h.ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusNotFound; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got, want := rec.Header().Get("Content-Type"), "application/problem+json"; got != want {
+		t.Errorf("Content-Type = %q, want %q", got, want)
+	}
+
+	var p problem.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("unmarshal problem: %v", err)
+	}
+	if p.Status != http.StatusNotFound || p.Title == "" || p.Detail == "" {
+		t.Errorf("problem = %+v, want valid 404 problem", p)
+	}
+}
+
+func TestUnmatchedMethodReturns405ProblemJSON(t *testing.T) {
+	srv := api.NewServer(nil, &fakeQuerier{}, nil)
+	h := api.NewHandler(&mockStore{}, srv)
+
+	rec := httptest.NewRecorder()
+	// POST /v2/orgs/{orgName}/apps is not a registered method on that path (only GET is)
+	req := httptest.NewRequest(http.MethodPost, "/v2/orgs/my-org/apps", nil)
+
+	h.ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusMethodNotAllowed; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got, want := rec.Header().Get("Content-Type"), "application/problem+json"; got != want {
+		t.Errorf("Content-Type = %q, want %q", got, want)
+	}
+
+	var p problem.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("unmarshal problem: %v", err)
+	}
+	if p.Status != http.StatusMethodNotAllowed || p.Title == "" || p.Detail == "" {
+		t.Errorf("problem = %+v, want valid 405 problem", p)
+	}
+}
+
+func TestParameterBindingErrorReturns400ProblemJSON(t *testing.T) {
+	srv := api.NewServer(nil, &fakeQuerier{}, nil)
+	h := api.NewHandler(&mockStore{}, srv)
+
+	rec := httptest.NewRecorder()
+	// Pass an invalid integer to a query param, e.g. limit=invalid
+	req := httptest.NewRequest(http.MethodGet, "/v2/orgs/my-org/apps/my-app/workflows?limit=notanumber", nil)
+
+	h.ServeHTTP(rec, req)
+
+	if got, want := rec.Code, http.StatusBadRequest; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got, want := rec.Header().Get("Content-Type"), "application/problem+json"; got != want {
+		t.Errorf("Content-Type = %q, want %q", got, want)
+	}
+
+	var p problem.Problem
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+		t.Fatalf("unmarshal problem: %v", err)
+	}
+	if p.Status != http.StatusBadRequest || p.Title == "" || p.Detail == "" {
+		t.Errorf("problem = %+v, want valid 400 problem", p)
+	}
+}
+
+func TestRegisterAppNameValidation(t *testing.T) {
+	srv := api.NewServer(nil, &fakeQuerier{}, nil)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		orgName string
+		appName string
+	}{
+		{"org too short", "ab", "valid-app"},
+		{"org invalid char", "my_org!", "valid-app"},
+		{"app too short", "valid_org", "ab"},
+		{"app invalid char", "valid_org", "Invalid_App!"},
+		{"app uppercase", "valid_org", "MyApp"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := srv.RegisterApp(ctx, apigen.RegisterAppRequestObject{
+				OrgName: tc.orgName,
+				AppName: tc.appName,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			prob, ok := resp.(apigen.RegisterAppdefaultApplicationProblemPlusJSONResponse)
+			if !ok {
+				t.Fatalf("expected problem response, got %T", resp)
+			}
+			if prob.StatusCode != http.StatusUnprocessableEntity {
+				t.Errorf("status = %d, want 422", prob.StatusCode)
+			}
+			if prob.Body.Detail == nil || *prob.Body.Detail == "" {
+				t.Errorf("expected non-empty detail, got %+v", prob.Body)
+			}
+		})
 	}
 }

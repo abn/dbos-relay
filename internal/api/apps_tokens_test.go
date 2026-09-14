@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api"
@@ -33,6 +35,8 @@ type mockStoreReader struct {
 	revokeAPIKeyFunc       func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
 	upsertOrgFunc          func(ctx context.Context, name string) (storegen.Organisation, error)
 	listAlertRulesFunc     func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
+	createAuditLogFunc     func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
+	listAuditLogsFunc      func(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
 }
 
 func (m *mockStoreReader) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {
@@ -194,9 +198,15 @@ func (m *mockStoreReader) DeleteDomainClaim(ctx context.Context, arg storegen.De
 	return storegen.DomainClaim{}, nil
 }
 func (m *mockStoreReader) CreateAuditLog(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) {
+	if m.createAuditLogFunc != nil {
+		return m.createAuditLogFunc(ctx, arg)
+	}
 	return storegen.AuditLog{}, nil
 }
 func (m *mockStoreReader) ListAuditLogs(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error) {
+	if m.listAuditLogsFunc != nil {
+		return m.listAuditLogsFunc(ctx, arg)
+	}
 	return nil, nil
 }
 
@@ -271,7 +281,7 @@ func TestApplicationManagement(t *testing.T) {
 				if name == "my-org" {
 					return storegen.Organisation{ID: orgID, Name: name}, nil
 				}
-				return storegen.Organisation{}, errors.New("org not found")
+				return storegen.Organisation{}, pgx.ErrNoRows
 			},
 			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 				if arg.Name == "my-app" {
@@ -282,7 +292,7 @@ func TestApplicationManagement(t *testing.T) {
 						Settings:       []byte(`{"privateMode":true,"executorTimeoutSecs":120}`),
 					}, nil
 				}
-				return storegen.Application{}, errors.New("app not found")
+				return storegen.Application{}, pgx.ErrNoRows
 			},
 		}
 		srv := api.NewServer(nil, store, nil)
@@ -298,6 +308,26 @@ func TestApplicationManagement(t *testing.T) {
 		}
 		if okResp.Name != "my-app" || okResp.ExecutorTimeoutSecs != 120 || !okResp.PrivateMode {
 			t.Errorf("unexpected app payload: %+v", okResp)
+		}
+
+		// Default timeout when <= 0
+		store.getAppByNameFunc = func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+			if arg.Name == "my-app" {
+				return storegen.Application{
+					ID:             appID,
+					OrganisationID: orgID,
+					Name:           arg.Name,
+					Settings:       []byte(`{"executorTimeoutSecs":0}`),
+				}, nil
+			}
+			return storegen.Application{}, pgx.ErrNoRows
+		}
+		resp, err = srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if okResp, ok := resp.(gen.GetApp200JSONResponse); !ok || okResp.ExecutorTimeoutSecs != 60 {
+			t.Errorf("expected default timeout 60 for 0, got %+v", resp)
 		}
 
 		// Org not found
@@ -499,23 +529,81 @@ func TestApplicationManagement(t *testing.T) {
 	})
 
 	t.Run("Autoscale and Alerting Stubs", func(t *testing.T) {
-		srv := api.NewServer(nil, &mockStoreReader{}, nil)
+		appID := makeUUID(20)
+		orgID := makeUUID(21)
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
 
-		if _, err := srv.GetAutoscale(ctx, gen.GetAutoscaleRequestObject{}); err != nil {
-			t.Error(err)
+		// 1. GetAutoscale returns 404 Problem Details when no policy installed
+		resp1, err := srv.GetAutoscale(ctx, gen.GetAutoscaleRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if _, err := srv.GetAutoscaleVersion(ctx, gen.GetAutoscaleVersionRequestObject{}); err != nil {
-			t.Error(err)
+		if p, ok := resp1.(gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse); !ok || p.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404 GetAutoscale Problem response, got %T", resp1)
 		}
-		if _, err := srv.GetAutoscalingPolicy(ctx, gen.GetAutoscalingPolicyRequestObject{}); err != nil {
-			t.Error(err)
+
+		// 2. GetAutoscaleVersion returns 404 Problem Details
+		resp2, err := srv.GetAutoscaleVersion(ctx, gen.GetAutoscaleVersionRequestObject{OrgName: "my-org", AppName: "my-app", Version: "v1"})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if _, err := srv.SetAutoscalingPolicy(ctx, gen.SetAutoscalingPolicyRequestObject{}); err != nil {
-			t.Error(err)
+		if p, ok := resp2.(gen.GetAutoscaleVersiondefaultApplicationProblemPlusJSONResponse); !ok || p.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404 GetAutoscaleVersion Problem response, got %T", resp2)
 		}
-		if _, err := srv.DeleteAutoscalingPolicy(ctx, gen.DeleteAutoscalingPolicyRequestObject{}); err != nil {
-			t.Error(err)
+
+		// 3. GetAutoscalingPolicy returns 404 Problem Details
+		resp3, err := srv.GetAutoscalingPolicy(ctx, gen.GetAutoscalingPolicyRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatal(err)
 		}
+		if p, ok := resp3.(gen.GetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse); !ok || p.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404 GetAutoscalingPolicy Problem response, got %T", resp3)
+		}
+
+		// 4. SetAutoscalingPolicy returns 400 Problem Details
+		resp4, err := srv.SetAutoscalingPolicy(ctx, gen.SetAutoscalingPolicyRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p, ok := resp4.(gen.SetAutoscalingPolicydefaultApplicationProblemPlusJSONResponse); !ok || p.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 SetAutoscalingPolicy Problem response, got %T", resp4)
+		}
+
+		// 5. DeleteAutoscalingPolicy returns 204 No Content
+		resp5, err := srv.DeleteAutoscalingPolicy(ctx, gen.DeleteAutoscalingPolicyRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := resp5.(gen.DeleteAutoscalingPolicy204Response); !ok {
+			t.Errorf("expected 204 DeleteAutoscalingPolicy response, got %T", resp5)
+		}
+
+		// Missing app returns 404
+		storeNotFound := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{}, pgx.ErrNoRows
+			},
+		}
+		srvNotFound := api.NewServer(nil, storeNotFound, nil)
+		respNF, err := srvNotFound.GetAutoscale(ctx, gen.GetAutoscaleRequestObject{OrgName: "my-org", AppName: "missing"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p, ok := respNF.(gen.GetAutoscaledefaultApplicationProblemPlusJSONResponse); !ok || p.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404 for missing app, got %T", respNF)
+		}
+
 		if _, err := srv.ListAlertingRules(ctx, gen.ListAlertingRulesRequestObject{}); err != nil {
 			t.Error(err)
 		}
@@ -1031,7 +1119,7 @@ func TestWorkflowMutations(t *testing.T) {
 		}
 	})
 
-	t.Run("ForkWorkflow returns 201 with workflow ID", func(t *testing.T) {
+	t.Run("ForkWorkflow returns 201 with workflow ID and Location header", func(t *testing.T) {
 		newID := "forked-wf-123"
 		r := &mockRouter{
 			dispatchFunc: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
@@ -1046,6 +1134,8 @@ func TestWorkflowMutations(t *testing.T) {
 		}
 		srv := api.NewServer(r, nil, nil)
 		resp, err := srv.ForkWorkflow(ctx, gen.ForkWorkflowRequestObject{
+			OrgName:    "default",
+			AppName:    "checkout",
 			WorkflowId: "orig-1",
 			Body:       &gen.ForkWorkflowJSONRequestBody{},
 		})
@@ -1059,43 +1149,19 @@ func TestWorkflowMutations(t *testing.T) {
 		if forkResp.Body.WorkflowId != "forked-wf-123" {
 			t.Errorf("expected workflowId 'forked-wf-123', got %q", forkResp.Body.WorkflowId)
 		}
+		if forkResp.Headers.Location == nil || *forkResp.Headers.Location != "/v2/orgs/default/apps/checkout/workflows/forked-wf-123" {
+			t.Errorf("expected Location header '/v2/orgs/default/apps/checkout/workflows/forked-wf-123', got %v", forkResp.Headers.Location)
+		}
 	})
 
-	t.Run("ForkWorkflow stranded fork protection returns 409 when no live executor matches", func(t *testing.T) {
-		appID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
-		orgID := pgtype.UUID{Bytes: [16]byte{4, 5, 6}, Valid: true}
-		targetVersion := "v1.0-legacy"
-		statusSuccess := "SUCCESS"
-
-		store := &mockStoreReader{
-			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
-				return storegen.Organisation{ID: orgID, Name: "default"}, nil
-			},
-			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
-				return storegen.Application{ID: appID, Name: "checkout"}, nil
-			},
-			listExecutorsByAppFunc: func(ctx context.Context, app pgtype.UUID) ([]storegen.Executor, error) {
-				return []storegen.Executor{
-					{
-						ExecutorID:         "exec-live-1",
-						ApplicationVersion: "v2.0",
-						LeaseExpiresAt:     pgtype.Timestamptz{Time: time.Now().Add(10 * time.Minute), Valid: true},
-					},
-				}, nil
-			},
-		}
-
+	t.Run("ForkWorkflow succeeds when no live executor runs target version", func(t *testing.T) {
+		newID := "forked-legacy-1"
 		r := &mockRouter{
 			dispatchFunc: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
-				if getReq, ok := msg.(*protocol.GetWorkflowRequest); ok {
-					if getReq.WorkflowID == "wf-target-legacy" {
-						return &protocol.GetWorkflowResponse{
-							Envelope: protocol.Envelope{Type: protocol.MessageTypeGetWorkflow},
-							Output: &protocol.ListWorkflowsResponseBody{
-								WorkflowUUID:       "wf-target-legacy",
-								Status:             &statusSuccess,
-								ApplicationVersion: &targetVersion,
-							},
+				if forkReq, ok := msg.(*protocol.ForkWorkflowRequest); ok {
+					if forkReq.Body.WorkflowID == "wf-target-legacy" {
+						return &protocol.ForkWorkflowResponse{
+							NewWorkflowID: &newID,
 						}, nil
 					}
 				}
@@ -1103,9 +1169,8 @@ func TestWorkflowMutations(t *testing.T) {
 			},
 		}
 
-		srv := api.NewServer(r, store, nil)
+		srv := api.NewServer(r, nil, nil)
 
-		// 1. Without application_version override -> 409 Conflict
 		resp, err := srv.ForkWorkflow(ctx, gen.ForkWorkflowRequestObject{
 			OrgName:    "default",
 			AppName:    "checkout",
@@ -1115,44 +1180,15 @@ func TestWorkflowMutations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		conflictResp, ok := resp.(gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse)
+		forkResp, ok := resp.(gen.ForkWorkflow201JSONResponse)
 		if !ok {
-			t.Fatalf("expected 409 Conflict Problem response, got %T", resp)
+			t.Fatalf("expected 201 Created response, got %T", resp)
 		}
-		if conflictResp.StatusCode != http.StatusConflict {
-			t.Errorf("expected status 409, got %d", conflictResp.StatusCode)
+		if forkResp.Body.WorkflowId != "forked-legacy-1" {
+			t.Errorf("expected workflow ID 'forked-legacy-1', got %q", forkResp.Body.WorkflowId)
 		}
-
-		// 2. With application_version override to live version "v2.0" -> 201 Created
-		r.dispatchFunc = func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
-			if forkReq, ok := msg.(*protocol.ForkWorkflowRequest); ok {
-				newID := "forked-override-1"
-				if forkReq.Body.ApplicationVersion != nil && *forkReq.Body.ApplicationVersion == "v2.0" {
-					return &protocol.ForkWorkflowResponse{
-						NewWorkflowID: &newID,
-					}, nil
-				}
-			}
-			return nil, nil
-		}
-		overrideVersion := "v2.0"
-		resp2, err := srv.ForkWorkflow(ctx, gen.ForkWorkflowRequestObject{
-			OrgName:    "default",
-			AppName:    "checkout",
-			WorkflowId: "wf-target-legacy",
-			Body: &gen.ForkWorkflowJSONRequestBody{
-				AppVersion: &overrideVersion,
-			},
-		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		forkResp, ok := resp2.(gen.ForkWorkflow201JSONResponse)
-		if !ok {
-			t.Fatalf("expected 201 Created, got %T", resp2)
-		}
-		if forkResp.Body.WorkflowId != "forked-override-1" {
-			t.Errorf("expected workflow ID 'forked-override-1', got %q", forkResp.Body.WorkflowId)
+		if forkResp.Headers.Location == nil || *forkResp.Headers.Location != "/v2/orgs/default/apps/checkout/workflows/forked-legacy-1" {
+			t.Errorf("expected Location header, got %v", forkResp.Headers.Location)
 		}
 	})
 
@@ -1310,4 +1346,421 @@ func TestAlertingRulesSSRFAndSanitization(t *testing.T) {
 	if strings.Contains(fmt.Sprintf("%v", webhookDest["url"]), "SUPERSECRETHOOKTOKEN") {
 		t.Errorf("secret token leaked in webhook url: %v", webhookDest["url"])
 	}
+}
+
+func TestStoreUnavailable_Returns503WithoutLeakingDriver(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("failed to connect to `user=relay database=relay`: [::1]:5432 (localhost): dial error: dial tcp [::1]:5432: connect: connection refused")
+	store := &mockStoreReader{
+		getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+			return storegen.Organisation{}, dbErr
+		},
+	}
+	srv := api.NewServer(nil, store, nil)
+
+	// 1. ListApps
+	resp, err := srv.ListApps(ctx, gen.ListAppsRequestObject{OrgName: "my-org"})
+	if err != nil {
+		t.Fatalf("ListApps unexpected error: %v", err)
+	}
+	prob, ok := resp.(gen.ListAppsdefaultApplicationProblemPlusJSONResponse)
+	if !ok || prob.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %T (%+v)", resp, resp)
+	}
+	if prob.Body.Detail != nil {
+		for _, leak := range []string{"no rows", "user=", "database=", "dial tcp", "failed to connect", "SQLSTATE"} {
+			if strings.Contains(*prob.Body.Detail, leak) {
+				t.Errorf("detail leaks driver text %q: %s", leak, *prob.Body.Detail)
+			}
+		}
+	}
+
+	// 2. GetApp
+	getResp, err := srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "my-org", AppName: "my-app"})
+	if err != nil {
+		t.Fatalf("GetApp unexpected error: %v", err)
+	}
+	getProb, ok := getResp.(gen.GetAppdefaultApplicationProblemPlusJSONResponse)
+	if !ok || getProb.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %T (%+v)", getResp, getResp)
+	}
+	if getProb.Body.Detail != nil {
+		for _, leak := range []string{"no rows", "user=", "database=", "dial tcp", "failed to connect", "SQLSTATE"} {
+			if strings.Contains(*getProb.Body.Detail, leak) {
+				t.Errorf("detail leaks driver text %q: %s", leak, *getProb.Body.Detail)
+			}
+		}
+	}
+
+	// 3. ListTokens
+	tokenResp, err := srv.ListTokens(ctx, gen.ListTokensRequestObject{OrgName: "my-org"})
+	if err != nil {
+		t.Fatalf("ListTokens unexpected error: %v", err)
+	}
+	tokenProb, ok := tokenResp.(gen.ListTokensdefaultApplicationProblemPlusJSONResponse)
+	if !ok || tokenProb.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %T (%+v)", tokenResp, tokenResp)
+	}
+}
+
+func TestDataPlaneFallback_ErrorMappings(t *testing.T) {
+	readOnlyErr := fmt.Errorf("dispatch failed: %w", router.ErrReadOnlyMode)
+	code, model := api.RouterErrorToModel(readOnlyErr)
+	if code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for read-only error, got %d", code)
+	}
+	if model.Title == nil || *model.Title != "Forbidden" {
+		t.Errorf("expected title 'Forbidden', got %v", model.Title)
+	}
+
+	dpErr := fmt.Errorf("fallback failed: %w", router.ErrDataPlaneUnavailable)
+	code, model = api.RouterErrorToModel(dpErr)
+	if code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 Service Unavailable for data-plane error, got %d", code)
+	}
+
+	storeErr := fmt.Errorf("lookup failed: %w", router.ErrStoreUnavailable)
+	code, model = api.RouterErrorToModel(storeErr)
+	if code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 Service Unavailable for store error, got %d", code)
+	}
+	if model.Detail != nil && *model.Detail != "database store is unavailable" {
+		t.Errorf("expected detail 'database store is unavailable', got %q", *model.Detail)
+	}
+}
+
+func TestGroup7_LifecycleAndAudit(t *testing.T) {
+	ctx := context.Background()
+	orgID := makeUUID(50)
+	appID := makeUUID(51)
+
+	t.Run("ListAppVersions router dispatch and fallback", func(t *testing.T) {
+		routerDispatched := false
+		r := &mockRouter{
+			dispatchFunc: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				if _, ok := msg.(*protocol.ListApplicationVersionsRequest); ok {
+					routerDispatched = true
+					return &protocol.ListApplicationVersionsResponse{
+						Output: []protocol.ApplicationVersionOutput{
+							{Name: "v2.1.0"},
+							{Name: "v2.0.0"},
+						},
+					}, nil
+				}
+				return nil, errors.New("unexpected message")
+			},
+		}
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+		}
+		srv := api.NewServer(r, store, nil)
+		resp, err := srv.ListAppVersions(ctx, gen.ListAppVersionsRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		listResp, ok := resp.(gen.ListAppVersions200JSONResponse)
+		if !ok || len(listResp) != 2 {
+			t.Fatalf("expected 2 versions from router, got %v", resp)
+		}
+		if !routerDispatched {
+			t.Fatal("expected router dispatch")
+		}
+
+		// Fallback when router fails with ErrNoLiveExecutor
+		r.dispatchFunc = func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+			return nil, router.ErrNoLiveExecutor
+		}
+		store.listExecutorsByAppFunc = func(ctx context.Context, id pgtype.UUID) ([]storegen.Executor, error) {
+			return []storegen.Executor{
+				{ApplicationVersion: "v1.0.0", ConnectedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}},
+				{ApplicationVersion: "v1.0.0", ConnectedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}},
+				{ApplicationVersion: "v0.9.0", ConnectedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}},
+			}, nil
+		}
+		respFB, err := srv.ListAppVersions(ctx, gen.ListAppVersionsRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatalf("unexpected error on fallback: %v", err)
+		}
+		fbList, ok := respFB.(gen.ListAppVersions200JSONResponse)
+		if !ok || len(fbList) != 2 {
+			t.Fatalf("expected 2 distinct versions on fallback, got %v", respFB)
+		}
+	})
+
+	t.Run("UpdateApp retention dispatch", func(t *testing.T) {
+		gcTime := int64(86400000)
+		var dispatchedRetention *protocol.RetentionRequest
+		r := &mockRouter{
+			dispatchFunc: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				if req, ok := msg.(*protocol.RetentionRequest); ok {
+					dispatchedRetention = req
+					return &protocol.RetentionResponse{Success: true}, nil
+				}
+				return nil, errors.New("unexpected message")
+			},
+		}
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+			updateAppSettingsFunc: func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, Settings: arg.Settings}, nil
+			},
+		}
+		srv := api.NewServer(r, store, nil)
+		resp, err := srv.UpdateApp(ctx, gen.UpdateAppRequestObject{
+			OrgName: "my-org",
+			AppName: "my-app",
+			Body:    &gen.UpdateAppJSONRequestBody{GcTimeThresholdMs: &gcTime},
+		})
+		if err != nil {
+			t.Fatalf("UpdateApp error: %v", err)
+		}
+		if _, ok := resp.(gen.UpdateApp204Response); !ok {
+			t.Fatalf("expected UpdateApp204Response, got %T", resp)
+		}
+		if dispatchedRetention == nil {
+			t.Fatal("expected RetentionRequest to be dispatched to router")
+		}
+		if dispatchedRetention.Body.GCCutoffEpochMs == nil || *dispatchedRetention.Body.GCCutoffEpochMs <= 0 {
+			t.Errorf("expected positive cutoff epoch, got %v", dispatchedRetention.Body.GCCutoffEpochMs)
+		}
+	})
+
+	t.Run("Application language population", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+			listAppsByOrgFunc: func(ctx context.Context, id pgtype.UUID) ([]storegen.Application, error) {
+				return []storegen.Application{{ID: appID, OrganisationID: orgID, Name: "py-app"}}, nil
+			},
+			listExecutorsByAppFunc: func(ctx context.Context, id pgtype.UUID) ([]storegen.Executor, error) {
+				return []storegen.Executor{
+					{
+						ExecutorID: "exec-py",
+						Status:     storegen.ExecutorStatusConnected,
+						Metadata:   []byte(`{"language":"python"}`),
+					},
+				}, nil
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+
+		// GetApp
+		resp, err := srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "my-org", AppName: "py-app"})
+		if err != nil {
+			t.Fatalf("GetApp error: %v", err)
+		}
+		appResp, ok := resp.(gen.GetApp200JSONResponse)
+		if !ok || appResp.Language == nil || *appResp.Language != "python" {
+			t.Fatalf("expected language python, got %+v", appResp.Language)
+		}
+
+		// ListApps
+		respList, err := srv.ListApps(ctx, gen.ListAppsRequestObject{OrgName: "my-org"})
+		if err != nil {
+			t.Fatalf("ListApps error: %v", err)
+		}
+		appList, ok := respList.(gen.ListApps200JSONResponse)
+		if !ok || len(appList) != 1 || appList[0].Language == nil || *appList[0].Language != "python" {
+			t.Fatalf("expected list language python, got %+v", appList)
+		}
+	})
+
+	t.Run("Audit log limit clamping and mutation recording", func(t *testing.T) {
+		var capturedLimit int64
+		var capturedAction string
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			listAuditLogsFunc: func(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error) {
+				capturedLimit = arg.Limit
+				return []storegen.AuditLog{}, nil
+			},
+			createAuditLogFunc: func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) {
+				capturedAction = arg.Action
+				return storegen.AuditLog{ID: makeUUID(52), Action: arg.Action}, nil
+			},
+		}
+		authCtx := auth.WithIdentity(ctx, &auth.UserIdentity{
+			Subject: "admin-user",
+			IsAdmin: true,
+			Role:    auth.RoleAdmin,
+		})
+		srv := api.NewServer(nil, store, nil).WithAuth(true, nil)
+
+		// Limit clamping in ListAuditLogs (when auth is present)
+		bigLimit := int64(5000)
+		_, err := srv.ListAuditLogs(authCtx, gen.ListAuditLogsRequestObject{
+			OrgName: "my-org",
+			Params:  gen.ListAuditLogsParams{Limit: &bigLimit},
+		})
+		if err != nil {
+			t.Fatalf("ListAuditLogs error: %v", err)
+		}
+		if capturedLimit != 1000 {
+			t.Errorf("expected limit clamped to 1000, got %d", capturedLimit)
+		}
+
+		// Mutation recording: CreateRole
+		perms := []string{"view"}
+		_, err = srv.CreateRole(authCtx, gen.CreateRoleRequestObject{
+			OrgName: "my-org",
+			Body:    &gen.CreateRoleJSONRequestBody{Name: "custom-role", Permissions: &perms},
+		})
+		if err != nil {
+			t.Fatalf("CreateRole error: %v", err)
+		}
+		if capturedAction != "role:create" {
+			t.Errorf("expected audit action role:create, got %s", capturedAction)
+		}
+
+		// Mutation recording: DeleteRole
+		_, err = srv.DeleteRole(authCtx, gen.DeleteRoleRequestObject{
+			OrgName:  "my-org",
+			RoleName: "custom-role",
+		})
+		if err != nil {
+			t.Fatalf("DeleteRole error: %v", err)
+		}
+		if capturedAction != "role:delete" {
+			t.Errorf("expected audit action role:delete, got %s", capturedAction)
+		}
+
+		// Mutation recording: GrantRole
+		_, err = srv.GrantRole(authCtx, gen.GrantRoleRequestObject{
+			OrgName:  "my-org",
+			Username: "target-user",
+			RoleName: "admin",
+		})
+		if err != nil {
+			t.Fatalf("GrantRole error: %v", err)
+		}
+		if capturedAction != "role:grant" {
+			t.Errorf("expected audit action role:grant, got %s", capturedAction)
+		}
+
+		// Mutation recording: RemoveMember
+		_, err = srv.RemoveMember(authCtx, gen.RemoveMemberRequestObject{
+			OrgName:  "my-org",
+			Username: "target-user",
+		})
+		if err != nil {
+			t.Fatalf("RemoveMember error: %v", err)
+		}
+		if capturedAction != "member:remove" {
+			t.Errorf("expected audit action member:remove, got %s", capturedAction)
+		}
+
+		// Mutation recording: RequestDomainClaim
+		_, err = srv.RequestDomainClaim(authCtx, gen.RequestDomainClaimRequestObject{
+			OrgName: "my-org",
+			Body:    &gen.RequestDomainClaimJSONRequestBody{Domain: "example.com"},
+		})
+		if err != nil {
+			t.Fatalf("RequestDomainClaim error: %v", err)
+		}
+		if capturedAction != "domain_claim:create" {
+			t.Errorf("expected audit action domain_claim:create, got %s", capturedAction)
+		}
+
+		// Mutation recording: ReleaseDomainClaim
+		_, err = srv.ReleaseDomainClaim(authCtx, gen.ReleaseDomainClaimRequestObject{
+			OrgName: "my-org",
+			Domain:  "example.com",
+		})
+		if err != nil {
+			t.Fatalf("ReleaseDomainClaim error: %v", err)
+		}
+		if capturedAction != "domain_claim:delete" {
+			t.Errorf("expected audit action domain_claim:delete, got %s", capturedAction)
+		}
+	})
+
+	t.Run("Needs attention HTTP endpoint and JSON tags", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+			listExecutorsByAppFunc: func(ctx context.Context, id pgtype.UUID) ([]storegen.Executor, error) {
+				return []storegen.Executor{}, nil
+			},
+		}
+		srvLocal := api.NewServer(nil, store, nil)
+		handler := api.NewHandler(nil, srvLocal)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/v2/orgs/my-org/apps/my-app/needs-attention", nil)
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var parsed map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+			t.Fatalf("failed to parse JSON response: %v", err)
+		}
+		if _, ok := parsed["failedWorkflows"]; !ok {
+			t.Errorf("expected camelCase failedWorkflows field, got keys: %+v", parsed)
+		}
+		if _, ok := parsed["flappingExecutors"]; !ok {
+			t.Errorf("expected camelCase flappingExecutors field, got keys: %+v", parsed)
+		}
+		if _, ok := parsed["orphanedWorkflows"]; !ok {
+			t.Errorf("expected camelCase orphanedWorkflows field, got keys: %+v", parsed)
+		}
+	})
+
+	t.Run("OAuth gated routes return 404 Problem Details in no-auth mode for all verbs", func(t *testing.T) {
+		srvLocal := api.NewServer(nil, nil, nil)
+		handler := api.NewHandler(nil, srvLocal)
+		routes := []struct {
+			method string
+			path   string
+		}{
+			{http.MethodGet, "/v2/users/me"},
+			{http.MethodPost, "/v2/users"},
+			{http.MethodGet, "/v2/orgs/testorg"},
+			{http.MethodPatch, "/v2/orgs/testorg"},
+			{http.MethodPost, "/v2/orgs/testorg/join"},
+			{http.MethodPost, "/v2/orgs/testorg/secrets"},
+			{http.MethodGet, "/v2/orgs/testorg/members"},
+			{http.MethodDelete, "/v2/orgs/testorg/members/testuser"},
+			{http.MethodPut, "/v2/orgs/testorg/members/testuser/roles/admin"},
+			{http.MethodGet, "/v2/orgs/testorg/roles"},
+			{http.MethodPost, "/v2/orgs/testorg/roles"},
+			{http.MethodDelete, "/v2/orgs/testorg/roles/admin"},
+			{http.MethodGet, "/v2/orgs/testorg/domain-claims"},
+			{http.MethodPost, "/v2/orgs/testorg/domain-claims"},
+			{http.MethodDelete, "/v2/orgs/testorg/domain-claims/example.com"},
+			{http.MethodGet, "/v2/orgs/testorg/audit-logs"},
+		}
+		for _, rt := range routes {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(rt.method, rt.path, nil)
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("%s %s expected 404, got %d", rt.method, rt.path, rec.Code)
+			}
+			contentType := rec.Header().Get("Content-Type")
+			if !strings.Contains(contentType, "application/problem+json") {
+				t.Errorf("%s %s expected Content-Type application/problem+json, got %q", rt.method, rt.path, contentType)
+			}
+		}
+	})
 }

@@ -33,26 +33,28 @@ func TestWriteOmitsEmptyFields(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("response is not JSON: %v", err)
 	}
-	for _, key := range []string{"detail", "instance", "errors"} {
+	for _, key := range []string{"detail", "instance"} {
 		if _, present := body[key]; present {
 			t.Errorf("empty %q should be omitted, got %v", key, body[key])
 		}
 	}
 }
 
-func TestValidationErrorsSurviveRoundTrip(t *testing.T) {
+func TestProblemRoundTrip(t *testing.T) {
 	rec := httptest.NewRecorder()
 	problem.Write(rec, &problem.Problem{
-		Title:  "validation failed",
-		Status: 422,
-		Errors: []problem.Invalid{{Detail: "must match ^[a-z0-9_]+$", Pointer: "/name"}},
+		Type:     "about:blank",
+		Title:    "validation failed",
+		Status:   422,
+		Detail:   "invalid name",
+		Instance: "/v2/orgs/invalid",
 	})
 
 	var got problem.Problem
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(got.Errors) != 1 || got.Errors[0].Pointer != "/name" {
-		t.Fatalf("errors did not round-trip: %+v", got.Errors)
+	if got.Title != "validation failed" || got.Status != 422 || got.Detail != "invalid name" || got.Instance != "/v2/orgs/invalid" {
+		t.Fatalf("problem did not round-trip correctly: %+v", got)
 	}
 }

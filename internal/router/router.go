@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/dataplane"
@@ -14,12 +16,15 @@ import (
 )
 
 var (
-	ErrOrgNotFound     = errors.New("organisation not found")
-	ErrAppNotFound     = errors.New("application not found")
-	ErrNoLiveExecutor  = errors.New("no live executor connected")
+	ErrOrgNotFound          = errors.New("organisation not found")
+	ErrAppNotFound          = errors.New("application not found")
+	ErrNoLiveExecutor       = errors.New("no live executor connected")
 	ErrExecutorTimeout      = errors.New("executor request timed out")
 	ErrExecutorError        = errors.New("executor returned an error")
 	ErrOperationUnsupported = errors.New("operation not supported")
+	ErrStoreUnavailable     = errors.New("store unavailable")
+	ErrDataPlaneUnavailable = errors.New("data-plane unavailable")
+	ErrReadOnlyMode         = dataplane.ErrReadOnlyMode
 )
 
 type AppResolver interface {
@@ -113,7 +118,10 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 
 	org, err := r.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrOrgNotFound, orgName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", ErrOrgNotFound, orgName)
+		}
+		return nil, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
 	}
 
 	app, err := r.store.GetApplicationByName(ctx, gen.GetApplicationByNameParams{
@@ -121,7 +129,10 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 		Name:           appName,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
+		}
+		return nil, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
 	}
 
 	// For fleet-wide aggregate queries, prefer data-plane if configured to protect worker executors
@@ -138,24 +149,65 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 		errStr := err.Error()
 		isNoExecutor := strings.Contains(errStr, "no live executor") ||
 			strings.Contains(errStr, "no executors registered") ||
-			strings.Contains(errStr, "no executors available")
+			strings.Contains(errStr, "no executors available") ||
+			strings.Contains(errStr, "connection closed") ||
+			strings.Contains(errStr, "websocket: close")
 
 		// If no local executor is available and a peer forwarder is configured, check for peer ownership
 		if isNoExecutor && r.forwarder != nil {
 			if ir, ok := r.store.(InstanceResolver); ok {
 				execs, listErr := ir.ListConnectedExecutorsByApplication(ctx, app.ID)
 				if listErr == nil {
+					seenOwners := make(map[pgtype.UUID]bool)
+					attempts := 0
+					const maxPeerForwards = 3
+
 					for _, exec := range execs {
-						if exec.OwnerInstanceID.Valid && exec.OwnerInstanceID != r.localInstanceID {
-							inst, instErr := ir.GetInstance(ctx, exec.OwnerInstanceID)
-							if instErr == nil && inst.AdvertiseAddress != "" && inst.Port > 0 {
-								targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
-								fRes, fErr := r.forwarder.Forward(ctx, targetURL, msg)
-								if fErr == nil {
-									SetServedFrom(ctx, "executor")
-									return fRes, nil
-								}
+						if ctx.Err() != nil {
+							break
+						}
+						if attempts >= maxPeerForwards {
+							break
+						}
+						if !exec.OwnerInstanceID.Valid || exec.OwnerInstanceID == r.localInstanceID {
+							continue
+						}
+						if exec.LeaseExpiresAt.Valid && exec.LeaseExpiresAt.Time.Before(time.Now()) {
+							continue
+						}
+						if seenOwners[exec.OwnerInstanceID] {
+							continue
+						}
+						seenOwners[exec.OwnerInstanceID] = true
+
+						inst, instErr := ir.GetInstance(ctx, exec.OwnerInstanceID)
+						if instErr != nil || inst.AdvertiseAddress == "" || inst.Port <= 0 {
+							continue
+						}
+						if inst.HeartbeatAt.Valid && time.Since(inst.HeartbeatAt.Time) > 2*time.Minute {
+							continue
+						}
+
+						attempts++
+						targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
+
+						forwardTimeout := 5 * time.Second
+						if dl, ok := ctx.Deadline(); ok {
+							remaining := time.Until(dl)
+							if remaining < forwardTimeout {
+								forwardTimeout = remaining
 							}
+						}
+						if forwardTimeout <= 0 {
+							break
+						}
+
+						attemptCtx, cancel := context.WithTimeout(ctx, forwardTimeout)
+						fRes, fErr := r.forwarder.Forward(attemptCtx, targetURL, msg)
+						cancel()
+						if fErr == nil {
+							SetServedFrom(ctx, "executor")
+							return fRes, nil
 						}
 					}
 				}
@@ -172,10 +224,24 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 			if errors.Is(dpErr, dataplane.ErrUnsupportedOperation) {
 				return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, dpErr)
 			}
+			if errors.Is(dpErr, dataplane.ErrReadOnlyMode) {
+				return nil, fmt.Errorf("%w: %w", ErrReadOnlyMode, dpErr)
+			}
+			if strings.Contains(dpErr.Error(), "not found") {
+				if req, ok := msg.(*protocol.GetWorkflowRequest); ok {
+					return &protocol.GetWorkflowResponse{
+						Envelope: protocol.Envelope{
+							Type:      protocol.MessageTypeGetWorkflow,
+							RequestID: req.RequestID,
+						},
+						Output: nil,
+					}, nil
+				}
+			}
 			if errors.Is(dpErr, context.DeadlineExceeded) || strings.Contains(strings.ToLower(dpErr.Error()), "timed out") {
 				return nil, fmt.Errorf("%w: data-plane statement timeout: %w", ErrExecutorTimeout, dpErr)
 			}
-			return nil, fmt.Errorf("%w: data-plane fallback failed: %w", ErrNoLiveExecutor, dpErr)
+			return nil, fmt.Errorf("%w: data-plane fallback failed: %w", ErrDataPlaneUnavailable, dpErr)
 		}
 
 		if isNoExecutor {
