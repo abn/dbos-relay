@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api"
@@ -271,7 +272,7 @@ func TestApplicationManagement(t *testing.T) {
 				if name == "my-org" {
 					return storegen.Organisation{ID: orgID, Name: name}, nil
 				}
-				return storegen.Organisation{}, errors.New("org not found")
+				return storegen.Organisation{}, pgx.ErrNoRows
 			},
 			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 				if arg.Name == "my-app" {
@@ -282,7 +283,7 @@ func TestApplicationManagement(t *testing.T) {
 						Settings:       []byte(`{"privateMode":true,"executorTimeoutSecs":120}`),
 					}, nil
 				}
-				return storegen.Application{}, errors.New("app not found")
+				return storegen.Application{}, pgx.ErrNoRows
 			},
 		}
 		srv := api.NewServer(nil, store, nil)
@@ -310,7 +311,7 @@ func TestApplicationManagement(t *testing.T) {
 					Settings:       []byte(`{"executorTimeoutSecs":0}`),
 				}, nil
 			}
-			return storegen.Application{}, errors.New("app not found")
+			return storegen.Application{}, pgx.ErrNoRows
 		}
 		resp, err = srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "my-org", AppName: "my-app"})
 		if err != nil {
@@ -1329,5 +1330,86 @@ func TestAlertingRulesSSRFAndSanitization(t *testing.T) {
 	}
 	if strings.Contains(fmt.Sprintf("%v", webhookDest["url"]), "SUPERSECRETHOOKTOKEN") {
 		t.Errorf("secret token leaked in webhook url: %v", webhookDest["url"])
+	}
+}
+
+func TestStoreUnavailable_Returns503WithoutLeakingDriver(t *testing.T) {
+	ctx := context.Background()
+	dbErr := errors.New("failed to connect to `user=relay database=relay`: [::1]:5432 (localhost): dial error: dial tcp [::1]:5432: connect: connection refused")
+	store := &mockStoreReader{
+		getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+			return storegen.Organisation{}, dbErr
+		},
+	}
+	srv := api.NewServer(nil, store, nil)
+
+	// 1. ListApps
+	resp, err := srv.ListApps(ctx, gen.ListAppsRequestObject{OrgName: "my-org"})
+	if err != nil {
+		t.Fatalf("ListApps unexpected error: %v", err)
+	}
+	prob, ok := resp.(gen.ListAppsdefaultApplicationProblemPlusJSONResponse)
+	if !ok || prob.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %T (%+v)", resp, resp)
+	}
+	if prob.Body.Detail != nil {
+		for _, leak := range []string{"no rows", "user=", "database=", "dial tcp", "failed to connect", "SQLSTATE"} {
+			if strings.Contains(*prob.Body.Detail, leak) {
+				t.Errorf("detail leaks driver text %q: %s", leak, *prob.Body.Detail)
+			}
+		}
+	}
+
+	// 2. GetApp
+	getResp, err := srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "my-org", AppName: "my-app"})
+	if err != nil {
+		t.Fatalf("GetApp unexpected error: %v", err)
+	}
+	getProb, ok := getResp.(gen.GetAppdefaultApplicationProblemPlusJSONResponse)
+	if !ok || getProb.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %T (%+v)", getResp, getResp)
+	}
+	if getProb.Body.Detail != nil {
+		for _, leak := range []string{"no rows", "user=", "database=", "dial tcp", "failed to connect", "SQLSTATE"} {
+			if strings.Contains(*getProb.Body.Detail, leak) {
+				t.Errorf("detail leaks driver text %q: %s", leak, *getProb.Body.Detail)
+			}
+		}
+	}
+
+	// 3. ListTokens
+	tokenResp, err := srv.ListTokens(ctx, gen.ListTokensRequestObject{OrgName: "my-org"})
+	if err != nil {
+		t.Fatalf("ListTokens unexpected error: %v", err)
+	}
+	tokenProb, ok := tokenResp.(gen.ListTokensdefaultApplicationProblemPlusJSONResponse)
+	if !ok || tokenProb.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %T (%+v)", tokenResp, tokenResp)
+	}
+}
+
+func TestDataPlaneFallback_ErrorMappings(t *testing.T) {
+	readOnlyErr := fmt.Errorf("dispatch failed: %w", router.ErrReadOnlyMode)
+	code, model := api.RouterErrorToModel(readOnlyErr)
+	if code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for read-only error, got %d", code)
+	}
+	if model.Title == nil || *model.Title != "Forbidden" {
+		t.Errorf("expected title 'Forbidden', got %v", model.Title)
+	}
+
+	dpErr := fmt.Errorf("fallback failed: %w", router.ErrDataPlaneUnavailable)
+	code, model = api.RouterErrorToModel(dpErr)
+	if code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 Service Unavailable for data-plane error, got %d", code)
+	}
+
+	storeErr := fmt.Errorf("lookup failed: %w", router.ErrStoreUnavailable)
+	code, model = api.RouterErrorToModel(storeErr)
+	if code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 Service Unavailable for store error, got %d", code)
+	}
+	if model.Detail != nil && *model.Detail != "database store is unavailable" {
+		t.Errorf("expected detail 'database store is unavailable', got %q", *model.Detail)
 	}
 }

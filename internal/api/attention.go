@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
@@ -41,7 +44,10 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 	orgName = normalizeOrg(orgName)
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
-		return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", "organisation not found: "+orgName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", orgName))
+		}
+		return nil, http.StatusServiceUnavailable, MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable")
 	}
 
 	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
@@ -49,7 +55,10 @@ func (s *Server) GetNeedsAttention(ctx context.Context, orgName, appName string,
 		Name:           appName,
 	})
 	if err != nil {
-		return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", "application not found: "+appName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", appName))
+		}
+		return nil, http.StatusServiceUnavailable, MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable")
 	}
 
 	if stuckSLA <= 0 {

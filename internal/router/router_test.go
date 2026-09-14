@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/dataplane"
@@ -136,7 +137,7 @@ func TestDispatch_OrgNotFound(t *testing.T) {
 	ctx := context.Background()
 	store := &mockStore{
 		getOrgFunc: func(ctx context.Context, name string) (gen.Organisation, error) {
-			return gen.Organisation{}, errors.New("database: no rows in result set")
+			return gen.Organisation{}, pgx.ErrNoRows
 		},
 	}
 	dispatcher := &mockDispatcher{}
@@ -160,7 +161,7 @@ func TestDispatch_AppNotFound(t *testing.T) {
 			return gen.Organisation{ID: orgID, Name: name}, nil
 		},
 		getAppFunc: func(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
-			return gen.Application{}, errors.New("database: no rows in result set")
+			return gen.Application{}, pgx.ErrNoRows
 		},
 	}
 	dispatcher := &mockDispatcher{}
@@ -173,6 +174,30 @@ func TestDispatch_AppNotFound(t *testing.T) {
 	}
 	if !errors.Is(err, router.ErrAppNotFound) {
 		t.Errorf("expected ErrAppNotFound, got %v", err)
+	}
+}
+
+func TestDispatch_StoreUnavailable(t *testing.T) {
+	ctx := context.Background()
+	connErr := errors.New("read: connection reset by peer")
+	store := &mockStore{
+		getOrgFunc: func(ctx context.Context, name string) (gen.Organisation, error) {
+			return gen.Organisation{}, connErr
+		},
+	}
+	dispatcher := &mockDispatcher{}
+
+	r := router.New(store, dispatcher)
+	reqMsg := &protocol.Envelope{RequestID: "req-1"}
+	_, err := r.Dispatch(ctx, "my-org", "app", reqMsg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, router.ErrStoreUnavailable) {
+		t.Errorf("expected ErrStoreUnavailable, got %v", err)
+	}
+	if !errors.Is(err, connErr) {
+		t.Errorf("expected original error in chain, got %v", err)
 	}
 }
 
@@ -195,6 +220,14 @@ func TestDispatch_NoLiveExecutor(t *testing.T) {
 		{
 			name:     "contains no executors available",
 			errReply: errors.New("no executors available for application"),
+		},
+		{
+			name:     "connection closed while awaiting response",
+			errReply: errors.New("connection closed while awaiting response"),
+		},
+		{
+			name:     "dispatch failed websocket close sent",
+			errReply: errors.New("dispatch failed: websocket: close sent"),
 		},
 	}
 
@@ -373,7 +406,7 @@ func TestDispatch_DataPlaneFallbackErrors(t *testing.T) {
 		t.Fatalf("expected ErrExecutorTimeout on context.DeadlineExceeded, got: %v", err)
 	}
 
-	// 3. Connection refusal / other failure maps to ErrNoLiveExecutor
+	// 3. Connection refusal / other failure maps to ErrDataPlaneUnavailable
 	dpRefused := &mockDataPlaneManager{
 		hasDataPlane: true,
 		onDispatch: func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
@@ -383,7 +416,7 @@ func TestDispatch_DataPlaneFallbackErrors(t *testing.T) {
 	r3 := router.New(store, dispatcher)
 	r3.SetDataPlane(dpRefused)
 	_, err = r3.Dispatch(ctx, "my-org", "my-app", reqMsg)
-	if !errors.Is(err, router.ErrNoLiveExecutor) {
-		t.Fatalf("expected ErrNoLiveExecutor on connection refusal, got: %v", err)
+	if !errors.Is(err, router.ErrDataPlaneUnavailable) {
+		t.Fatalf("expected ErrDataPlaneUnavailable on connection refusal, got: %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
@@ -142,9 +144,15 @@ func (s *Server) ListApps(ctx context.Context, request gen.ListAppsRequestObject
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ListAppsdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.ListAppsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -170,9 +178,15 @@ func (s *Server) GetApp(ctx context.Context, request gen.GetAppRequestObject) (g
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.GetAppdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -181,9 +195,15 @@ func (s *Server) GetApp(ctx context.Context, request gen.GetAppRequestObject) (g
 		Name:           request.AppName,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.GetAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
 		return gen.GetAppdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -248,9 +268,15 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -259,9 +285,15 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 		Name:           request.AppName,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
 		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -317,9 +349,15 @@ func (s *Server) DeleteApp(ctx context.Context, request gen.DeleteAppRequestObje
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -328,9 +366,15 @@ func (s *Server) DeleteApp(ctx context.Context, request gen.DeleteAppRequestObje
 		Name:           request.AppName,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
 		return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -343,9 +387,15 @@ func (s *Server) ListAppVersions(ctx context.Context, request gen.ListAppVersion
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -354,9 +404,15 @@ func (s *Server) ListAppVersions(ctx context.Context, request gen.ListAppVersion
 		Name:           request.AppName,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
 		return gen.ListAppVersionsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -408,9 +464,15 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -419,9 +481,15 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 		Name:           request.AppName,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -467,9 +535,15 @@ func (s *Server) ListExecutors(ctx context.Context, request gen.ListExecutorsReq
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -478,9 +552,15 @@ func (s *Server) ListExecutors(ctx context.Context, request gen.ListExecutorsReq
 		Name:           request.AppName,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
+			}, nil
+		}
 		return gen.ListExecutorsdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Application not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 

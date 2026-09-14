@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
@@ -18,9 +20,15 @@ func (s *Server) ListTokens(ctx context.Context, request gen.ListTokensRequestOb
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.ListTokensdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.ListTokensdefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -59,9 +67,15 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
@@ -171,9 +185,15 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
 		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", err.Error()),
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
