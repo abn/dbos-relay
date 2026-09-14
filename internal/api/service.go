@@ -205,8 +205,72 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 				AuditMiddleware(server),
 				AuthMiddleware(server),
 			},
+			ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+				problem.Write(w, &problem.Problem{
+					Type:   "about:blank",
+					Title:  "Bad Request",
+					Status: http.StatusBadRequest,
+					Detail: err.Error(),
+				})
+			},
 		})
 	}
 
-	return mux
+	return &problemHandler{handler: mux}
+}
+
+type problemResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	intercept  bool
+}
+
+func (rw *problemResponseWriter) WriteHeader(code int) {
+	if rw.statusCode != 0 {
+		return
+	}
+	ct := rw.Header().Get("Content-Type")
+	if (code == http.StatusNotFound || code == http.StatusMethodNotAllowed) && !strings.Contains(ct, "problem+json") {
+		rw.statusCode = code
+		rw.intercept = true
+		return
+	}
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *problemResponseWriter) Write(b []byte) (int, error) {
+	if rw.intercept {
+		return len(b), nil
+	}
+	if rw.statusCode == 0 {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(b)
+}
+
+type problemHandler struct {
+	handler http.Handler
+}
+
+func (h *problemHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rw := &problemResponseWriter{ResponseWriter: w}
+	h.handler.ServeHTTP(rw, r)
+	if rw.intercept {
+		var title, detail string
+		if rw.statusCode == http.StatusNotFound {
+			title = "Not Found"
+			detail = "the requested resource was not found"
+		} else {
+			title = "Method Not Allowed"
+			detail = "the request method is not supported for this route"
+		}
+		w.Header().Del("X-Content-Type-Options")
+		problem.Write(w, &problem.Problem{
+			Type:   "about:blank",
+			Title:  title,
+			Status: rw.statusCode,
+			Detail: detail,
+		})
+	}
 }

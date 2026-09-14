@@ -13,18 +13,11 @@ const ContentType = "application/problem+json"
 
 // Problem is a single RFC 9457 problem detail object.
 type Problem struct {
-	Type     string    `json:"type,omitempty"`
-	Title    string    `json:"title"`
-	Status   int       `json:"status"`
-	Detail   string    `json:"detail,omitempty"`
-	Instance string    `json:"instance,omitempty"`
-	Errors   []Invalid `json:"errors,omitempty"`
-}
-
-// Invalid describes one validation failure within a Problem.
-type Invalid struct {
-	Detail  string `json:"detail"`
-	Pointer string `json:"pointer,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Title    string `json:"title"`
+	Status   int    `json:"status"`
+	Detail   string `json:"detail,omitempty"`
+	Instance string `json:"instance,omitempty"`
 }
 
 // Error lets a Problem travel as an error through handler code.

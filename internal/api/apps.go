@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,25 @@ import (
 	"github.com/abn/relay/internal/api/gen"
 	storegen "github.com/abn/relay/internal/store/gen"
 )
+
+var (
+	orgNameRegex = regexp.MustCompile(`^[a-z0-9_]{3,30}$`)
+	appNameRegex = regexp.MustCompile(`^[a-z0-9-_]{3,30}$`)
+)
+
+func validateOrgName(name string) error {
+	if !orgNameRegex.MatchString(name) {
+		return fmt.Errorf("organization name must be 3-30 characters and contain only lowercase alphanumeric characters and underscores")
+	}
+	return nil
+}
+
+func validateAppName(name string) error {
+	if !appNameRegex.MatchString(name) {
+		return fmt.Errorf("application name must be 3-30 characters and contain only lowercase alphanumeric characters, dashes, and underscores")
+	}
+	return nil
+}
 
 type appSettings struct {
 	PrivateMode         bool    `json:"privateMode,omitempty"`
@@ -172,6 +192,18 @@ func (s *Server) GetApp(ctx context.Context, request gen.GetAppRequestObject) (g
 // RegisterApp registers a new application or updates an existing one.
 func (s *Server) RegisterApp(ctx context.Context, request gen.RegisterAppRequestObject) (gen.RegisterAppResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
+	if err := validateOrgName(orgName); err != nil {
+		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Body:       MakeErrorModel(http.StatusUnprocessableEntity, "Validation Error", err.Error()),
+		}, nil
+	}
+	if err := validateAppName(request.AppName); err != nil {
+		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Body:       MakeErrorModel(http.StatusUnprocessableEntity, "Validation Error", err.Error()),
+		}, nil
+	}
 
 	org, err := s.store.UpsertOrganisation(ctx, orgName)
 	if err != nil {
