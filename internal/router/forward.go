@@ -45,28 +45,39 @@ var (
 )
 
 type nonceCache struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
+	mu       sync.Mutex
+	current  map[string]time.Time
+	previous map[string]time.Time
+	lastSwap time.Time
 }
 
 func newNonceCache() *nonceCache {
-	return &nonceCache{seen: make(map[string]time.Time)}
+	return &nonceCache{
+		current:  make(map[string]time.Time),
+		previous: make(map[string]time.Time),
+		lastSwap: time.Now(),
+	}
 }
 
 func (c *nonceCache) checkAndRecord(nonce string, now time.Time, ttl time.Duration) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for k, t := range c.seen {
-		if now.Sub(t) > ttl {
-			delete(c.seen, k)
-		}
+	if now.Sub(c.lastSwap) > ttl {
+		c.previous = c.current
+		c.current = make(map[string]time.Time)
+		c.lastSwap = now
 	}
 
-	if _, exists := c.seen[nonce]; exists {
+	if _, exists := c.current[nonce]; exists {
 		return false
 	}
-	c.seen[nonce] = now
+	if t, exists := c.previous[nonce]; exists {
+		if now.Sub(t) <= ttl {
+			return false
+		}
+	}
+	c.current[nonce] = now
 	return true
 }
 
@@ -324,12 +335,6 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 			}
 		}
 
-		// Replay check using nonce cache
-		if !cache.checkAndRecord(nonce, now, maxDrift) {
-			http.Error(w, ErrReplayedNonce.Error(), http.StatusUnauthorized)
-			return
-		}
-
 		// Limit body read to 10 MiB with http.MaxBytesReader
 		const maxForwardBodyBytes = 10 * 1024 * 1024
 		r.Body = http.MaxBytesReader(w, r.Body, maxForwardBodyBytes)
@@ -351,6 +356,12 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 				return
 			}
 			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		// Replay check using nonce cache after signature is verified
+		if !cache.checkAndRecord(nonce, now, maxDrift) {
+			http.Error(w, ErrReplayedNonce.Error(), http.StatusUnauthorized)
 			return
 		}
 

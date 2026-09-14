@@ -182,7 +182,7 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 	})
 
 	if server != nil {
-		mux.HandleFunc("GET /v2/orgs/{orgName}/apps/{appName}/needs-attention", func(w http.ResponseWriter, r *http.Request) {
+		needsAttentionHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			orgName := r.PathValue("orgName")
 			appName := r.PathValue("appName")
 			report, code, errModel := server.GetNeedsAttention(r.Context(), orgName, appName, 15*time.Minute)
@@ -207,6 +207,7 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(report)
 		})
+		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/needs-attention", AuditMiddleware(server)(AuthMiddleware(server)(needsAttentionHandler)))
 
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {

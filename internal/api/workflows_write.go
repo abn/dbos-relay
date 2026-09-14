@@ -35,13 +35,18 @@ func (s *Server) CancelWorkflow(ctx context.Context, request gen.CancelWorkflowR
 		return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if cancelRes, ok := res.(*protocol.CancelWorkflowResponse); ok {
-		if cancelRes.ErrorMessage != nil && *cancelRes.ErrorMessage != "" {
-			return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *cancelRes.ErrorMessage),
-			}, nil
-		}
+	cancelRes, ok := res.(*protocol.CancelWorkflowResponse)
+	if !ok {
+		return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if cancelRes.ErrorMessage != nil && *cancelRes.ErrorMessage != "" {
+		return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *cancelRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.CancelWorkflow204Response{}, nil
@@ -78,13 +83,18 @@ func (s *Server) BulkCancelWorkflows(ctx context.Context, request gen.BulkCancel
 		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if cancelRes, ok := res.(*protocol.CancelWorkflowResponse); ok {
-		if cancelRes.ErrorMessage != nil && *cancelRes.ErrorMessage != "" {
-			return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *cancelRes.ErrorMessage),
-			}, nil
-		}
+	cancelRes, ok := res.(*protocol.CancelWorkflowResponse)
+	if !ok {
+		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if cancelRes.ErrorMessage != nil && *cancelRes.ErrorMessage != "" {
+		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *cancelRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.BulkCancelWorkflows204Response{}, nil
@@ -114,13 +124,18 @@ func (s *Server) ResumeWorkflow(ctx context.Context, request gen.ResumeWorkflowR
 		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if resumeRes, ok := res.(*protocol.ResumeWorkflowResponse); ok {
-		if resumeRes.ErrorMessage != nil && *resumeRes.ErrorMessage != "" {
-			return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *resumeRes.ErrorMessage),
-			}, nil
-		}
+	resumeRes, ok := res.(*protocol.ResumeWorkflowResponse)
+	if !ok {
+		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if resumeRes.ErrorMessage != nil && *resumeRes.ErrorMessage != "" {
+		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *resumeRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.ResumeWorkflow204Response{}, nil
@@ -152,13 +167,18 @@ func (s *Server) BulkResumeWorkflows(ctx context.Context, request gen.BulkResume
 		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if resumeRes, ok := res.(*protocol.ResumeWorkflowResponse); ok {
-		if resumeRes.ErrorMessage != nil && *resumeRes.ErrorMessage != "" {
-			return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *resumeRes.ErrorMessage),
-			}, nil
-		}
+	resumeRes, ok := res.(*protocol.ResumeWorkflowResponse)
+	if !ok {
+		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if resumeRes.ErrorMessage != nil && *resumeRes.ErrorMessage != "" {
+		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *resumeRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.BulkResumeWorkflows204Response{}, nil
@@ -188,13 +208,18 @@ func (s *Server) DeleteWorkflow(ctx context.Context, request gen.DeleteWorkflowR
 		return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if delRes, ok := res.(*protocol.DeleteWorkflowResponse); ok {
-		if delRes.ErrorMessage != nil && *delRes.ErrorMessage != "" {
-			return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *delRes.ErrorMessage),
-			}, nil
-		}
+	delRes, ok := res.(*protocol.DeleteWorkflowResponse)
+	if !ok {
+		return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if delRes.ErrorMessage != nil && *delRes.ErrorMessage != "" {
+		return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *delRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.DeleteWorkflow204Response{}, nil
@@ -231,13 +256,18 @@ func (s *Server) BulkDeleteWorkflows(ctx context.Context, request gen.BulkDelete
 		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if delRes, ok := res.(*protocol.DeleteWorkflowResponse); ok {
-		if delRes.ErrorMessage != nil && *delRes.ErrorMessage != "" {
-			return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *delRes.ErrorMessage),
-			}, nil
-		}
+	delRes, ok := res.(*protocol.DeleteWorkflowResponse)
+	if !ok {
+		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if delRes.ErrorMessage != nil && *delRes.ErrorMessage != "" {
+		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *delRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.BulkDeleteWorkflows204Response{}, nil
@@ -293,16 +323,21 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 	if newWorkflowID != nil {
 		resultID = *newWorkflowID
 	}
-	if forkRes, ok := res.(*protocol.ForkWorkflowResponse); ok {
-		if forkRes.ErrorMessage != nil && *forkRes.ErrorMessage != "" {
-			return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *forkRes.ErrorMessage),
-			}, nil
-		}
-		if forkRes.NewWorkflowID != nil && *forkRes.NewWorkflowID != "" {
-			resultID = *forkRes.NewWorkflowID
-		}
+	forkRes, ok := res.(*protocol.ForkWorkflowResponse)
+	if !ok {
+		return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if forkRes.ErrorMessage != nil && *forkRes.ErrorMessage != "" {
+		return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *forkRes.ErrorMessage),
+		}, nil
+	}
+	if forkRes.NewWorkflowID != nil && *forkRes.NewWorkflowID != "" {
+		resultID = *forkRes.NewWorkflowID
 	}
 
 	response := gen.ForkWorkflow201JSONResponse{
@@ -364,16 +399,20 @@ func (s *Server) BulkForkWorkflowsFromFailure(ctx context.Context, request gen.B
 		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	var forkedIDs []string
-	if forkRes, ok := res.(*protocol.ForkFromFailureResponse); ok {
-		if forkRes.ErrorMessage != nil && *forkRes.ErrorMessage != "" {
-			return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *forkRes.ErrorMessage),
-			}, nil
-		}
-		forkedIDs = forkRes.ForkedWorkflowIDs
+	forkRes, ok := res.(*protocol.ForkFromFailureResponse)
+	if !ok {
+		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
 	}
+	if forkRes.ErrorMessage != nil && *forkRes.ErrorMessage != "" {
+		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *forkRes.ErrorMessage),
+		}, nil
+	}
+	forkedIDs := forkRes.ForkedWorkflowIDs
 	if forkedIDs == nil {
 		forkedIDs = []string{}
 	}
@@ -408,13 +447,18 @@ func (s *Server) ImportWorkflow(ctx context.Context, request gen.ImportWorkflowR
 		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
-	if importRes, ok := res.(*protocol.ImportWorkflowResponse); ok {
-		if importRes.ErrorMessage != nil && *importRes.ErrorMessage != "" {
-			return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{
-				StatusCode: http.StatusBadRequest,
-				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *importRes.ErrorMessage),
-			}, nil
-		}
+	importRes, ok := res.(*protocol.ImportWorkflowResponse)
+	if !ok {
+		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if importRes.ErrorMessage != nil && *importRes.ErrorMessage != "" {
+		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *importRes.ErrorMessage),
+		}, nil
 	}
 
 	return gen.ImportWorkflow201Response{}, nil

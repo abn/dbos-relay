@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -159,15 +161,9 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 				var orgName, roleName string
 				primaryOrg, err := server.store.GetUserPrimaryOrganisation(r.Context(), user.ID)
 				if err != nil || primaryOrg.Name == "" {
-					orgSlug := slugOrgName(user.Username)
-					org, err := server.store.UpsertOrganisation(r.Context(), orgSlug)
+					pOrgName, err := resolvePersonalOrg(r.Context(), server.store, user)
 					if err == nil {
-						_, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{
-							OrganisationID: org.ID,
-							UserID:         user.ID,
-							RoleName:       auth.RoleAdmin,
-						})
-						orgName = org.Name
+						orgName = pOrgName
 						roleName = auth.RoleAdmin
 					}
 				} else {
@@ -189,7 +185,14 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			// Perform authorization checks based on path
 			targetOrgName := r.PathValue("orgName")
 			targetAppName := r.PathValue("appName")
-			isJoin := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/join")
+			isJoin := false
+			if r.Method == http.MethodPost {
+				if r.Pattern != "" {
+					isJoin = r.Pattern == "POST /v2/orgs/{orgName}/join" || strings.HasSuffix(r.Pattern, "/v2/orgs/{orgName}/join")
+				} else {
+					isJoin = r.URL.Path == "/v2/orgs/"+targetOrgName+"/join" || strings.HasSuffix(r.URL.Path, "/v2/orgs/"+targetOrgName+"/join")
+				}
+			}
 			if targetOrgName == "" && r.URL.Path == "/v2/users/me" {
 				// Allow /v2/users/me
 			} else if targetOrgName != "" {
@@ -199,12 +202,16 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					if errors.Is(err, pgx.ErrNoRows) || strings.Contains(err.Error(), "not found") {
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Not Found", Status: http.StatusNotFound, Detail: "Organisation not found"})
 					} else {
-						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Internal Error", Status: http.StatusInternalServerError, Detail: err.Error()})
+						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Internal Error", Status: http.StatusInternalServerError, Detail: "Failed to resolve organisation"})
 					}
 					return
 				}
 
 				if isJoin {
+					if identity.IsAPIKey {
+						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API keys cannot join organisations"})
+						return
+					}
 					identity.OrgName = org.Name
 				} else if identity.IsAPIKey {
 					// API Key org check
@@ -226,7 +233,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						Username:       identity.Username,
 					})
 					if err != nil {
-						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: err.Error()})
+						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "User is not a member of this organisation"})
 						return
 					}
 
@@ -288,15 +295,9 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					if err == nil {
 						primaryOrg, err := server.store.GetUserPrimaryOrganisation(r.Context(), user.ID)
 						if err != nil || primaryOrg.Name == "" {
-							orgSlug := slugOrgName(user.Username)
-							org, err := server.store.UpsertOrganisation(r.Context(), orgSlug)
+							pOrgName, err := resolvePersonalOrg(r.Context(), server.store, user)
 							if err == nil {
-								_, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{
-									OrganisationID: org.ID,
-									UserID:         user.ID,
-									RoleName:       auth.RoleAdmin,
-								})
-								identity.OrgName = org.Name
+								identity.OrgName = pOrgName
 								identity.Role = auth.RoleAdmin
 							}
 						} else {
@@ -311,6 +312,48 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func resolvePersonalOrg(ctx context.Context, store StoreReader, user storegen.User) (string, error) {
+	baseSlug := slugOrgName(user.Username)
+	org, err := store.GetOrganisationByName(ctx, baseSlug)
+	if err == nil {
+		member, mErr := store.GetMember(ctx, storegen.GetMemberParams{
+			OrganisationID: org.ID,
+			Username:       user.Username,
+		})
+		if mErr == nil && member.UserID == user.ID {
+			return org.Name, nil
+		}
+		// Colliding organisation name owned by someone else. Disambiguate with user ID hash suffix.
+		hashSuffix := fmt.Sprintf("%x", sha256.Sum256([]byte(user.Username+":"+user.ID.String())))[:8]
+		disambiguated := baseSlug
+		if len(disambiguated) > 21 {
+			disambiguated = disambiguated[:21]
+		}
+		disambiguated = disambiguated + "_" + hashSuffix
+		newOrg, err := store.UpsertOrganisation(ctx, disambiguated)
+		if err != nil {
+			return "", err
+		}
+		_, _ = store.UpsertMemberRole(ctx, storegen.UpsertMemberRoleParams{
+			OrganisationID: newOrg.ID,
+			UserID:         user.ID,
+			RoleName:       auth.RoleAdmin,
+		})
+		return newOrg.Name, nil
+	}
+
+	newOrg, err := store.UpsertOrganisation(ctx, baseSlug)
+	if err != nil {
+		return "", err
+	}
+	_, _ = store.UpsertMemberRole(ctx, storegen.UpsertMemberRoleParams{
+		OrganisationID: newOrg.ID,
+		UserID:         user.ID,
+		RoleName:       auth.RoleAdmin,
+	})
+	return newOrg.Name, nil
 }
 
 func slugOrgName(s string) string {

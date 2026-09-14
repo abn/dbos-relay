@@ -150,9 +150,7 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 		errStr := err.Error()
 		isNoExecutor := strings.Contains(errStr, "no live executor") ||
 			strings.Contains(errStr, "no executors registered") ||
-			strings.Contains(errStr, "no executors available") ||
-			strings.Contains(errStr, "connection closed") ||
-			strings.Contains(errStr, "websocket: close")
+			strings.Contains(errStr, "no executors available")
 
 		// If no local executor is available and a peer forwarder is configured, check for peer ownership
 		if isNoExecutor && r.forwarder != nil {

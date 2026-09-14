@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -258,13 +259,23 @@ func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 		duration := time.Since(start)
 		logger.Info("http request",
 			"method", r.Method,
-			"path", r.URL.Path,
+			"path", redactLogPath(r.URL.Path),
 			"status", rec.statusCode,
 			"duration", duration,
 			"bytes", rec.bytesWritten,
 			"request_id", reqID,
 		)
 	})
+}
+
+func redactLogPath(path string) string {
+	if strings.HasPrefix(path, "/websocket/") {
+		parts := strings.Split(path, "/")
+		if len(parts) >= 4 {
+			return "/websocket/" + parts[2] + "/[REDACTED]"
+		}
+	}
+	return path
 }
 
 func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Manager, dataPlanes map[string]declarative.DataPlane, appMap map[string]gen.Application) {
@@ -281,6 +292,7 @@ func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Mana
 		timeout := time.Duration(dp.StatementTimeoutSecs) * time.Second
 		if err := dpManager.RegisterApp(dataplane.AppConfig{
 			ApplicationID:    app.ID,
+			ApplicationName:  app.Name,
 			DatabaseURL:      dbURL,
 			Mode:             dataplane.Mode(dp.Mode),
 			StatementTimeout: timeout,

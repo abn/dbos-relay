@@ -264,10 +264,11 @@ func (m *Manager) OnDisconnect(ctx context.Context, appID pgtype.UUID, executorI
 			"timeout", timeout,
 		)
 
+		version := exec.version
 		m.wg.Add(1)
 		//nolint:contextcheck // grace period timer outlives the disconnect notification context
 		safego.Go(m.logger, "liveness-watch-grace-period", func() {
-			m.watchGracePeriod(appID, executorID, exec.version, timer, timerDone)
+			m.watchGracePeriod(appID, executorID, version, timer, timerDone)
 		})
 	}
 }

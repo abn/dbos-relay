@@ -1726,6 +1726,28 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		}
 	})
 
+	t.Run("Needs attention HTTP endpoint authentication gating", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+		}
+		srvAuth := api.NewServer(nil, store, nil).WithAuth(true, nil)
+		handler := api.NewHandler(nil, srvAuth)
+
+		// Unauthenticated request must return 401 Problem Details
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/v2/orgs/my-org/apps/my-app/needs-attention", nil)
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected status 401 for unauthenticated request, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
 	t.Run("OAuth gated routes return 404 Problem Details in no-auth mode for all verbs", func(t *testing.T) {
 		srvLocal := api.NewServer(nil, nil, nil)
 		handler := api.NewHandler(nil, srvLocal)

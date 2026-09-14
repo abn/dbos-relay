@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -178,9 +179,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handshakeCtx, cancelHandshake := context.WithTimeout(r.Context(), timeout)
 	defer cancelHandshake()
 
-	registered := false
+	var registered atomic.Bool
 	defer func() {
-		if !registered {
+		if !registered.Load() {
 			_ = conn.Close(websocket.StatusPolicyViolation, "handshake failed or timed out")
 		}
 	}()
@@ -190,11 +191,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	safego.Go(h.logger, "hub-handshake-watcher", func() {
 		select {
 		case <-h.ctx.Done():
-			if !registered {
+			if !registered.Load() {
 				_ = conn.Close(websocket.StatusPolicyViolation, "hub closed")
 			}
 		case <-handshakeCtx.Done():
-			if !registered {
+			if !registered.Load() {
 				_ = conn.Close(websocket.StatusPolicyViolation, "handshake timed out")
 			}
 		case <-stopHandshakeWatcher:
@@ -343,7 +344,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.registry.Register(execConn)
-	registered = true
+	registered.Store(true)
 	if h.liveness != nil {
 		_ = h.liveness.OnConnect(r.Context(), appID, executorID, appVersion)
 	}

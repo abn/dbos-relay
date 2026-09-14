@@ -224,14 +224,6 @@ func TestDispatch_NoLiveExecutor(t *testing.T) {
 			name:     "contains no executors available",
 			errReply: errors.New("no executors available for application"),
 		},
-		{
-			name:     "connection closed while awaiting response",
-			errReply: errors.New("connection closed while awaiting response"),
-		},
-		{
-			name:     "dispatch failed websocket close sent",
-			errReply: errors.New("dispatch failed: websocket: close sent"),
-		},
 	}
 
 	for _, tc := range cases {

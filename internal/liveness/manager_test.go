@@ -635,6 +635,7 @@ func TestManager_ClusterReconnectRace(t *testing.T) {
 	mgrA.OnDisconnect(ctx, appID, execID)
 
 	// In the shared store, executor reconnected to instance B with an active future lease
+	store.mu.Lock()
 	store.executors[execID] = gen.Executor{
 		ApplicationID:   appID,
 		ExecutorID:      execID,
@@ -642,6 +643,7 @@ func TestManager_ClusterReconnectRace(t *testing.T) {
 		OwnerInstanceID: instB,
 		LeaseExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(1 * time.Minute), Valid: true},
 	}
+	store.mu.Unlock()
 
 	// Grace period timer on instance A expires
 	clock.Advance(65 * time.Second)

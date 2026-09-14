@@ -20,7 +20,12 @@ class DashboardApp {
     // Expose global callback for SVG DAG node clicks
     window.selectStep = (encodedStepJson) => {
       try {
-        const step = JSON.parse(decodeURIComponent(encodedStepJson));
+        let step;
+        try {
+          step = JSON.parse(encodedStepJson);
+        } catch {
+          step = JSON.parse(decodeURIComponent(encodedStepJson));
+        }
         this.selectedStep = step;
         this.renderStepModal(step);
       } catch (err) {

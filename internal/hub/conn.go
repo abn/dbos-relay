@@ -44,6 +44,9 @@ type ExecutorConn struct {
 	pongTimeout  time.Duration
 
 	touchLease func(ctx context.Context) error
+
+	lastRenewedAt time.Time
+	leaseDuration time.Duration
 }
 
 // NewExecutorConn creates a new executor connection.
@@ -68,6 +71,8 @@ func NewExecutorConn(
 		closed:             make(chan struct{}),
 		pingInterval:       pingInterval,
 		pongTimeout:        executorPingWait,
+		lastRenewedAt:      time.Now(),
+		leaseDuration:      60 * time.Second,
 	}
 }
 
@@ -75,6 +80,13 @@ func NewExecutorConn(
 func (c *ExecutorConn) SetPingPongTimeouts(interval, timeout time.Duration) {
 	c.pingInterval = interval
 	c.pongTimeout = timeout
+}
+
+// SetLeaseDuration sets the expected lease duration before timing out lease renewals.
+func (c *ExecutorConn) SetLeaseDuration(d time.Duration) {
+	if d > 0 {
+		c.leaseDuration = d
+	}
 }
 
 // SetTouchLease sets the lease renewal function called on each heartbeat ping.
@@ -204,7 +216,28 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 				err := c.touchLease(touchCtx)
 				touchCancel()
 				if err != nil {
-					return
+					if c.logger != nil {
+						c.logger.Warn("executor lease renewal failed, continuing heartbeat",
+							"executor_id", c.executorID,
+							"app", c.appName,
+							"error", err,
+						)
+					}
+					leaseDur := c.leaseDuration
+					if leaseDur <= 0 {
+						leaseDur = 60 * time.Second
+					}
+					if !c.lastRenewedAt.IsZero() && time.Since(c.lastRenewedAt) > leaseDur {
+						if c.logger != nil {
+							c.logger.Error("executor lease renewal expired, closing connection",
+								"executor_id", c.executorID,
+								"app", c.appName,
+							)
+						}
+						return
+					}
+				} else {
+					c.lastRenewedAt = time.Now()
 				}
 			}
 		}
