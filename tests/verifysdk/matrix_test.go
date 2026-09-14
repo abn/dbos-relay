@@ -1521,7 +1521,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				origID := triggerAppWorkflow(t, info.SecondaryPort)
 
 				t.Logf("[%s] Dispatching fork request via Relay API for original workflow %s", lang, origID)
-				forkedID := triggerRelayFork(t, info.AppName, origID, info.AppVersion)
+				forkAppVersion := info.AppVersion
+				if origWf := getFullWorkflowViaAPI(t, info.AppName, origID); origWf != nil && origWf.AppVersion != nil && *origWf.AppVersion != "" {
+					forkAppVersion = *origWf.AppVersion
+				}
+				forkedID := triggerRelayFork(t, info.AppName, origID, forkAppVersion)
 				t.Logf("[%s] Forked workflow initiated via Relay API: %s", lang, forkedID)
 
 				if forkedID == origID {

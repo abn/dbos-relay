@@ -94,6 +94,7 @@ services:
       DBOS_APP_NAME: python-sample-app
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_python?sslmode=disable
       ROLE: primary
+      CHAOS_SLEEP_SECS: "1800"
       HTTP_PORT: 8081
     ports:
       - "8081:8081"
