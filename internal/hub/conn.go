@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -32,6 +33,8 @@ type ExecutorConn struct {
 
 	conn *websocket.Conn
 	mux  *Multiplexer
+
+	logger *slog.Logger
 
 	unregister func()
 	closeOnce  sync.Once
@@ -79,6 +82,11 @@ func (c *ExecutorConn) SetTouchLease(fn func(ctx context.Context) error) {
 	c.touchLease = fn
 }
 
+// SetLogger configures the logger for the executor connection.
+func (c *ExecutorConn) SetLogger(logger *slog.Logger) {
+	c.logger = logger
+}
+
 // WriteMessage encodes and writes a protocol message to the connection safely.
 func (c *ExecutorConn) WriteMessage(ctx context.Context, msg protocol.Message) error {
 	data, err := protocol.Encode(msg)
@@ -107,6 +115,14 @@ func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 	for {
 		typ, data, err := c.conn.Read(context.WithoutCancel(ctx))
 		if err != nil {
+			if c.logger != nil {
+				c.logger.Debug("websocket read error",
+					"app_id", c.appID,
+					"executor_id", c.executorID,
+					"error", err,
+					"close_status", websocket.CloseStatus(err),
+				)
+			}
 			return
 		}
 		if typ != websocket.MessageText {
@@ -121,7 +137,14 @@ func (c *ExecutorConn) ReadPump(ctx context.Context, onMessage HubCallback) {
 			msg, err = protocol.Decode(data)
 		}
 		if err != nil {
-			continue // Or log it
+			if c.logger != nil {
+				c.logger.Warn("websocket protocol decode error",
+					"app_id", c.appID,
+					"executor_id", c.executorID,
+					"error", err,
+				)
+			}
+			continue
 		}
 
 		// Route response to multiplexer if it has a request ID and is a response.

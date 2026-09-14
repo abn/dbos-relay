@@ -1,6 +1,7 @@
 # Agent scratch area: working notes, drafts, inbox, task breakdowns.
 # Never committed.
 /.agents/brain/
+/.agents/auto-permissions/
 
 # Local assistant state, plus the tool shims .agents/bootstrap.sh generates
 /.claude/

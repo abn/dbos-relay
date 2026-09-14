@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   preflight:
@@ -38,6 +37,7 @@ jobs:
   goreleaser:
     name: Publish Release Artifacts
     needs: [preflight]
+    environment: release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

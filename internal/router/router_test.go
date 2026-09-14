@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -466,12 +467,14 @@ func (t *trackingStore) GetInstance(ctx context.Context, id pgtype.UUID) (gen.In
 }
 
 type recordingPeerForwarder struct {
-	forwardCalls int
-	forwardFunc  func(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error)
+	forwardCalls    int
+	recordedTargets []string
+	forwardFunc     func(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error)
 }
 
 func (rf *recordingPeerForwarder) Forward(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error) {
 	rf.forwardCalls++
+	rf.recordedTargets = append(rf.recordedTargets, targetURL)
 	if rf.forwardFunc != nil {
 		return rf.forwardFunc(ctx, targetURL, msg)
 	}
@@ -689,5 +692,56 @@ func TestRouter_PeerForwarding_CancelledContext(t *testing.T) {
 
 	if forwarder.forwardCalls != 0 {
 		t.Errorf("expected 0 forward calls for cancelled context, got %d", forwarder.forwardCalls)
+	}
+}
+
+func TestRouter_PeerForwarding_SchemeSupport(t *testing.T) {
+	ctx := context.Background()
+	localInstID := testUUID(1)
+	peer1 := testUUID(2)
+	appID := testUUID(3)
+
+	store := &trackingStore{
+		listExecsFunc: func(ctx context.Context, id pgtype.UUID) ([]gen.Executor, error) {
+			return []gen.Executor{
+				{
+					ApplicationID:   appID,
+					ExecutorID:      "exec-tls",
+					Status:          "connected",
+					OwnerInstanceID: peer1,
+					LeaseExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true},
+				},
+			}, nil
+		},
+		getInstanceFunc: func(ctx context.Context, id pgtype.UUID) (gen.Instance, error) {
+			return gen.Instance{
+				ID:               peer1,
+				AdvertiseAddress: "https://peer-tls.example.internal",
+				Port:             8090,
+				HeartbeatAt:      pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			}, nil
+		},
+	}
+
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	}
+
+	forwarder := &recordingPeerForwarder{}
+
+	r := router.New(store, dispatcher)
+	r.SetForwarder(forwarder, localInstID)
+
+	reqMsg := &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-scheme"}
+	_, _ = r.Dispatch(ctx, "my-org", "my-app", reqMsg)
+
+	if len(forwarder.recordedTargets) == 0 {
+		t.Fatal("expected at least 1 forward target recorded")
+	}
+	target := forwarder.recordedTargets[0]
+	if !strings.HasPrefix(target, "https://") {
+		t.Fatalf("expected forward target to use https scheme, got %s", target)
 	}
 }

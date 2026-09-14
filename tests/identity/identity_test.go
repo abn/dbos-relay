@@ -816,6 +816,50 @@ func TestIdentity_AuthModeValidatesOIDCAndAutoRegisters(t *testing.T) {
 	}
 }
 
+func TestIdentity_AuthModeAutoRegisters_UsernameWithDot(t *testing.T) {
+	idp := newMockIdP(t)
+	store := newMemoryStore()
+
+	validator := auth.NewOIDCValidator(idp.server.URL, "relay-client", idp.server.Client())
+	ts := setupServer(store, true, validator)
+	defer ts.Close()
+
+	token := idp.mintToken(t, map[string]any{
+		"sub":                "auth0|alice.smith",
+		"email":              "alice.smith@example.com",
+		"preferred_username": "Alice.Smith",
+		"iss":                idp.server.URL,
+		"aud":                "relay-client",
+		"exp":                time.Now().Add(time.Hour).Unix(),
+	})
+
+	req, _ := http.NewRequest("GET", ts.URL+"/v2/users/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /v2/users/me with token failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200 OK, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	var userProfile apigen.UserProfile
+	if err := json.NewDecoder(resp.Body).Decode(&userProfile); err != nil {
+		t.Fatalf("Decode user profile: %v", err)
+	}
+
+	if userProfile.OrgName == "" {
+		t.Errorf("expected non-empty OrgName, got empty string")
+	}
+	if userProfile.OrgName != "alice_smith" {
+		t.Errorf("expected OrgName alice_smith, got %s", userProfile.OrgName)
+	}
+}
+
 func TestIdentity_FailClosedOnJWKSUnavailable(t *testing.T) {
 	idp := newMockIdP(t)
 	store := newMemoryStore()

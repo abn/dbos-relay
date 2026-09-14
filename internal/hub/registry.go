@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/abn/relay/internal/safego"
 	"github.com/abn/relay/internal/store/gen"
 )
 
@@ -52,7 +53,9 @@ func (r *Registry) Register(conn *ExecutorConn) {
 		// Do not block locking while closing, though Close takes multiplexer lock.
 		// It's safer to close after we release registry lock, but we can call Close() here.
 		// To avoid deadlock, we can do it in a goroutine.
-		go func() { _ = existing.Close() }()
+		safego.Go(r.logger, "hub-close-existing", func() {
+			_ = existing.Close()
+		})
 	}
 
 	appMap[conn.executorID] = conn

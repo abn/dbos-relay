@@ -30,6 +30,10 @@ type Config struct {
 	ExecutorDeadline time.Duration
 
 	LogLevel slog.Level
+
+	TLSCertFile string
+	TLSKeyFile  string
+	PeerScheme  string
 }
 
 // AuthEnabled reports whether OIDC authentication is configured.
@@ -48,16 +52,24 @@ func Load(getenv func(string) string) (*Config, error) {
 	cfg := &Config{
 		DatabaseURL:      getenv("RELAY_DATABASE_URL"),
 		ListenAddr:       or(getenv("RELAY_LISTEN_ADDR"), defaultListenAddr),
+		// Provenance: https://docs.dbos.dev/production/hosting-conductor (confirmed 2026-09-08)
 		AdvertiseAddress: or(or(getenv("RELAY_ADVERTISE_ADDRESS"), getenv("DBOS__ADVERTISE_ADDRESS")), "127.0.0.1"),
-		InternalSecret:   or(getenv("RELAY_INTERNAL_SECRET"), getenv("DBOS__CLUSTER_SECRET")),
+		InternalSecret:   getenv("RELAY_INTERNAL_SECRET"),
 		OIDCIssuer:       getenv("RELAY_OIDC_ISSUER"),
 		OIDCAudience:     getenv("RELAY_OIDC_AUDIENCE"),
 		OIDCClientID:     getenv("RELAY_OIDC_CLIENT_ID"),
 		ExecutorDeadline: defaultExecutorDeadline,
 		LogLevel:         slog.LevelInfo,
+		TLSCertFile:      getenv("RELAY_TLS_CERT_FILE"),
+		TLSKeyFile:       getenv("RELAY_TLS_KEY_FILE"),
+		PeerScheme:       or(getenv("RELAY_PEER_SCHEME"), "http"),
 	}
 
 	var problems []error
+
+	if (cfg.TLSCertFile != "" && cfg.TLSKeyFile == "") || (cfg.TLSCertFile == "" && cfg.TLSKeyFile != "") {
+		problems = append(problems, errors.New("both RELAY_TLS_CERT_FILE and RELAY_TLS_KEY_FILE must be set to enable TLS"))
+	}
 
 	if cfg.DatabaseURL == "" {
 		problems = append(problems, errors.New("RELAY_DATABASE_URL is required"))

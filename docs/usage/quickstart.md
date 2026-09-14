@@ -55,7 +55,7 @@ Start the Relay server:
 ./bin/relay serve
 ```
 
-The server listens on `:8090` by default.
+The server listens on `:8090` by default. You can configure logging verbosity with `RELAY_LOG_LEVEL` (for example, `debug`, `info`, `warn`, or `error`). Schema migrations run automatically on startup unless `--skip-migrations` or `RELAY_SKIP_MIGRATIONS=true` is set.
 
 ## 5. Verify endpoints
 

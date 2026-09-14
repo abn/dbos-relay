@@ -98,3 +98,52 @@ func TestLoadOIDCRequiresAudience(t *testing.T) {
 		t.Fatalf("error should name missing RELAY_OIDC_AUDIENCE, got %q", err)
 	}
 }
+
+func TestLoadTLSConfiguration(t *testing.T) {
+	t.Run("both cert and key set", func(t *testing.T) {
+		got, err := config.Load(env(map[string]string{
+			"RELAY_DATABASE_URL":   "postgres://localhost/relay",
+			"RELAY_TLS_CERT_FILE":  "/path/to/cert.pem",
+			"RELAY_TLS_KEY_FILE":   "/path/to/key.pem",
+			"RELAY_PEER_SCHEME":    "https",
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.TLSCertFile != "/path/to/cert.pem" {
+			t.Errorf("expected TLSCertFile %q, got %q", "/path/to/cert.pem", got.TLSCertFile)
+		}
+		if got.TLSKeyFile != "/path/to/key.pem" {
+			t.Errorf("expected TLSKeyFile %q, got %q", "/path/to/key.pem", got.TLSKeyFile)
+		}
+		if got.PeerScheme != "https" {
+			t.Errorf("expected PeerScheme https, got %q", got.PeerScheme)
+		}
+	})
+
+	t.Run("only cert set fails", func(t *testing.T) {
+		_, err := config.Load(env(map[string]string{
+			"RELAY_DATABASE_URL":  "postgres://localhost/relay",
+			"RELAY_TLS_CERT_FILE": "/path/to/cert.pem",
+		}))
+		if err == nil {
+			t.Fatal("expected error when only cert file is set, got nil")
+		}
+		if !strings.Contains(err.Error(), "both RELAY_TLS_CERT_FILE and RELAY_TLS_KEY_FILE must be set") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("only key set fails", func(t *testing.T) {
+		_, err := config.Load(env(map[string]string{
+			"RELAY_DATABASE_URL": "postgres://localhost/relay",
+			"RELAY_TLS_KEY_FILE":  "/path/to/key.pem",
+		}))
+		if err == nil {
+			t.Fatal("expected error when only key file is set, got nil")
+		}
+		if !strings.Contains(err.Error(), "both RELAY_TLS_CERT_FILE and RELAY_TLS_KEY_FILE must be set") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}

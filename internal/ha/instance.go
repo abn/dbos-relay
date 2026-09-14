@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/abn/relay/internal/safego"
 	"github.com/abn/relay/internal/store/gen"
 )
 
@@ -133,8 +134,12 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.reconcileStartup(runCtx)
 
 	m.wg.Add(2)
-	go m.heartbeatLoop(runCtx)
-	go m.adoptionLoop(runCtx)
+	safego.Go(m.logger, "ha-heartbeat-loop", func() {
+		m.heartbeatLoop(runCtx)
+	})
+	safego.Go(m.logger, "ha-adoption-loop", func() {
+		m.adoptionLoop(runCtx)
+	})
 
 	m.logger.Info("instance registered and active",
 		"id", m.id,
