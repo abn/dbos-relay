@@ -138,10 +138,26 @@ func VerifyRequest(req *http.Request, body []byte, secret []byte, maxDrift time.
 		if err != nil {
 			return 0, time.Time{}, fmt.Errorf("invalid deadline header: %w", err)
 		}
-		if !parsed.IsZero() && now.After(parsed) {
-			return 0, time.Time{}, ErrExpiredDeadline
+		if !parsed.IsZero() {
+			senderStart := time.Unix(ts, int64(parsed.Nanosecond()))
+			budget := parsed.Sub(senderStart)
+			if budget <= 0 {
+				return 0, time.Time{}, ErrExpiredDeadline
+			}
+			const minBudget = 500 * time.Millisecond
+			const maxBudget = 60 * time.Second
+			if budget < minBudget {
+				budget = minBudget
+			}
+			if budget > maxBudget {
+				budget = maxBudget
+			}
+			if abs(now.Unix()-ts) == 0 && parsed.After(now) && parsed.Sub(senderStart) <= maxBudget {
+				deadline = parsed
+			} else {
+				deadline = now.Add(budget)
+			}
 		}
-		deadline = parsed
 	}
 
 	payload := buildSignaturePayload(tsStr, hopStr, req.Method, req.URL.RequestURI(), nonce, deadlineStr, body)
@@ -302,7 +318,7 @@ func NewForwardHandler(dispatcher Dispatcher, secret []byte, maxDrift time.Durat
 				http.Error(w, "invalid deadline header", http.StatusUnauthorized)
 				return
 			}
-			if !dl.IsZero() && now.After(dl) {
+			if !dl.IsZero() && dl.Sub(time.Unix(ts, 0)) <= 0 {
 				http.Error(w, ErrExpiredDeadline.Error(), http.StatusUnauthorized)
 				return
 			}

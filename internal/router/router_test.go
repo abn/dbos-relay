@@ -3,7 +3,9 @@ package router_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -418,5 +420,274 @@ func TestDispatch_DataPlaneFallbackErrors(t *testing.T) {
 	_, err = r3.Dispatch(ctx, "my-org", "my-app", reqMsg)
 	if !errors.Is(err, router.ErrDataPlaneUnavailable) {
 		t.Fatalf("expected ErrDataPlaneUnavailable on connection refusal, got: %v", err)
+	}
+}
+
+type trackingStore struct {
+	getOrgFunc       func(ctx context.Context, name string) (gen.Organisation, error)
+	getAppFunc       func(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error)
+	listExecsFunc    func(ctx context.Context, appID pgtype.UUID) ([]gen.Executor, error)
+	getInstanceFunc  func(ctx context.Context, id pgtype.UUID) (gen.Instance, error)
+	getInstanceCalls int
+}
+
+func (t *trackingStore) GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error) {
+	if t.getOrgFunc != nil {
+		return t.getOrgFunc(ctx, name)
+	}
+	return gen.Organisation{ID: testUUID(1), Name: name}, nil
+}
+
+func (t *trackingStore) GetApplicationByName(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
+	if t.getAppFunc != nil {
+		return t.getAppFunc(ctx, arg)
+	}
+	return gen.Application{ID: testUUID(2), OrganisationID: arg.OrganisationID, Name: arg.Name}, nil
+}
+
+func (t *trackingStore) ListConnectedExecutorsByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.Executor, error) {
+	if t.listExecsFunc != nil {
+		return t.listExecsFunc(ctx, appID)
+	}
+	return nil, nil
+}
+
+func (t *trackingStore) GetInstance(ctx context.Context, id pgtype.UUID) (gen.Instance, error) {
+	t.getInstanceCalls++
+	if t.getInstanceFunc != nil {
+		return t.getInstanceFunc(ctx, id)
+	}
+	return gen.Instance{
+		ID:               id,
+		AdvertiseAddress: "127.0.0.1",
+		Port:             8090,
+		HeartbeatAt:      pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}, nil
+}
+
+type recordingPeerForwarder struct {
+	forwardCalls int
+	forwardFunc  func(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error)
+}
+
+func (rf *recordingPeerForwarder) Forward(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error) {
+	rf.forwardCalls++
+	if rf.forwardFunc != nil {
+		return rf.forwardFunc(ctx, targetURL, msg)
+	}
+	return nil, errors.New("peer forward failed")
+}
+
+// TestRouter_PeerForwarding_DeduplicationAndFleetScale tests 5,000 connected executors owned by 2 peers.
+func TestRouter_PeerForwarding_DeduplicationAndFleetScale(t *testing.T) {
+	ctx := context.Background()
+	localInstID := testUUID(1)
+	peer1 := testUUID(2)
+	peer2 := testUUID(3)
+	appID := testUUID(4)
+
+	// Create 5,000 executors split between peer1 and peer2
+	executors := make([]gen.Executor, 5000)
+	for i := range executors {
+		owner := peer1
+		if i%2 == 1 {
+			owner = peer2
+		}
+		executors[i] = gen.Executor{
+			ApplicationID:   appID,
+			ExecutorID:      fmt.Sprintf("exec-%d", i),
+			Status:          "connected",
+			OwnerInstanceID: owner,
+			LeaseExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true},
+		}
+	}
+
+	store := &trackingStore{
+		listExecsFunc: func(ctx context.Context, id pgtype.UUID) ([]gen.Executor, error) {
+			return executors, nil
+		},
+	}
+
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	}
+
+	forwarder := &recordingPeerForwarder{}
+
+	r := router.New(store, dispatcher)
+	r.SetForwarder(forwarder, localInstID)
+
+	reqMsg := &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-fleet"}
+	_, err := r.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Must deduplicate by owner instance: at most 1 GetInstance and 1 Forward per distinct owner (2 total)
+	if store.getInstanceCalls > 2 {
+		t.Errorf("expected at most 2 GetInstance calls, got %d", store.getInstanceCalls)
+	}
+	if forwarder.forwardCalls > 2 {
+		t.Errorf("expected at most 2 Forward calls, got %d", forwarder.forwardCalls)
+	}
+}
+
+// TestRouter_PeerForwarding_UnreachableInstanceBounded tests 3 executors on 1 unreachable instance.
+func TestRouter_PeerForwarding_UnreachableInstanceBounded(t *testing.T) {
+	ctx := context.Background()
+	localInstID := testUUID(1)
+	peer1 := testUUID(2)
+	appID := testUUID(3)
+
+	executors := make([]gen.Executor, 3)
+	for i := range executors {
+		executors[i] = gen.Executor{
+			ApplicationID:   appID,
+			ExecutorID:      fmt.Sprintf("exec-%d", i),
+			Status:          "connected",
+			OwnerInstanceID: peer1,
+			LeaseExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true},
+		}
+	}
+
+	store := &trackingStore{
+		listExecsFunc: func(ctx context.Context, id pgtype.UUID) ([]gen.Executor, error) {
+			return executors, nil
+		},
+	}
+
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	}
+
+	forwarder := &recordingPeerForwarder{
+		forwardFunc: func(ctx context.Context, targetURL string, msg protocol.Message) (protocol.Message, error) {
+			time.Sleep(10 * time.Millisecond)
+			return nil, errors.New("dial tcp: connection refused")
+		},
+	}
+
+	r := router.New(store, dispatcher)
+	r.SetForwarder(forwarder, localInstID)
+
+	reqMsg := &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-unreachable"}
+	start := time.Now()
+	_, err := r.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Exactly 1 forward attempt and 1 GetInstance call
+	if store.getInstanceCalls != 1 {
+		t.Errorf("expected exactly 1 GetInstance call, got %d", store.getInstanceCalls)
+	}
+	if forwarder.forwardCalls != 1 {
+		t.Errorf("expected exactly 1 Forward call, got %d", forwarder.forwardCalls)
+	}
+	if elapsed > 1*time.Second {
+		t.Errorf("expected dispatch to return within configured budget, took %v", elapsed)
+	}
+}
+
+// TestRouter_PeerForwarding_StaleHeartbeatSkipped tests that an instance with stale heartbeat is skipped.
+func TestRouter_PeerForwarding_StaleHeartbeatSkipped(t *testing.T) {
+	ctx := context.Background()
+	localInstID := testUUID(1)
+	stalePeer := testUUID(2)
+	appID := testUUID(3)
+
+	store := &trackingStore{
+		listExecsFunc: func(ctx context.Context, id pgtype.UUID) ([]gen.Executor, error) {
+			return []gen.Executor{
+				{
+					ApplicationID:   appID,
+					ExecutorID:      "exec-stale",
+					Status:          "connected",
+					OwnerInstanceID: stalePeer,
+					LeaseExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true},
+				},
+			}, nil
+		},
+		getInstanceFunc: func(ctx context.Context, id pgtype.UUID) (gen.Instance, error) {
+			return gen.Instance{
+				ID:               id,
+				AdvertiseAddress: "127.0.0.1",
+				Port:             8090,
+				// Heartbeat older than 2 minutes
+				HeartbeatAt: pgtype.Timestamptz{Time: time.Now().Add(-5 * time.Minute), Valid: true},
+			}, nil
+		},
+	}
+
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	}
+
+	forwarder := &recordingPeerForwarder{}
+
+	r := router.New(store, dispatcher)
+	r.SetForwarder(forwarder, localInstID)
+
+	reqMsg := &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-stale"}
+	_, err := r.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if forwarder.forwardCalls != 0 {
+		t.Errorf("expected 0 forward calls for stale heartbeat peer, got %d", forwarder.forwardCalls)
+	}
+}
+
+// TestRouter_PeerForwarding_CancelledContext tests that a cancelled context terminates immediately.
+func TestRouter_PeerForwarding_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel before dispatch
+
+	localInstID := testUUID(1)
+	peer1 := testUUID(2)
+	appID := testUUID(3)
+
+	store := &trackingStore{
+		listExecsFunc: func(ctx context.Context, id pgtype.UUID) ([]gen.Executor, error) {
+			return []gen.Executor{
+				{
+					ApplicationID:   appID,
+					ExecutorID:      "exec-cancelled",
+					Status:          "connected",
+					OwnerInstanceID: peer1,
+					LeaseExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(5 * time.Minute), Valid: true},
+				},
+			}, nil
+		},
+	}
+
+	dispatcher := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	}
+
+	forwarder := &recordingPeerForwarder{}
+
+	r := router.New(store, dispatcher)
+	r.SetForwarder(forwarder, localInstID)
+
+	reqMsg := &protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-cancelled"}
+	_, err := r.Dispatch(ctx, "my-org", "my-app", reqMsg)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if forwarder.forwardCalls != 0 {
+		t.Errorf("expected 0 forward calls for cancelled context, got %d", forwarder.forwardCalls)
 	}
 }

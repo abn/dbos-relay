@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -157,17 +158,56 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 			if ir, ok := r.store.(InstanceResolver); ok {
 				execs, listErr := ir.ListConnectedExecutorsByApplication(ctx, app.ID)
 				if listErr == nil {
+					seenOwners := make(map[pgtype.UUID]bool)
+					attempts := 0
+					const maxPeerForwards = 3
+
 					for _, exec := range execs {
-						if exec.OwnerInstanceID.Valid && exec.OwnerInstanceID != r.localInstanceID {
-							inst, instErr := ir.GetInstance(ctx, exec.OwnerInstanceID)
-							if instErr == nil && inst.AdvertiseAddress != "" && inst.Port > 0 {
-								targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
-								fRes, fErr := r.forwarder.Forward(ctx, targetURL, msg)
-								if fErr == nil {
-									SetServedFrom(ctx, "executor")
-									return fRes, nil
-								}
+						if ctx.Err() != nil {
+							break
+						}
+						if attempts >= maxPeerForwards {
+							break
+						}
+						if !exec.OwnerInstanceID.Valid || exec.OwnerInstanceID == r.localInstanceID {
+							continue
+						}
+						if exec.LeaseExpiresAt.Valid && exec.LeaseExpiresAt.Time.Before(time.Now()) {
+							continue
+						}
+						if seenOwners[exec.OwnerInstanceID] {
+							continue
+						}
+						seenOwners[exec.OwnerInstanceID] = true
+
+						inst, instErr := ir.GetInstance(ctx, exec.OwnerInstanceID)
+						if instErr != nil || inst.AdvertiseAddress == "" || inst.Port <= 0 {
+							continue
+						}
+						if inst.HeartbeatAt.Valid && time.Since(inst.HeartbeatAt.Time) > 2*time.Minute {
+							continue
+						}
+
+						attempts++
+						targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
+
+						forwardTimeout := 5 * time.Second
+						if dl, ok := ctx.Deadline(); ok {
+							remaining := time.Until(dl)
+							if remaining < forwardTimeout {
+								forwardTimeout = remaining
 							}
+						}
+						if forwardTimeout <= 0 {
+							break
+						}
+
+						attemptCtx, cancel := context.WithTimeout(ctx, forwardTimeout)
+						fRes, fErr := r.forwarder.Forward(attemptCtx, targetURL, msg)
+						cancel()
+						if fErr == nil {
+							SetServedFrom(ctx, "executor")
+							return fRes, nil
 						}
 					}
 				}
