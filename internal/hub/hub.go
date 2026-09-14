@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/config"
@@ -304,10 +305,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux := NewMultiplexer()
 
 	var execConn *ExecutorConn
+	//nolint:contextcheck // unregister callback is invoked asynchronously on connection termination
 	unregister := func() {
-		if execConn != nil && h.registry.Unregister(h.ctx, execConn) {
+		disconnectCtx := h.ctx
+		if disconnectCtx.Err() != nil {
+			var cancel context.CancelFunc
+			disconnectCtx, cancel = context.WithTimeout(context.WithoutCancel(h.ctx), 5*time.Second)
+			defer cancel()
+		}
+		if execConn != nil && h.registry.Unregister(disconnectCtx, execConn) {
 			if h.liveness != nil {
-				h.liveness.OnDisconnect(h.ctx, appID, executorID)
+				h.liveness.OnDisconnect(disconnectCtx, appID, executorID)
 			}
 		}
 	}
@@ -316,11 +324,14 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.pingInterval > 0 && h.pongTimeout > 0 {
 		execConn.SetPingPongTimeouts(h.pingInterval, h.pongTimeout)
 	}
-	if h.instanceID.Valid && h.leaseStore != nil {
+	if h.leaseStore != nil {
 		execConn.SetTouchLease(func(ctx context.Context) error {
-			renewalExpires := pgtype.Timestamptz{
-				Time:  time.Now().Add(h.leaseDuration),
-				Valid: true,
+			var renewalExpires pgtype.Timestamptz
+			if h.instanceID.Valid {
+				renewalExpires = pgtype.Timestamptz{
+					Time:  time.Now().Add(h.leaseDuration),
+					Valid: true,
+				}
 			}
 			return h.leaseStore.TouchExecutorLastSeen(ctx, gen.TouchExecutorLastSeenParams{
 				ApplicationID:  appID,
@@ -348,6 +359,35 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer h.wg.Done()
 		execConn.HeartbeatPump(h.ctx)
 	}()
+}
+
+// CheckPendingWorkflows queries a target executor via WebSocket to verify whether pending workflows exist for a dead executor ID and version.
+func (h *Hub) CheckPendingWorkflows(ctx context.Context, appID pgtype.UUID, targetExecutorID, deadExecutorID, deadVersion string) (bool, error) {
+	conn, err := h.registry.GetExecutorConn(appID, targetExecutorID)
+	if err != nil {
+		return false, fmt.Errorf("target executor %s not connected: %w", targetExecutorID, err)
+	}
+
+	reqID := uuid.NewString()
+	req := &protocol.ExistPendingWorkflowsRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExistPendingWorkflows,
+			RequestID: reqID,
+		},
+		ExecutorID:         deadExecutorID,
+		ApplicationVersion: deadVersion,
+	}
+
+	res, _, err := h.dispatchToConn(ctx, conn, reqID, req)
+	if err != nil {
+		return false, fmt.Errorf("dispatching exist_pending_workflows to %s: %w", targetExecutorID, err)
+	}
+
+	if resp, ok := res.(*protocol.ExistPendingWorkflowsResponse); ok {
+		return resp.Exist, nil
+	}
+
+	return false, fmt.Errorf("unexpected response type %T", res)
 }
 
 // FindHealthyPeers returns all currently connected peers for an application.

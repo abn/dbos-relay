@@ -64,6 +64,7 @@ func newServeCommand() *cobra.Command {
 
 			livenessMgr := liveness.NewManager(liveness.NewRealClock(), s.Queries(), nil, logger)
 			dispatcher := liveness.NewRecoveryDispatcher(h, h, livenessMgr, liveness.DispatcherOptions{Logger: logger})
+			dispatcher.SetRecorder(s.Queries())
 			livenessMgr.SetRecovery(dispatcher)
 			h.SetLivenessTracker(livenessMgr)
 			defer livenessMgr.Stop()
@@ -84,6 +85,7 @@ func newServeCommand() *cobra.Command {
 				AdvertiseAddress: cfg.AdvertiseAddress,
 				Port:             port,
 				Logger:           logger,
+				Liveness:         livenessMgr,
 			})
 			if err := haMgr.Start(ctx); err != nil {
 				return fmt.Errorf("starting ha manager: %w", err)
@@ -91,6 +93,7 @@ func newServeCommand() *cobra.Command {
 			defer haMgr.Stop()
 
 			h.SetInstanceID(haMgr.ID())
+			livenessMgr.SetInstanceID(haMgr.ID())
 
 			r := router.New(s.Queries(), h)
 			dpManager := dataplane.NewManager(nil)

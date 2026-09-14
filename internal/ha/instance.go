@@ -21,6 +21,12 @@ type InstanceStore interface {
 	DeleteInstance(ctx context.Context, id pgtype.UUID) error
 	AdoptExpiredExecutors(ctx context.Context, arg gen.AdoptExpiredExecutorsParams) ([]gen.Executor, error)
 	DeleteStaleInstances(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error)
+	ReapExpiredExecutors(ctx context.Context, disconnectedAt pgtype.Timestamptz) (int64, error)
+}
+
+// LivenessAdopter adopts orphaned executors into the liveness state machine.
+type LivenessAdopter interface {
+	AdoptDisconnected(appID pgtype.UUID, executorID, version string)
 }
 
 // ManagerOptions configures the instance manager.
@@ -33,18 +39,20 @@ type ManagerOptions struct {
 	LeaseDuration     time.Duration
 	StaleThreshold    time.Duration
 	Logger            *slog.Logger
+	Liveness          LivenessAdopter
 }
 
 // Manager manages the registration, heartbeat, and executor adoption for a Relay node.
 type Manager struct {
-	store  InstanceStore
-	opts   ManagerOptions
-	logger *slog.Logger
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	id     pgtype.UUID
-	addr   string
-	port   int
+	store    InstanceStore
+	opts     ManagerOptions
+	logger   *slog.Logger
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	id       pgtype.UUID
+	addr     string
+	port     int
+	liveness LivenessAdopter
 }
 
 // NewManager creates a new instance manager.
@@ -77,13 +85,19 @@ func NewManager(store InstanceStore, opts ManagerOptions) *Manager {
 	}
 
 	return &Manager{
-		store:  store,
-		opts:   opts,
-		logger: logger,
-		id:     opts.InstanceID,
-		addr:   opts.AdvertiseAddress,
-		port:   opts.Port,
+		store:    store,
+		opts:     opts,
+		logger:   logger,
+		id:       opts.InstanceID,
+		addr:     opts.AdvertiseAddress,
+		port:     opts.Port,
+		liveness: opts.Liveness,
 	}
+}
+
+// SetLiveness configures the liveness adopter callback for adopted executors.
+func (m *Manager) SetLiveness(l LivenessAdopter) {
+	m.liveness = l
 }
 
 // ID returns the instance ID.
@@ -115,6 +129,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 
+	// Reconcile pre-existing expired executor leases
+	m.reconcileStartup(runCtx)
+
 	m.wg.Add(2)
 	go m.heartbeatLoop(runCtx)
 	go m.adoptionLoop(runCtx)
@@ -125,6 +142,30 @@ func (m *Manager) Start(ctx context.Context) error {
 		"port", m.port,
 	)
 	return nil
+}
+
+// ReconcileStartup adopts any expired executor leases on startup.
+func (m *Manager) reconcileStartup(ctx context.Context) {
+	leaseExp := pgtype.Timestamptz{
+		Time:  time.Now().Add(m.opts.LeaseDuration),
+		Valid: true,
+	}
+	adopted, err := m.store.AdoptExpiredExecutors(ctx, gen.AdoptExpiredExecutorsParams{
+		OwnerInstanceID: m.id,
+		LeaseExpiresAt:  leaseExp,
+	})
+	if err != nil {
+		m.logger.Warn("startup executor lease adoption failed", "error", err)
+		return
+	}
+	if len(adopted) > 0 {
+		m.logger.Info("reconciled expired executor leases on startup", "count", len(adopted))
+		if m.liveness != nil {
+			for _, exec := range adopted {
+				m.liveness.AdoptDisconnected(exec.ApplicationID, exec.ExecutorID, exec.ApplicationVersion)
+			}
+		}
+	}
 }
 
 // Stop shuts down the background loops and deregisters the instance.
@@ -183,6 +224,11 @@ func (m *Manager) adoptionLoop(ctx context.Context) {
 				m.logger.Warn("executor lease adoption failed", "error", err)
 			} else if len(adopted) > 0 {
 				m.logger.Info("adopted expired executors from failed instances", "count", len(adopted))
+				if m.liveness != nil {
+					for _, exec := range adopted {
+						m.liveness.AdoptDisconnected(exec.ApplicationID, exec.ExecutorID, exec.ApplicationVersion)
+					}
+				}
 			}
 
 			// Clean up stale instances
@@ -192,6 +238,15 @@ func (m *Manager) adoptionLoop(ctx context.Context) {
 			}
 			if reaped, err := m.store.DeleteStaleInstances(ctx, staleCutoff); err == nil && reaped > 0 {
 				m.logger.Info("reaped stale instances", "count", reaped)
+			}
+
+			// Reap expired disconnected executors
+			graceCutoff := pgtype.Timestamptz{
+				Time:  time.Now().Add(-m.opts.LeaseDuration),
+				Valid: true,
+			}
+			if reapedExecs, err := m.store.ReapExpiredExecutors(ctx, graceCutoff); err == nil && reapedExecs > 0 {
+				m.logger.Info("reaped expired disconnected executors", "count", reapedExecs)
 			}
 		}
 	}

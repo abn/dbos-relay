@@ -89,6 +89,28 @@ func (m *memoryStore) DeleteExecutor(ctx context.Context, arg gen.DeleteExecutor
 	return nil
 }
 
+func (m *memoryStore) GetExecutorByID(ctx context.Context, arg gen.GetExecutorByIDParams) (gen.Executor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.executors[arg.ExecutorID]
+	if !ok || e.ApplicationID != arg.ApplicationID {
+		return gen.Executor{}, errors.New("executor not found")
+	}
+	return e, nil
+}
+
+func (m *memoryStore) ListDeadExecutorsByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.Executor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var dead []gen.Executor
+	for _, e := range m.executors {
+		if e.ApplicationID == appID && e.Status == "dead" {
+			dead = append(dead, e)
+		}
+	}
+	return dead, nil
+}
+
 func (m *memoryStore) UpsertExecutor(ctx context.Context, arg gen.UpsertExecutorParams) (gen.Executor, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

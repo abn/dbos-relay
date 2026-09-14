@@ -3,6 +3,7 @@ package liveness_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -196,4 +197,145 @@ func TestRecoverDeadExecutor(t *testing.T) {
 			t.Errorf("expected dead record NOT deleted on failure, got %v", deleter.deleted)
 		}
 	})
+}
+
+type mockProbingTransport struct {
+	mockTransport
+	hasPending map[string]bool
+	probeCalls []string
+}
+
+func (m *mockProbingTransport) CheckPendingWorkflows(ctx context.Context, appID pgtype.UUID, peerExecutorID, deadExecutorID, deadVersion string) (bool, error) {
+	m.probeCalls = append(m.probeCalls, peerExecutorID)
+	return m.hasPending[peerExecutorID], nil
+}
+
+type mockRecoveryRecorder struct {
+	mu      sync.Mutex
+	records []gen.RecordRecoveryDispatchParams
+}
+
+func (r *mockRecoveryRecorder) RecordRecoveryDispatch(ctx context.Context, arg gen.RecordRecoveryDispatchParams) (gen.RecoveryDispatch, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.records = append(r.records, arg)
+	return gen.RecoveryDispatch{Success: arg.Success}, nil
+}
+
+func TestRecoverDeadExecutor_CrossVersionVerification(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	ctx := context.Background()
+
+	t.Run("Aborts deletion when pending workflows exist", func(t *testing.T) {
+		finder := &mockPeerFinder{
+			peers: []liveness.Peer{
+				{AppID: appID, ExecutorID: "peer-v2", ApplicationVersion: "v2"},
+			},
+		}
+		transport := &mockProbingTransport{
+			mockTransport: mockTransport{
+				responses: map[string]*protocol.RecoveryResponse{
+					"peer-v2": {Success: true},
+				},
+			},
+			hasPending: map[string]bool{
+				"peer-v2": true,
+			},
+		}
+		deleter := &mockDeleter{}
+
+		dispatcher := liveness.NewRecoveryDispatcher(finder, transport, deleter, liveness.DispatcherOptions{
+			AllowVersionMismatch: true,
+		})
+
+		err := dispatcher.RecoverDeadExecutor(ctx, appID, "dead-v1", "v1")
+		if err == nil {
+			t.Fatal("expected error when pending workflows remain after cross-version recovery, got nil")
+		}
+
+		if len(deleter.deleted) != 0 {
+			t.Fatalf("expected dead executor record NOT deleted, got: %v", deleter.deleted)
+		}
+	})
+
+	t.Run("Deletes dead record when no pending workflows exist", func(t *testing.T) {
+		finder := &mockPeerFinder{
+			peers: []liveness.Peer{
+				{AppID: appID, ExecutorID: "peer-v2", ApplicationVersion: "v2"},
+			},
+		}
+		transport := &mockProbingTransport{
+			mockTransport: mockTransport{
+				responses: map[string]*protocol.RecoveryResponse{
+					"peer-v2": {Success: true},
+				},
+			},
+			hasPending: map[string]bool{
+				"peer-v2": false,
+			},
+		}
+		deleter := &mockDeleter{}
+
+		dispatcher := liveness.NewRecoveryDispatcher(finder, transport, deleter, liveness.DispatcherOptions{
+			AllowVersionMismatch: true,
+		})
+
+		err := dispatcher.RecoverDeadExecutor(ctx, appID, "dead-v1", "v1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(deleter.deleted) != 1 || deleter.deleted[0] != "dead-v1" {
+			t.Fatalf("expected dead-v1 to be deleted, got: %v", deleter.deleted)
+		}
+	})
+}
+
+func TestRecoverDeadExecutor_RecorderCapturesBothSuccessAndFailure(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	ctx := context.Background()
+
+	finder := &mockPeerFinder{
+		peers: []liveness.Peer{
+			{AppID: appID, ExecutorID: "peer-1", ApplicationVersion: "v1"},
+			{AppID: appID, ExecutorID: "peer-2", ApplicationVersion: "v1"},
+			{AppID: appID, ExecutorID: "peer-3", ApplicationVersion: "v1"},
+		},
+	}
+	transport := &mockTransport{
+		errors: map[string]error{
+			"peer-1": errors.New("network failure"),
+		},
+		responses: map[string]*protocol.RecoveryResponse{
+			"peer-2": {Success: false},
+			"peer-3": {Success: true},
+		},
+	}
+	deleter := &mockDeleter{}
+	recorder := &mockRecoveryRecorder{}
+
+	dispatcher := liveness.NewRecoveryDispatcher(finder, transport, deleter, liveness.DispatcherOptions{})
+	dispatcher.SetRecorder(recorder)
+
+	err := dispatcher.RecoverDeadExecutor(ctx, appID, "dead-1", "v1")
+	if err != nil {
+		t.Fatalf("expected recovery to succeed on peer-3, got %v", err)
+	}
+
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+
+	if len(recorder.records) != 3 {
+		t.Fatalf("expected 3 recorded dispatches, got %d", len(recorder.records))
+	}
+
+	if recorder.records[0].Success {
+		t.Errorf("expected peer-1 dispatch recorded with success=false")
+	}
+	if recorder.records[1].Success {
+		t.Errorf("expected peer-2 dispatch recorded with success=false")
+	}
+	if !recorder.records[2].Success {
+		t.Errorf("expected peer-3 dispatch recorded with success=true")
+	}
 }

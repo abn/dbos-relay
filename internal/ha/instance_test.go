@@ -17,6 +17,7 @@ type mockInstanceStore struct {
 	upsertCalled   bool
 	heartbeatCalls int
 	adoptCalls     int
+	reapCalls      int
 	deleteCalled   bool
 }
 
@@ -53,6 +54,13 @@ func (m *mockInstanceStore) AdoptExpiredExecutors(ctx context.Context, arg gen.A
 }
 
 func (m *mockInstanceStore) DeleteStaleInstances(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockInstanceStore) ReapExpiredExecutors(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reapCalls++
 	return 0, nil
 }
 
@@ -100,6 +108,9 @@ func TestInstanceManager_Lifecycle(t *testing.T) {
 	}
 	if mock.adoptCalls < 2 {
 		t.Errorf("expected at least 2 adopt calls, got %d", mock.adoptCalls)
+	}
+	if mock.reapCalls < 2 {
+		t.Errorf("expected at least 2 reap calls, got %d", mock.reapCalls)
 	}
 	mock.mu.Unlock()
 
