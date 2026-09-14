@@ -23,15 +23,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/abn/relay/internal/auth"
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/fakeexecutor"
 	"github.com/abn/relay/internal/ha"
 	"github.com/abn/relay/internal/hub"
+	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/router"
+	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
+	"github.com/abn/relay/internal/testdb"
 )
 
 type sharedStore struct {
@@ -204,6 +208,20 @@ func (s *sharedStore) AdoptExpiredExecutors(ctx context.Context, arg gen.AdoptEx
 
 func (s *sharedStore) DeleteStaleInstances(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
 	return 0, nil
+}
+
+func (s *sharedStore) ReapExpiredExecutors(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int64
+	for k, e := range s.executors {
+		if e.Status == "disconnected" && e.DisconnectedAt.Valid && e.DisconnectedAt.Time.Before(cutoff.Time) {
+			e.Status = "dead"
+			s.executors[k] = e
+			count++
+		}
+	}
+	return count, nil
 }
 
 func parseHostPort(addr string) (string, int) {
@@ -510,4 +528,399 @@ func (m *sharedStore) UpsertOrganisation(ctx context.Context, name string) (gen.
 	}
 	m.orgs[name] = org
 	return org, nil
+}
+
+func TestHA_ReapExpiredExecutors_Unit(t *testing.T) {
+	store := newSharedStore()
+
+	store.executors["exec-reap-1"] = gen.Executor{
+		ExecutorID:     "exec-reap-1",
+		Status:         "disconnected",
+		DisconnectedAt: pgtype.Timestamptz{Time: time.Now().Add(-2 * time.Hour), Valid: true},
+	}
+
+	cutoff := pgtype.Timestamptz{Time: time.Now().Add(-1 * time.Hour), Valid: true}
+	count, err := store.ReapExpiredExecutors(context.Background(), cutoff)
+	if err != nil {
+		t.Fatalf("ReapExpiredExecutors failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 reaped executor, got %d", count)
+	}
+
+	if store.executors["exec-reap-1"].Status != "dead" {
+		t.Errorf("expected status dead, got %s", store.executors["exec-reap-1"].Status)
+	}
+}
+
+func TestHA_LiveDatabase_ReapExpiredExecutors(t *testing.T) {
+	dbURL, err := testdb.URL("ha")
+	if err != nil {
+		t.Fatalf("failed to derive test db url: %v", err)
+	}
+	if dbURL == "" {
+		t.Skip("RELAY_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	s, err := store.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer s.Close()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open pool: %v", err)
+	}
+	defer pool.Close()
+
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("failed to migrate store: %v", err)
+	}
+	defer func() {
+		_ = s.Truncate(context.Background())
+	}()
+
+	org, err := s.Queries().CreateOrganisation(ctx, fmt.Sprintf("org_%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatalf("failed to create org: %v", err)
+	}
+
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           "reap-app",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("failed to create app: %v", err)
+	}
+
+	execID := "exec-live-reap"
+	_, err = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      app.ID,
+		ExecutorID:         execID,
+		ApplicationVersion: "v1.0.0",
+		Hostname:           "host-1",
+		Metadata:           []byte("{}"),
+	})
+	if err != nil {
+		t.Fatalf("failed to upsert executor: %v", err)
+	}
+
+	// Update status to disconnected with disconnected_at in the past
+	_, err = pool.Exec(ctx, "UPDATE executors SET status = 'disconnected', disconnected_at = now() - interval '2 hours' WHERE executor_id = $1", execID)
+	if err != nil {
+		t.Fatalf("failed to disconnect executor: %v", err)
+	}
+
+	cutoff := pgtype.Timestamptz{Time: time.Now().Add(-1 * time.Hour), Valid: true}
+	reapedCount, err := s.Queries().ReapExpiredExecutors(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("ReapExpiredExecutors query failed: %v", err)
+	}
+	if reapedCount != 1 {
+		t.Errorf("expected 1 reaped executor, got %d", reapedCount)
+	}
+
+	execRow, err := s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+		ApplicationID: app.ID,
+		ExecutorID:    execID,
+	})
+	if err != nil {
+		t.Fatalf("failed to query executor row: %v", err)
+	}
+	if execRow.Status != "dead" {
+		t.Errorf("expected executor status 'dead', got %q", execRow.Status)
+	}
+}
+
+func TestHA_LiveDatabase_FailoverAdoptionAndLiveness(t *testing.T) {
+	dbURL, err := testdb.URL("ha")
+	if err != nil {
+		t.Fatalf("failed to derive test db url: %v", err)
+	}
+	if dbURL == "" {
+		t.Skip("RELAY_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	s, err := store.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer s.Close()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open pool: %v", err)
+	}
+	defer pool.Close()
+
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("failed to migrate store: %v", err)
+	}
+	defer func() {
+		_ = s.Truncate(context.Background())
+	}()
+
+	org, err := s.Queries().CreateOrganisation(ctx, fmt.Sprintf("org_%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatalf("failed to create org: %v", err)
+	}
+
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           "failover-app",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("failed to create app: %v", err)
+	}
+
+	crashedID := pgtype.UUID{Bytes: [16]byte{10}, Valid: true}
+	survivingID := pgtype.UUID{Bytes: [16]byte{20}, Valid: true}
+
+	_, err = s.Queries().UpsertInstance(ctx, gen.UpsertInstanceParams{
+		ID:               crashedID,
+		AdvertiseAddress: "127.0.0.1",
+		Port:             8091,
+	})
+	if err != nil {
+		t.Fatalf("failed to insert crashed instance: %v", err)
+	}
+
+	orphanID := "exec-orphan-live"
+	_, err = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      app.ID,
+		ExecutorID:         orphanID,
+		ApplicationVersion: "v1.0.0",
+		Hostname:           "host-crashed",
+		Metadata:           []byte("{}"),
+	})
+	if err != nil {
+		t.Fatalf("failed to upsert orphan: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, "UPDATE executors SET owner_instance_id = $1, lease_expires_at = now() - interval '10 seconds' WHERE executor_id = $2", crashedID, orphanID)
+	if err != nil {
+		t.Fatalf("failed to set expired lease: %v", err)
+	}
+
+	initRow, err := s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+		ApplicationID: app.ID,
+		ExecutorID:    orphanID,
+	})
+	if err != nil {
+		t.Fatalf("failed to get orphan row: %v", err)
+	}
+	if initRow.OwnerInstanceID != crashedID {
+		t.Errorf("expected owner %v, got %v", crashedID, initRow.OwnerInstanceID)
+	}
+
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	livenessMgr := liveness.NewManager(clock, s.Queries(), nil, nil)
+	livenessMgr.SetInstanceID(survivingID)
+	defer livenessMgr.Stop()
+
+	haMgr := ha.NewManager(s.Queries(), ha.ManagerOptions{
+		InstanceID:        survivingID,
+		AdvertiseAddress:  "127.0.0.1",
+		Port:              8092,
+		HeartbeatInterval: 20 * time.Millisecond,
+		AdoptionInterval:  20 * time.Millisecond,
+		LeaseDuration:     1 * time.Minute,
+		Liveness:          livenessMgr,
+	})
+
+	if err := haMgr.Start(ctx); err != nil {
+		t.Fatalf("haMgr.Start failed: %v", err)
+	}
+	defer haMgr.Stop()
+
+	deadline := time.Now().Add(3 * time.Second)
+	var adoptedRow gen.Executor
+	for time.Now().Before(deadline) {
+		adoptedRow, err = s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+			ApplicationID: app.ID,
+			ExecutorID:    orphanID,
+		})
+		if err == nil && adoptedRow.OwnerInstanceID == survivingID {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if adoptedRow.OwnerInstanceID != survivingID {
+		t.Fatalf("expected adopted owner %v, got %v", survivingID, adoptedRow.OwnerInstanceID)
+	}
+	if adoptedRow.Status != "connected" {
+		t.Errorf("expected status 'connected' upon adoption, got %q", adoptedRow.Status)
+	}
+
+	clock.Advance(65 * time.Second)
+	time.Sleep(100 * time.Millisecond)
+
+	finalRow, err := s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+		ApplicationID: app.ID,
+		ExecutorID:    orphanID,
+	})
+	if err != nil {
+		t.Fatalf("failed to query final row: %v", err)
+	}
+	if finalRow.Status != "dead" {
+		t.Errorf("expected final status 'dead' after grace period, got %q", finalRow.Status)
+	}
+}
+
+func TestHA_LiveDatabase_LeaseHeartbeatTouch(t *testing.T) {
+	t.Logf("counterparty: internal/fakeexecutor (in-process stand-in for a DBOS SDK executor)")
+	dbURL, err := testdb.URL("ha")
+	if err != nil {
+		t.Fatalf("failed to derive test db url: %v", err)
+	}
+	if dbURL == "" {
+		t.Skip("RELAY_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	s, err := store.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("failed to open store: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("failed to migrate store: %v", err)
+	}
+	defer func() {
+		_ = s.Truncate(context.Background())
+	}()
+
+	org, err := s.Queries().CreateOrganisation(ctx, fmt.Sprintf("org_%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatalf("failed to create org: %v", err)
+	}
+
+	appName := "heartbeat-app"
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           appName,
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("failed to create app: %v", err)
+	}
+
+	instID := pgtype.UUID{Bytes: [16]byte{77}, Valid: true}
+	_, err = s.Queries().UpsertInstance(ctx, gen.UpsertInstanceParams{
+		ID:               instID,
+		AdvertiseAddress: "127.0.0.1",
+		Port:             8095,
+	})
+	if err != nil {
+		t.Fatalf("failed to upsert instance: %v", err)
+	}
+
+	rawKey, keyRec, err := auth.Mint()
+	if err != nil {
+		t.Fatalf("failed to mint key: %v", err)
+	}
+
+	_, err = s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "test-key",
+		Lookup:           keyRec.Lookup,
+		KeyHash:          keyRec.Hash,
+		ApplicationNames: []string{appName},
+		Permissions:      []string{"application.read", "application.write", "websocket.connect"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create api key: %v", err)
+	}
+
+	cfg := &config.Config{
+		ExecutorDeadline: 5 * time.Second,
+	}
+	h := hub.New(s.Queries(), cfg, nil)
+	defer func() { _ = h.Close() }()
+
+	h.SetInstanceID(instID)
+	h.SetLeaseDuration(30 * time.Second)
+	h.SetPingPongTimeouts(20*time.Millisecond, 100*time.Millisecond)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/websocket/", func(w http.ResponseWriter, r *http.Request) {
+		pathParts := r.URL.Path[len("/websocket/"):]
+		parts := strings.SplitN(pathParts, "/", 2)
+		if len(parts) != 2 {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		_, conductorKey := parts[0], parts[1]
+		rec, err := s.Queries().GetAPIKeyByLookup(r.Context(), auth.Lookup(conductorKey))
+		if err != nil || !auth.Verify(conductorKey, rec.KeyHash) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	execID := "exec-heartbeat-test"
+	fakeExec := fakeexecutor.New(fakeexecutor.Options{
+		URL:                wsURL,
+		AppName:            appName,
+		ConductorKey:       rawKey,
+		ExecutorID:         execID,
+		ApplicationVersion: "v1.0.0",
+	})
+
+	if err := fakeExec.Connect(ctx); err != nil {
+		t.Fatalf("fake executor failed to connect: %v", err)
+	}
+	go func() { _ = fakeExec.Run(ctx) }()
+
+	time.Sleep(100 * time.Millisecond)
+
+	initialRow, err := s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+		ApplicationID: app.ID,
+		ExecutorID:    execID,
+	})
+	if err != nil {
+		t.Fatalf("failed to fetch initial executor row: %v", err)
+	}
+
+	if initialRow.OwnerInstanceID != instID {
+		t.Errorf("expected owner instance %v, got %v", instID, initialRow.OwnerInstanceID)
+	}
+	if !initialRow.LeaseExpiresAt.Valid {
+		t.Fatal("expected valid LeaseExpiresAt")
+	}
+
+	initialExpires := initialRow.LeaseExpiresAt.Time
+
+	time.Sleep(150 * time.Millisecond)
+
+	advancedRow, err := s.Queries().GetExecutorByID(ctx, gen.GetExecutorByIDParams{
+		ApplicationID: app.ID,
+		ExecutorID:    execID,
+	})
+	if err != nil {
+		t.Fatalf("failed to fetch advanced executor row: %v", err)
+	}
+
+	if !advancedRow.LeaseExpiresAt.Time.After(initialExpires) {
+		t.Errorf("expected LeaseExpiresAt to advance with heartbeats: initial=%v, advanced=%v",
+			initialExpires, advancedRow.LeaseExpiresAt.Time)
+	}
 }
