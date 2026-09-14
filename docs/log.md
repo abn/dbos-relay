@@ -5,6 +5,9 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-14
 
+* **Update**: Aligned alerting rule evaluation for WorkflowFailure and SlowQueue with Conductor WebSocket queries (list_workflows and list_queued_workflows) over registered executors.
+* **Update**: Added SSRF dialer protection (blocking private, link-local, loopback, multicast, and non-HTTP/HTTPS destinations) and redirect re-validation for webhook, Slack, and PagerDuty alert channel dispatchers.
+* **Update**: Added OpenMetrics content negotiation and EOF termination to /v1/metrics while clarifying supported Scale-tier metric families in [Metrics and alerting surface](discovery/metrics-alerting.md).
 * **Update**: Reconciled [ADR 0004](adr/0004-data-plane-via-sdk-client.md) to delineate implemented connection pool sizing and per-query statement timeouts from planned scale-tier guardrails.
 * **Update**: Updated [Conductor Protocol (WebSocket)](protocol/executor-ws.md) section structure to explicitly document heartbeat, liveness, and timeout semantics.
 * **Update**: Added release checklist to [Maintainer guide](contribution/maintainers.md) specifying clean-room legal provenance verification and pre-release history hygiene requirements.
