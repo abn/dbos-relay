@@ -1560,3 +1560,13 @@ func TestHub_ForkNotRetriedOnTimeout(t *testing.T) {
 		t.Fatalf("expected ForkFromFailureRequest to not be safe to retry on timeout")
 	}
 }
+
+func TestHub_NilLoggerDefault(t *testing.T) {
+	h := New(newMemoryAuthStore(), &config.Config{}, nil)
+	if h.logger == nil {
+		t.Fatalf("expected hub.logger to default when nil is passed, got nil")
+	}
+	// Verify logger does not panic when invoking logging methods
+	h.logger.Error("test error log")
+	h.logger.Debug("test debug log")
+}

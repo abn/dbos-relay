@@ -57,6 +57,9 @@ type Hub struct {
 }
 
 func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var hs HubStore
 	if s, ok := store.(HubStore); ok {

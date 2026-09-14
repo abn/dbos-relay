@@ -49,8 +49,6 @@ func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string
 		return pgtype.UUID{}, errors.New("invalid conductor key")
 	}
 
-	_ = q.TouchAPIKeyLastUsed(ctx, keyRecord.ID)
-
 	// Validate permissions: if permissions are restricted, websocket.connect is required.
 	if len(keyRecord.Permissions) > 0 && !auth.HasPermission(keyRecord.Permissions, auth.PermWebsocketConnect) {
 		return pgtype.UUID{}, errors.New("key does not have websocket.connect permission")
@@ -71,6 +69,8 @@ func Authenticate(ctx context.Context, q AuthStore, appName, conductorKey string
 	if !allowed {
 		return pgtype.UUID{}, errors.New("key does not have access to this application")
 	}
+
+	_ = q.TouchAPIKeyLastUsed(ctx, keyRecord.ID)
 	orgID = keyRecord.OrganisationID
 
 	// Resolve application ID.

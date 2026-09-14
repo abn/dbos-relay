@@ -17,16 +17,18 @@ import (
 )
 
 type memoryAuthStore struct {
-	keys map[string]gen.ApiKey
-	apps map[string]gen.Application
-	orgs map[string]gen.Organisation
+	keys    map[string]gen.ApiKey
+	apps    map[string]gen.Application
+	orgs    map[string]gen.Organisation
+	touched map[pgtype.UUID]int
 }
 
 func newMemoryAuthStore() *memoryAuthStore {
 	return &memoryAuthStore{
-		keys: make(map[string]gen.ApiKey),
-		apps: make(map[string]gen.Application),
-		orgs: make(map[string]gen.Organisation),
+		keys:    make(map[string]gen.ApiKey),
+		apps:    make(map[string]gen.Application),
+		orgs:    make(map[string]gen.Organisation),
+		touched: make(map[pgtype.UUID]int),
 	}
 }
 
@@ -57,6 +59,7 @@ func (m *memoryAuthStore) CreateApplication(ctx context.Context, arg gen.CreateA
 }
 
 func (m *memoryAuthStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	m.touched[id]++
 	return nil
 }
 
@@ -338,5 +341,60 @@ func TestWebSocket_ScopeDenialEndToEnd(t *testing.T) {
 	}
 	if connGood != nil {
 		_ = connGood.Close(websocket.StatusNormalClosure, "done")
+	}
+}
+
+func TestAuthenticate_TouchAPIKeyOnlyOnSuccess(t *testing.T) {
+	ctx := context.Background()
+
+	plainKey, recKey, err := auth.Mint()
+	if err != nil {
+		t.Fatalf("auth.Mint failed: %v", err)
+	}
+
+	keyID := pgtype.UUID{Bytes: [16]byte{5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5}, Valid: true}
+	orgID := pgtype.UUID{Bytes: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, Valid: true}
+
+	store := newMemoryAuthStore()
+	store.keys[recKey.Lookup] = gen.ApiKey{
+		ID:               keyID,
+		OrganisationID:   orgID,
+		KeyHash:          recKey.Hash,
+		ApplicationNames: []string{"allowed-app"},
+		Permissions:      []string{auth.PermWebsocketConnect},
+	}
+
+	// 1. Mismatched application scope: key must not be touched
+	_, err = Authenticate(ctx, store, "disallowed-app", plainKey, true)
+	if err == nil {
+		t.Fatal("expected error on disallowed app, got nil")
+	}
+	if store.touched[keyID] != 0 {
+		t.Fatalf("expected key not touched on scope error, got %d calls", store.touched[keyID])
+	}
+
+	// 2. Missing websocket.connect permission: key must not be touched
+	permKey := store.keys[recKey.Lookup]
+	permKey.Permissions = []string{"application.read"}
+	store.keys[recKey.Lookup] = permKey
+
+	_, err = Authenticate(ctx, store, "allowed-app", plainKey, true)
+	if err == nil {
+		t.Fatal("expected error on missing websocket.connect permission, got nil")
+	}
+	if store.touched[keyID] != 0 {
+		t.Fatalf("expected key not touched on permission error, got %d calls", store.touched[keyID])
+	}
+
+	// 3. Valid key with scope and permission: key must be touched
+	permKey.Permissions = []string{auth.PermWebsocketConnect}
+	store.keys[recKey.Lookup] = permKey
+
+	_, err = Authenticate(ctx, store, "allowed-app", plainKey, true)
+	if err != nil {
+		t.Fatalf("unexpected error on valid auth: %v", err)
+	}
+	if store.touched[keyID] != 1 {
+		t.Fatalf("expected key touched exactly once, got %d calls", store.touched[keyID])
 	}
 }

@@ -93,6 +93,11 @@ func newServeCommand() *cobra.Command {
 
 			r := router.New(s.Queries(), h)
 			dpManager := dataplane.NewManager(nil)
+			defer func() {
+				if err := dpManager.Close(); err != nil {
+					logger.Error("closing dataplane manager", "error", err)
+				}
+			}()
 			if configPath := os.Getenv("RELAY_CONFIG"); configPath != "" {
 				if decCfg, err := declarative.LoadFile(configPath); err == nil {
 					if _, err := declarative.Apply(ctx, s, decCfg); err != nil {
