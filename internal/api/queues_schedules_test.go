@@ -12,6 +12,8 @@ import (
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/protocol"
 	"github.com/abn/relay/internal/router"
+	storegen "github.com/abn/relay/internal/store/gen"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type mockRouter struct {
@@ -27,6 +29,20 @@ func (m *mockRouter) Dispatch(ctx context.Context, orgName, appName string, msg 
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+type mockMetricsStore struct {
+	StoreReader
+	org storegen.Organisation
+	app storegen.Application
+}
+
+func (m *mockMetricsStore) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {
+	return m.org, nil
+}
+
+func (m *mockMetricsStore) GetApplicationByName(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+	return m.app, nil
 }
 
 func TestListQueues(t *testing.T) {
@@ -844,6 +860,9 @@ func TestListMetrics(t *testing.T) {
 				if req.EndTime != end.Format(time.RFC3339) {
 					t.Errorf("expected endTime %s, got %s", end.Format(time.RFC3339), req.EndTime)
 				}
+				if req.MetricClass != "workflow_step_count" {
+					t.Errorf("expected MetricClass workflow_step_count, got %s", req.MetricClass)
+				}
 				if len(req.ApplicationName) != 1 || req.ApplicationName[0] != "analytics-app" {
 					t.Errorf("expected applicationName analytics-app, got %v", req.ApplicationName)
 				}
@@ -922,6 +941,40 @@ func TestListMetrics(t *testing.T) {
 		}
 	})
 
+	t.Run("envelope error returns problem response", func(t *testing.T) {
+		errMsg := "application not found"
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.GetMetricsResponse{
+					Envelope: protocol.Envelope{
+						Type:         protocol.MessageTypeGetMetrics,
+						ErrorMessage: &errMsg,
+					},
+				}, nil
+			},
+		}
+
+		server := NewServer(r, nil, nil)
+		resp, err := server.ListMetrics(context.Background(), gen.ListMetricsRequestObject{
+			OrgName: "analytics-org",
+			AppName: "analytics-app",
+			Params: gen.ListMetricsParams{
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		probResp, ok := resp.(gen.ListMetricsdefaultApplicationProblemPlusJSONResponse)
+		if !ok {
+			t.Fatalf("expected default problem response, got %T", resp)
+		}
+		if probResp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected status 404, got %d", probResp.StatusCode)
+		}
+	})
+
 	t.Run("router error returns problem JSON", func(t *testing.T) {
 		r := &mockRouter{
 			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
@@ -948,6 +1001,58 @@ func TestListMetrics(t *testing.T) {
 		}
 		if probResp.StatusCode != http.StatusNotFound {
 			t.Errorf("expected status 404, got %d", probResp.StatusCode)
+		}
+	})
+
+	t.Run("resolves application UUID when store is available", func(t *testing.T) {
+		r := &mockRouter{
+			dispatchFn: func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+				return &protocol.GetMetricsResponse{
+					Envelope: protocol.Envelope{
+						Type: protocol.MessageTypeGetMetrics,
+					},
+					Metrics: []protocol.MetricData{
+						{
+							MetricName: "step_execution_time",
+							MetricType: "step_count",
+							Value:      10.0,
+						},
+					},
+				}, nil
+			},
+		}
+
+		appUUID := pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, Valid: true}
+		store := &mockMetricsStore{
+			org: storegen.Organisation{ID: pgtype.UUID{Valid: true}},
+			app: storegen.Application{
+				ID:   appUUID,
+				Name: "analytics-app",
+			},
+		}
+
+		server := NewServer(r, store, nil)
+		resp, err := server.ListMetrics(context.Background(), gen.ListMetricsRequestObject{
+			OrgName: "analytics-org",
+			AppName: "analytics-app",
+			Params: gen.ListMetricsParams{
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		jsonResp, ok := resp.(gen.ListMetrics200JSONResponse)
+		if !ok {
+			t.Fatalf("expected ListMetrics200JSONResponse, got %T", resp)
+		}
+		if len(jsonResp) != 1 {
+			t.Fatalf("expected 1 metric, got %d", len(jsonResp))
+		}
+		expectedUUID := formatUUID(appUUID)
+		if jsonResp[0].AppId != expectedUUID {
+			t.Errorf("expected appId %s, got %s", expectedUUID, jsonResp[0].AppId)
 		}
 	})
 }
