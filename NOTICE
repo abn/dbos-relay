@@ -2,4 +2,4 @@ Third-party notices
 
 This repository contains third-party material:
 
-- api/spec/openapi.json and api/spec/openapi-3.0.json are specifications of the DBOS Conductor HTTP API, fetched without authentication from public endpoints. They are included for interface description and conformance verification purposes and are not covered by the MIT license grant for Relay itself.
+- api/spec/openapi.json and api/spec/openapi-3.0.json are specifications of the DBOS Conductor HTTP API (copyright DBOS, Inc.), fetched without authentication from public endpoints. They are included for interface description and conformance verification purposes and are not covered by the MIT license grant for Relay itself.
