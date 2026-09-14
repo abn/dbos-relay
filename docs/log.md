@@ -5,6 +5,9 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-14
 
+* **Creation**: Added [Production Hardening](usage/hardening.md) documenting in-process TLS certificate configuration and reverse proxy access log restrictions against recording WebSocket URIs.
+* **Creation**: Added [ADR 0010](adr/0010-openapi-redistribution.md) recording the provenance, attribution posture, and clean-room redistribution rationale for vendored OpenAPI interface specifications.
+* **Update**: Added database migration management subcommands (status, force, down, up) and skip-migrations support in [Operations and migrations](usage/operations.md).
 * **Update**: Reconciled autoscale REST operations in [REST surface discovery](discovery/rest-surface.md) as uninstalled policy 404 Problem Details responses and deferred Tier 5 capabilities.
 * **Update**: Added startup lease reconciliation, periodic orphan adoption, and lease heartbeats to High Availability coordinator.
 * **Update**: Added recovery dispatch attempt recording for successes and failures, and verified pending workflow counts before deleting dead records on cross-version recovery.
