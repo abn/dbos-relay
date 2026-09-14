@@ -44,6 +44,11 @@ type ExecutorDeleter interface {
 	DeleteExecutor(ctx context.Context, arg gen.DeleteExecutorParams) error
 }
 
+// WorkflowProber checks whether pending workflows remain for a dead executor before deleting its record.
+type WorkflowProber interface {
+	CheckPendingWorkflows(ctx context.Context, appID pgtype.UUID, targetExecutorID, deadExecutorID, deadVersion string) (bool, error)
+}
+
 // RecoveryRecorder records workflow recovery dispatch outcomes for flapping tracking.
 type RecoveryRecorder interface {
 	RecordRecoveryDispatch(ctx context.Context, arg gen.RecordRecoveryDispatchParams) (gen.RecoveryDispatch, error)
@@ -161,6 +166,15 @@ func (d *RecoveryDispatcher) RecoverDeadExecutor(ctx context.Context, appID pgty
 				"peerID", candidate.ExecutorID,
 				"error", err,
 			)
+			if d.recorder != nil {
+				_, _ = d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+					ApplicationID:    appID,
+					DeadExecutorID:   deadExecutorID,
+					TargetExecutorID: candidate.ExecutorID,
+					DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+					Success:          false,
+				})
+			}
 			lastErr = err
 			continue
 		}
@@ -175,7 +189,58 @@ func (d *RecoveryDispatcher) RecoverDeadExecutor(ctx context.Context, appID pgty
 				"peerID", candidate.ExecutorID,
 				"detail", errMsg,
 			)
+			if d.recorder != nil {
+				_, _ = d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+					ApplicationID:    appID,
+					DeadExecutorID:   deadExecutorID,
+					TargetExecutorID: candidate.ExecutorID,
+					DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+					Success:          false,
+				})
+			}
 			continue
+		}
+
+		if candidate.ApplicationVersion != deadVersion {
+			if prober, ok := d.transport.(WorkflowProber); ok {
+				hasPending, err := prober.CheckPendingWorkflows(ctx, appID, candidate.ExecutorID, deadExecutorID, deadVersion)
+				if err != nil {
+					d.opts.Logger.Warn("failed to probe pending workflows after cross-version recovery",
+						"deadExecutorID", deadExecutorID,
+						"error", err,
+					)
+					if d.recorder != nil {
+						_, _ = d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+							ApplicationID:    appID,
+							DeadExecutorID:   deadExecutorID,
+							TargetExecutorID: candidate.ExecutorID,
+							DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+							Success:          false,
+						})
+					}
+					lastErr = err
+					continue
+				}
+				if hasPending {
+					d.opts.Logger.Warn("cross-version recovery acknowledged but pending workflows remain",
+						"deadExecutorID", deadExecutorID,
+						"deadVersion", deadVersion,
+						"targetPeerID", candidate.ExecutorID,
+						"targetVersion", candidate.ApplicationVersion,
+					)
+					if d.recorder != nil {
+						_, _ = d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+							ApplicationID:    appID,
+							DeadExecutorID:   deadExecutorID,
+							TargetExecutorID: candidate.ExecutorID,
+							DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+							Success:          false,
+						})
+					}
+					lastErr = errors.New("cross-version recovery acknowledged but pending workflows remain")
+					continue
+				}
+			}
 		}
 
 		// Recovery acknowledged! Delete the dead executor record.
@@ -197,13 +262,18 @@ func (d *RecoveryDispatcher) RecoverDeadExecutor(ctx context.Context, appID pgty
 		}
 
 		if d.recorder != nil {
-			_, _ = d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+			if _, err := d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
 				ApplicationID:    appID,
 				DeadExecutorID:   deadExecutorID,
 				TargetExecutorID: candidate.ExecutorID,
 				DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 				Success:          true,
-			})
+			}); err != nil {
+				d.opts.Logger.Error("failed to record recovery dispatch success",
+					"deadExecutorID", deadExecutorID,
+					"error", err,
+				)
+			}
 		}
 
 		return nil
