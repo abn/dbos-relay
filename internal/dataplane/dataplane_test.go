@@ -436,3 +436,31 @@ func TestManager_EagerInitializationFailureLogsWarning(t *testing.T) {
 		t.Fatalf("expected warning log on eager client init failure, got: %s", logOutput)
 	}
 }
+
+func TestManager_CloseShutsDownClients(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{5, 5, 5}, Valid: true}
+	mock := &mockClient{}
+
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return mock, nil
+	})
+
+	err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://fake/db",
+	})
+	if err != nil {
+		t.Fatalf("RegisterApp failed: %v", err)
+	}
+
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	if !mock.closed {
+		t.Fatalf("expected mock client to be closed on mgr.Close()")
+	}
+	if mgr.HasDataPlane(appID) {
+		t.Fatalf("expected HasDataPlane to be false after Close()")
+	}
+}

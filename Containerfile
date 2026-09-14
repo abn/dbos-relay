@@ -1,6 +1,8 @@
 # Build stage
 FROM golang:1.26-alpine AS builder
 
+ENV GOTOOLCHAIN=local
+
 WORKDIR /src
 
 # Download dependencies

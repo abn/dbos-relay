@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/abn/relay/internal/safego"
 	"github.com/abn/relay/internal/store/gen"
 )
 
@@ -141,7 +142,9 @@ func (m *Manager) OnConnect(ctx context.Context, appID pgtype.UUID, executorID, 
 	// Sweep any dead executors for this application now that a healthy peer is available.
 	if m.recovery != nil && m.queries != nil {
 		//nolint:contextcheck // background sweep runs independently of the registration handshake
-		go m.SweepDeadExecutors(m.ctx, appID)
+		safego.Go(m.logger, "liveness-sweep-dead", func() {
+			m.SweepDeadExecutors(m.ctx, appID)
+		})
 	}
 
 	return nil
@@ -220,7 +223,9 @@ func (m *Manager) AdoptDisconnected(appID pgtype.UUID, executorID, version strin
 	)
 
 	m.wg.Add(1)
-	go m.watchGracePeriod(appID, executorID, version, timer, timerDone)
+	safego.Go(m.logger, "liveness-watch-grace-period", func() {
+		m.watchGracePeriod(appID, executorID, version, timer, timerDone)
+	})
 }
 
 // OnDisconnect handles executor disconnection, starting the grace period timer.
@@ -261,7 +266,9 @@ func (m *Manager) OnDisconnect(ctx context.Context, appID pgtype.UUID, executorI
 
 		m.wg.Add(1)
 		//nolint:contextcheck // grace period timer outlives the disconnect notification context
-		go m.watchGracePeriod(appID, executorID, exec.version, timer, timerDone)
+		safego.Go(m.logger, "liveness-watch-grace-period", func() {
+			m.watchGracePeriod(appID, executorID, exec.version, timer, timerDone)
+		})
 	}
 }
 
@@ -360,7 +367,7 @@ func (m *Manager) watchGracePeriod(appID pgtype.UUID, executorID, version string
 	// Trigger recovery dispatch
 	if action == ActionTriggerRecovery && m.recovery != nil {
 		m.wg.Add(1)
-		go func() {
+		safego.Go(m.logger, "liveness-recovery-dispatch", func() {
 			defer m.wg.Done()
 			if err := m.recovery.RecoverDeadExecutor(m.ctx, appID, executorID, version); err != nil {
 				m.logger.Error("recovery dispatch failed for dead executor",
@@ -376,7 +383,7 @@ func (m *Manager) watchGracePeriod(appID pgtype.UUID, executorID, version string
 				}
 				m.mu.Unlock()
 			}
-		}()
+		})
 	}
 }
 

@@ -15,3 +15,4 @@ Provenance record for the vendored Conductor OpenAPI contract documents.
 - **Authentication**: None required. Both endpoints responded with HTTP 200 OK to unauthenticated GET requests.
 - **Terms and licensing**: Publicly accessible without click-through agreement, login wall, or proprietary license restriction.
 - **Clean-room verification**: Confirms permitted public source status per [the clean-room rules](../../docs/contribution/clean-room.md).
+- **Redistribution and licensing**: Documented in [ADR 0010](../../docs/adr/0010-openapi-redistribution.md) and [NOTICE](../../NOTICE). Third-party material included for interface compatibility; excluded from Relay's MIT license grant.

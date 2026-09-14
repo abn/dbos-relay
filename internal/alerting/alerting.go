@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/protocol"
+	"github.com/abn/relay/internal/safego"
 	"github.com/abn/relay/internal/store/gen"
 )
 
@@ -70,7 +71,7 @@ func (e *Evaluator) Start(ctx context.Context, interval time.Duration) func() {
 	runCtx, cancel := context.WithCancel(ctx)
 	e.wg.Add(1)
 
-	go func() {
+	safego.Go(e.logger, "alerting-evaluator", func() {
 		defer e.wg.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -85,7 +86,7 @@ func (e *Evaluator) Start(ctx context.Context, interval time.Duration) func() {
 				}
 			}
 		}
-	}()
+	})
 
 	return func() {
 		cancel()

@@ -18,5 +18,6 @@ consequences. One decision per file, added as the project makes them.
   Postgres extension
 * [ADR 0008](0008-alerting-rule-extensions.md) - alerting rule extensions
 * [ADR 0009](0009-dashboard-web-stack.md) - dashboard web stack and zero-dependency console
+* [ADR 0010](0010-openapi-redistribution.md) - redistribution of OpenAPI interface specifications
 
 Open decisions that have not been made yet are not recorded here.

@@ -156,16 +156,23 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					}
 				}
 
+				var orgName, roleName string
 				primaryOrg, err := server.store.GetUserPrimaryOrganisation(r.Context(), user.ID)
 				if err != nil || primaryOrg.Name == "" {
-					org, err := server.store.UpsertOrganisation(r.Context(), user.Username)
+					orgSlug := slugOrgName(user.Username)
+					org, err := server.store.UpsertOrganisation(r.Context(), orgSlug)
 					if err == nil {
 						_, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{
 							OrganisationID: org.ID,
 							UserID:         user.ID,
 							RoleName:       auth.RoleAdmin,
 						})
+						orgName = org.Name
+						roleName = auth.RoleAdmin
 					}
+				} else {
+					orgName = primaryOrg.Name
+					roleName = primaryOrg.RoleName
 				}
 
 				identity = &auth.UserIdentity{
@@ -173,6 +180,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					Username: user.Username,
 					Email:    user.Email,
 					IsAdmin:  user.IsAdmin,
+					OrgName:  orgName,
+					Role:     roleName,
 					Token:    token,
 				}
 			}
@@ -279,7 +288,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					if err == nil {
 						primaryOrg, err := server.store.GetUserPrimaryOrganisation(r.Context(), user.ID)
 						if err != nil || primaryOrg.Name == "" {
-							org, err := server.store.UpsertOrganisation(r.Context(), user.Username)
+							orgSlug := slugOrgName(user.Username)
+							org, err := server.store.UpsertOrganisation(r.Context(), orgSlug)
 							if err == nil {
 								_, _ = server.store.UpsertMemberRole(r.Context(), storegen.UpsertMemberRoleParams{
 									OrganisationID: org.ID,
@@ -301,4 +311,24 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func slugOrgName(s string) string {
+	s = strings.ToLower(s)
+	var sb strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			sb.WriteRune(r)
+		} else if r == '.' || r == '-' {
+			sb.WriteRune('_')
+		}
+	}
+	res := sb.String()
+	for len(res) < 3 {
+		res += "_"
+	}
+	if len(res) > 30 {
+		res = res[:30]
+	}
+	return res
 }

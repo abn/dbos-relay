@@ -36,7 +36,7 @@ repos:
         name: reject anything staged under the scratch area
         entry: the scratch area under .agents/brain/ is never committed
         language: fail
-        files: '^\.agents/brain/'
+        files: '^\.agents/(brain|auto-permissions)/'
 
       # Editorial and privacy invariants from AGENTS.md. Pattern hooks rather
       # than review discipline, because review discipline does not scale.

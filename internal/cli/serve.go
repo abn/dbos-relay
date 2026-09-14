@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/abn/relay/internal/alerting"
@@ -27,19 +29,33 @@ import (
 	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/metrics"
 	"github.com/abn/relay/internal/router"
+	"github.com/abn/relay/internal/safego"
 	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
 )
 
 func newServeCommand() *cobra.Command {
-	return &cobra.Command{
+	var skipMigrations bool
+
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the Relay control plane server",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !skipMigrations {
+				if envVal := os.Getenv("RELAY_SKIP_MIGRATIONS"); envVal == "true" || envVal == "1" {
+					skipMigrations = true
+				}
+			}
+
 			cfg, err := config.Load(os.Getenv)
 			if err != nil {
 				return err
 			}
+
+			logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+				Level: cfg.LogLevel,
+			}))
+			slog.SetDefault(logger)
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -50,11 +66,12 @@ func newServeCommand() *cobra.Command {
 			}
 			defer s.Close()
 
-			if err := s.Migrate(ctx); err != nil {
-				return fmt.Errorf("migrating database: %w", err)
+			if !skipMigrations {
+				if err := s.Migrate(ctx); err != nil {
+					return fmt.Errorf("migrating database: %w", err)
+				}
 			}
 
-			logger := slog.Default()
 			h := hub.New(s, cfg, logger)
 			defer func() {
 				if err := h.Close(); err != nil {
@@ -104,8 +121,10 @@ func newServeCommand() *cobra.Command {
 			}()
 			if configPath := os.Getenv("RELAY_CONFIG"); configPath != "" {
 				if decCfg, err := declarative.LoadFile(configPath); err == nil {
-					if _, err := declarative.Apply(ctx, s, decCfg); err != nil {
+					if plan, err := declarative.Apply(ctx, s, decCfg); err != nil {
 						logger.Warn("failed to apply declarative config", "path", configPath, "error", err)
+					} else if plan != nil && len(plan.GeneratedKeys) > 0 {
+						logger.Warn("minted default API key during bootstrap; plaintext is not recoverable, set RELAY_API_KEY before startup or run 'relay apikey create'", "keys_count", len(plan.GeneratedKeys))
 					}
 					allApps, _ := s.Queries().ListAllApplications(ctx)
 					appMap := make(map[string]gen.Application)
@@ -142,19 +161,27 @@ func newServeCommand() *cobra.Command {
 			mux.Handle("/internal/v1/forward/", forwardHandler)
 			mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metrics.NewHandler(s.Queries())))
 
+			loggedHandler := loggingMiddleware(logger, mux)
+
 			server := &http.Server{
 				Addr:              cfg.ListenAddr,
-				Handler:           mux,
+				Handler:           loggedHandler,
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 
 			serverErr := make(chan error, 1)
-			go func() {
-				if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					serverErr <- err
+			safego.Go(logger, "http-server", func() {
+				if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+					if err := server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						serverErr <- err
+					}
+				} else {
+					if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						serverErr <- err
+					}
 				}
 				close(serverErr)
-			}()
+			})
 
 			select {
 			case err := <-serverErr:
@@ -172,6 +199,72 @@ func newServeCommand() *cobra.Command {
 			}
 		},
 	}
+
+	cmd.Flags().BoolVar(&skipMigrations, "skip-migrations", false, "Skip automatic database schema migrations on startup (defaults to RELAY_SKIP_MIGRATIONS env)")
+	return cmd
+}
+
+type requestIDContextKey struct{}
+
+var contextKeyRequestID = requestIDContextKey{}
+
+type responseWriterRecorder struct {
+	http.ResponseWriter
+	statusCode   int
+	bytesWritten int
+}
+
+func (r *responseWriterRecorder) WriteHeader(statusCode int) {
+	r.statusCode = statusCode
+	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (r *responseWriterRecorder) Write(b []byte) (int, error) {
+	if r.statusCode == 0 {
+		r.statusCode = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(b)
+	r.bytesWritten += n
+	return n, err
+}
+
+func (r *responseWriterRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("http.Hijacker not implemented")
+}
+
+func (r *responseWriterRecorder) Flush() {
+	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
+}
+
+func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := r.Header.Get("X-Request-Id")
+		if reqID == "" {
+			reqID = uuid.New().String()
+		}
+		w.Header().Set("X-Request-Id", reqID)
+
+		start := time.Now()
+		rec := &responseWriterRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		ctx := context.WithValue(r.Context(), contextKeyRequestID, reqID)
+
+		next.ServeHTTP(rec, r.WithContext(ctx))
+
+		duration := time.Since(start)
+		logger.Info("http request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.statusCode,
+			"duration", duration,
+			"bytes", rec.bytesWritten,
+			"request_id", reqID,
+		)
+	})
 }
 
 func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Manager, dataPlanes map[string]declarative.DataPlane, appMap map[string]gen.Application) {
@@ -194,6 +287,8 @@ func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Mana
 			MaxConnections:   dp.MaxConnections,
 		}); err != nil {
 			logger.Warn("failed to register data plane", "app", appName, "error", err)
+		} else {
+			logger.Info("registered data plane for app", "app", appName)
 		}
 	}
 }

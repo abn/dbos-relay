@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -189,7 +190,18 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 						}
 
 						attempts++
-						targetURL := fmt.Sprintf("http://%s:%d/internal/v1/forward/%s", inst.AdvertiseAddress, inst.Port, app.ID)
+						scheme := "http"
+						addr := inst.AdvertiseAddress
+						if strings.HasPrefix(addr, "https://") {
+							scheme = "https"
+							addr = strings.TrimPrefix(addr, "https://")
+						} else if strings.HasPrefix(addr, "http://") {
+							scheme = "http"
+							addr = strings.TrimPrefix(addr, "http://")
+						} else if s := os.Getenv("RELAY_PEER_SCHEME"); s != "" {
+							scheme = s
+						}
+						targetURL := fmt.Sprintf("%s://%s:%d/internal/v1/forward/%s", scheme, addr, inst.Port, app.ID)
 
 						forwardTimeout := 5 * time.Second
 						if dl, ok := ctx.Deadline(); ok {

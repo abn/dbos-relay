@@ -54,16 +54,20 @@ func newApplyCommand() *cobra.Command {
 				return fmt.Errorf("applying manifest: %w", err)
 			}
 
-			if envOut != "" && len(plan.GeneratedKeys) > 0 {
-				if err := ensureGitIgnoredIfInRepo(cmd.Context(), envOut); err != nil {
-					return err
-				}
-				var lines []string
-				for _, v := range plan.GeneratedKeys {
-					lines = append(lines, fmt.Sprintf("RELAY_API_KEY=%s\n", v))
-				}
-				if err := os.WriteFile(envOut, []byte(strings.Join(lines, "")), 0600); err != nil {
-					return fmt.Errorf("writing env file %s: %w", envOut, err)
+			if envOut != "" {
+				if len(plan.GeneratedKeys) > 0 {
+					if err := ensureGitIgnoredIfInRepo(cmd.Context(), envOut); err != nil {
+						return err
+					}
+					var lines []string
+					for _, v := range plan.GeneratedKeys {
+						lines = append(lines, fmt.Sprintf("RELAY_API_KEY=%s\n", v))
+					}
+					if err := os.WriteFile(envOut, []byte(strings.Join(lines, "")), 0600); err != nil {
+						return fmt.Errorf("writing env file %s: %w", envOut, err)
+					}
+				} else {
+					cmd.Println("No newly generated API keys to write to env file (existing keys already configured)")
 				}
 			}
 

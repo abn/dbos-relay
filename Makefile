@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build test vet gen drift lint fmt clean check docs/check hooks/require hooks/update verify-live db/up db/down db/url lint/sdk-isolation lint/examples-isolation dashboard/build dashboard/check
+.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check test test/conformance vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk
 
 ##@ Bootstrap
 
@@ -26,6 +26,13 @@ build/java: ## Build the Java sample application jar
 		(cd examples/java && mvn clean package -DskipTests); \
 	else \
 		podman run --rm -v $(CURDIR)/examples/java:/app:z -w /app docker.io/library/maven:3.9-eclipse-temurin-21-alpine mvn clean package -DskipTests; \
+	fi
+
+build/typescript: ## Build the TypeScript sample application
+	@if command -v npm >/dev/null 2>&1; then \
+		(cd examples/typescript && npm ci && npm run build); \
+	else \
+		podman run --rm -v $(CURDIR)/examples/typescript:/app:z -w /app docker.io/library/node:22-slim sh -c "npm ci && npm run build"; \
 	fi
 
 dashboard/build: ## Build the web dashboard assets
@@ -64,10 +71,12 @@ gen: ## Regenerate sqlc and OpenAPI output
 	@if [ -f sqlc.yaml ]; then go tool sqlc generate; fi
 	@if [ -f api/codegen.yaml ]; then go tool oapi-codegen -config api/codegen.yaml api/spec/openapi-3.0.json; fi
 
-drift: gen ## Fail if generated output differs from the committed version
-	@if [ -d internal/store/gen ] || [ -d internal/api/gen ]; then \
-	  git diff --exit-code --quiet $$(ls -d $(GENERATED) 2>/dev/null) || \
-	  { echo "drift: generated output is stale, run make gen"; exit 1; }; \
+drift: ## Fail if generated output differs from the committed version
+	rm -rf $(GENERATED)
+	$(MAKE) gen
+	@if [ -n "$$(git status --porcelain -- $(GENERATED))" ]; then \
+	  git status --porcelain -- $(GENERATED); \
+	  echo "drift: generated output is stale, run make gen"; exit 1; \
 	fi
 	@echo "drift: ok"
 
@@ -130,7 +139,7 @@ verify-live: ## Run live database verification suite against real PostgreSQL
 	go test -v -count=1 -run TestRouter_LiveDatabase ./internal/router/...
 	go test -v -count=1 ./internal/declarative/...
 
-verify-sdk: build lint/sdk-isolation lint/examples-isolation ## Run real multi-SDK sample app integration suite under Podman compose
+verify-sdk: build build/java build/typescript lint/sdk-isolation lint/examples-isolation ## Run real multi-SDK sample app integration suite under Podman compose
 	@if [ ! -f deploy/.env ] || [ -z "$$(grep RELAY_API_KEY deploy/.env 2>/dev/null)" ]; then \
 		KEY="dbos_sec_$$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"; \
 		echo "RELAY_API_KEY=$$KEY" > deploy/.env; \

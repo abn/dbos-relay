@@ -19,6 +19,7 @@ import (
 	"github.com/abn/relay/internal/config"
 	"github.com/abn/relay/internal/liveness"
 	"github.com/abn/relay/internal/protocol"
+	"github.com/abn/relay/internal/safego"
 	"github.com/abn/relay/internal/store/gen"
 )
 
@@ -186,7 +187,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	stopHandshakeWatcher := make(chan struct{})
 	defer close(stopHandshakeWatcher)
-	go func() {
+	safego.Go(h.logger, "hub-handshake-watcher", func() {
 		select {
 		case <-h.ctx.Done():
 			if !registered {
@@ -198,7 +199,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		case <-stopHandshakeWatcher:
 		}
-	}()
+	})
 
 	// Send executor_info request to prompt executor registration per D7 protocol
 	infoReq := &protocol.ExecutorInfoRequest{
@@ -347,18 +348,20 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = h.liveness.OnConnect(r.Context(), appID, executorID, appVersion)
 	}
 
+	execConn.SetLogger(h.logger)
+
 	h.wg.Add(2)
-	go func() {
+	safego.Go(h.logger, "hub-read-pump", func() {
 		defer h.wg.Done()
 		execConn.ReadPump(h.ctx, func(c *ExecutorConn, m protocol.Message) {
 			// Incoming messages from executor not handled by multiplexer
 			h.logger.Debug("received message from executor", "executorID", executorID, "type", m.GetMessageType())
 		})
-	}()
-	go func() {
+	})
+	safego.Go(h.logger, "hub-heartbeat-pump", func() {
 		defer h.wg.Done()
 		execConn.HeartbeatPump(h.ctx)
-	}()
+	})
 }
 
 // CheckPendingWorkflows queries a target executor via WebSocket to verify whether pending workflows exist for a dead executor ID and version.
@@ -557,10 +560,11 @@ func (h *Hub) Close() error {
 	var wg sync.WaitGroup
 	for _, conn := range conns {
 		wg.Add(1)
-		go func(c *ExecutorConn) {
+		c := conn
+		safego.Go(h.logger, "hub-close-drain", func() {
 			defer wg.Done()
 			_ = c.Close()
-		}(conn)
+		})
 	}
 	wg.Wait()
 

@@ -71,10 +71,10 @@ func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
 
-func (s *Store) Migrate(ctx context.Context) error {
+func (s *Store) newMigrate() (*migrate.Migrate, error) {
 	d, err := iofs.New(migrationFS, "migrations")
 	if err != nil {
-		return fmt.Errorf("failed to create migration source: %w", err)
+		return nil, fmt.Errorf("failed to create migration source: %w", err)
 	}
 
 	migrateURL := s.url
@@ -86,59 +86,81 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 	m, err := migrate.NewWithSourceInstance("iofs", d, migrateURL)
 	if err != nil {
-		return fmt.Errorf("failed to create migrate instance: %w", err)
+		return nil, fmt.Errorf("failed to create migrate instance: %w", err)
+	}
+	return m, nil
+}
+
+func (s *Store) Migrate(ctx context.Context) error {
+	m, err := s.newMigrate()
+	if err != nil {
+		return err
 	}
 	defer func() {
 		_, _ = m.Close()
 	}()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		if strings.Contains(err.Error(), "Dirty database") {
+			v, _, vErr := m.Version()
+			if vErr == nil {
+				return fmt.Errorf("database schema is dirty at version %d: resolve conflicts and run 'relay migrate force --version %d --confirm'", v, v)
+			}
+			return fmt.Errorf("database schema is dirty: resolve conflicts and run 'relay migrate force --version <version> --confirm' (%w)", err)
+		}
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) Truncate(ctx context.Context) error {
-	// Truncate tables in dependency order (reverse of creation)
-	tables := []string{
-		"audit_logs",
-		"domain_claims",
-		"organisation_members",
-		"users",
-		"alerting_rules",
-		"api_keys",
-		"executors",
-		"instances",
-		"applications",
-		"organisations",
-	}
-
-	// We can use a single TRUNCATE statement with CASCADE to handle dependencies,
-	// but the instructions say "emptying tables in dependency order".
-	query := fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE", strings.Join(tables, ", "))
-
-	_, err := s.pool.Exec(ctx, query)
+func (s *Store) MigrateVersion(ctx context.Context) (uint, bool, error) {
+	m, err := s.newMigrate()
 	if err != nil {
-		return fmt.Errorf("failed to truncate tables: %w", err)
+		return 0, false, err
 	}
+	defer func() {
+		_, _ = m.Close()
+	}()
 
-	if _, err := s.pool.Exec(ctx, "DELETE FROM roles WHERE organisation_id IS NOT NULL"); err != nil {
-		return fmt.Errorf("failed to clean custom roles: %w", err)
+	v, dirty, err := m.Version()
+	if err != nil {
+		if errors.Is(err, migrate.ErrNilVersion) {
+			return 0, false, nil
+		}
+		return 0, false, err
 	}
+	return v, dirty, nil
+}
 
-	reseed := `
-		INSERT INTO roles (organisation_id, name, permissions, is_global)
-		VALUES
-			(NULL, 'admin', ARRAY['application.read', 'application.write', 'websocket.connect'], true),
-			(NULL, 'operator', ARRAY['application.read', 'application.write', 'websocket.connect'], true),
-			(NULL, 'viewer', ARRAY['application.read'], true)
-		ON CONFLICT DO NOTHING;
-	`
-	if _, err := s.pool.Exec(ctx, reseed); err != nil {
-		return fmt.Errorf("failed to re-seed global roles: %w", err)
+func (s *Store) MigrateForce(ctx context.Context, version int) error {
+	m, err := s.newMigrate()
+	if err != nil {
+		return err
 	}
+	defer func() {
+		_, _ = m.Close()
+	}()
 
+	return m.Force(version)
+}
+
+func (s *Store) MigrateDown(ctx context.Context, steps int) error {
+	m, err := s.newMigrate()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = m.Close()
+	}()
+
+	if steps <= 0 {
+		steps = 1
+	}
+	err = m.Steps(-steps)
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return err
+	}
 	return nil
 }
 
