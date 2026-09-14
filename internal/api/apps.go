@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
+	"github.com/abn/relay/internal/liveness"
 	storegen "github.com/abn/relay/internal/store/gen"
 )
 
@@ -58,8 +59,8 @@ func mapApplication(app storegen.Application, orgID pgtype.UUID) gen.Application
 		_ = json.Unmarshal(app.Settings, &s)
 	}
 	timeoutSecs := s.ExecutorTimeoutSecs
-	if timeoutSecs == 0 {
-		timeoutSecs = 60
+	if timeoutSecs <= 0 {
+		timeoutSecs = int64(liveness.DefaultExecutorTimeout / time.Second)
 	}
 	return gen.Application{
 		Id:                  formatUUID(app.ID),

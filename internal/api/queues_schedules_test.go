@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -949,4 +950,68 @@ func TestListMetrics(t *testing.T) {
 			t.Errorf("expected status 404, got %d", probResp.StatusCode)
 		}
 	})
+}
+
+func TestIntToInt32Ptr(t *testing.T) {
+	// nil input
+	if got := intToInt32Ptr(nil); got != nil {
+		t.Errorf("expected nil for nil input, got %v", got)
+	}
+
+	// in-range positive
+	val42 := 42
+	if got := intToInt32Ptr(&val42); got == nil || *got != 42 {
+		t.Errorf("expected 42, got %v", got)
+	}
+
+	// in-range negative
+	valNeg := -100
+	if got := intToInt32Ptr(&valNeg); got == nil || *got != -100 {
+		t.Errorf("expected -100, got %v", got)
+	}
+
+	// max int clamping
+	valOverMax := int(int64(math.MaxInt32) + 500)
+	if got := intToInt32Ptr(&valOverMax); got == nil || *got != math.MaxInt32 {
+		t.Errorf("expected MaxInt32 (%d), got %v", math.MaxInt32, got)
+	}
+
+	// min int clamping
+	valUnderMin := int(int64(math.MinInt32) - 500)
+	if got := intToInt32Ptr(&valUnderMin); got == nil || *got != math.MinInt32 {
+		t.Errorf("expected MinInt32 (%d), got %v", math.MinInt32, got)
+	}
+}
+
+func TestScheduleOutputToModel_TimeParsing(t *testing.T) {
+	rfcTimeStr := "2026-03-15T12:30:00Z"
+	m1 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: &rfcTimeStr,
+	})
+	if m1.LastFiredAt == nil || m1.LastFiredAt.Year() != 2026 || m1.LastFiredAt.Month() != 3 || m1.LastFiredAt.Day() != 15 {
+		t.Errorf("failed to parse RFC3339 timestamp: %v", m1.LastFiredAt)
+	}
+
+	nanoTimeStr := "2026-03-15T12:30:00.123456789Z"
+	m2 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: &nanoTimeStr,
+	})
+	if m2.LastFiredAt == nil || m2.LastFiredAt.Nanosecond() != 123456789 {
+		t.Errorf("failed to parse RFC3339Nano timestamp: %v", m2.LastFiredAt)
+	}
+
+	msTimeStr := "1773577800000" // Unix ms
+	m3 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: &msTimeStr,
+	})
+	if m3.LastFiredAt == nil || m3.LastFiredAt.UnixMilli() != 1773577800000 {
+		t.Errorf("failed to parse ms timestamp: %v", m3.LastFiredAt)
+	}
+
+	m4 := scheduleOutputToModel(protocol.ScheduleOutput{
+		LastFiredAt: nil,
+	})
+	if m4.LastFiredAt != nil {
+		t.Errorf("expected nil LastFiredAt for nil input, got %v", m4.LastFiredAt)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/abn/relay/internal/api/gen"
@@ -21,6 +22,14 @@ func newRequestID() string {
 func intToInt32Ptr(i *int) *int32 {
 	if i == nil {
 		return nil
+	}
+	if *i > math.MaxInt32 {
+		v := int32(math.MaxInt32)
+		return &v
+	}
+	if *i < math.MinInt32 {
+		v := int32(math.MinInt32)
+		return &v
 	}
 	v := int32(*i)
 	return &v

@@ -4,29 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/protocol"
 )
-
-func parseTimePtr(s *string) *time.Time {
-	if s == nil || *s == "" {
-		return nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, *s); err == nil {
-		return &t
-	}
-	if t, err := time.Parse(time.RFC3339, *s); err == nil {
-		return &t
-	}
-	if ms, err := strconv.ParseInt(*s, 10, 64); err == nil {
-		t := time.UnixMilli(ms).UTC()
-		return &t
-	}
-	return nil
-}
 
 func scheduleOutputToModel(s protocol.ScheduleOutput) gen.Schedule {
 	return gen.Schedule{
@@ -35,7 +17,7 @@ func scheduleOutputToModel(s protocol.ScheduleOutput) gen.Schedule {
 		Context:           s.Context,
 		CronExpression:    s.Schedule,
 		CronTimezone:      s.CronTimezone,
-		LastFiredAt:       parseTimePtr(s.LastFiredAt),
+		LastFiredAt:       parseTimeString(s.LastFiredAt),
 		ScheduleId:        s.ScheduleID,
 		ScheduleName:      s.ScheduleName,
 		Status:            s.Status,

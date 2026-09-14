@@ -300,6 +300,26 @@ func TestApplicationManagement(t *testing.T) {
 			t.Errorf("unexpected app payload: %+v", okResp)
 		}
 
+		// Default timeout when <= 0
+		store.getAppByNameFunc = func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+			if arg.Name == "my-app" {
+				return storegen.Application{
+					ID:             appID,
+					OrganisationID: orgID,
+					Name:           arg.Name,
+					Settings:       []byte(`{"executorTimeoutSecs":0}`),
+				}, nil
+			}
+			return storegen.Application{}, errors.New("app not found")
+		}
+		resp, err = srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "my-org", AppName: "my-app"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if okResp, ok := resp.(gen.GetApp200JSONResponse); !ok || okResp.ExecutorTimeoutSecs != 60 {
+			t.Errorf("expected default timeout 60 for 0, got %+v", resp)
+		}
+
 		// Org not found
 		resp, err = srv.GetApp(ctx, gen.GetAppRequestObject{OrgName: "nonexistent", AppName: "my-app"})
 		if err != nil {
