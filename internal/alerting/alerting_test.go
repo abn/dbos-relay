@@ -22,12 +22,18 @@ import (
 
 type mockAlertStore struct {
 	mu           sync.Mutex
+	apps         []gen.Application
 	rules        []gen.AlertingRule
 	executors    map[pgtype.UUID][]gen.Executor
 	touchedRules []pgtype.UUID
 }
 
 func (m *mockAlertStore) ListAllApplications(ctx context.Context) ([]gen.Application, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.apps) > 0 {
+		return m.apps, nil
+	}
 	return []gen.Application{
 		{ID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, Name: "monitored-app"},
 		{ID: pgtype.UUID{Bytes: [16]byte{2}, Valid: true}, Name: "receiving-app"},

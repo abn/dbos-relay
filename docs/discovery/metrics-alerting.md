@@ -62,25 +62,34 @@ Conductor exposes application metrics via a single Prometheus-compatible HTTP en
 
 ### Metric catalogue
 
-The table below catalogues every metric family, its measurement flavor, labels, description, and source origin (computed by control plane versus reported by executor).
+The tables below catalogue the OpenMetrics families defined by Conductor. In Relay's Scale tier implementation, executor-level metrics are in scope and evaluated directly from the control plane registry. Application workflow and step-level metrics are deferred to subsequent tiers where workflow history aggregation is supported without violating the invariant against direct application database queries.
 
-| Metric Name | Flavor | Labels | Origin | Description |
-| --- | --- | --- | --- | --- |
-| `dbos_conductor_v1_workflow_started_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Workflows created per second over the 60-second window. |
-| `dbos_conductor_v1_workflow_dequeued_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Enqueued workflows dequeued per second. Excludes workflows that were never enqueued. |
-| `dbos_conductor_v1_workflow_success_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Workflows that completed successfully per second. |
-| `dbos_conductor_v1_workflow_failed_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Workflows terminating in `ERROR` or `MAX_RECOVERY_ATTEMPTS_EXCEEDED` per second. |
-| `dbos_conductor_v1_workflow_cancelled_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Workflows cancelled per second. |
-| `dbos_conductor_v1_workflow_enqueued_count` | Point-in-time | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Current number of workflows in `ENQUEUED` state. |
-| `dbos_conductor_v1_workflow_pending_count` | Point-in-time | `application`, `workflow_name` | Computed (Control Plane) | Current number of workflows in `PENDING` (executing) state. |
-| `dbos_conductor_v1_workflow_oldest_enqueued_timestamp_seconds` | Point-in-time | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Unix timestamp (seconds) of oldest currently enqueued workflow. Series omitted if queue is empty. Age derived via `time() - metric`. |
-| `dbos_conductor_v1_workflow_oldest_pending_timestamp_seconds` | Point-in-time | `application`, `workflow_name` | Computed (Control Plane) | Unix timestamp (seconds) of oldest currently executing workflow. Series omitted if no workflows are pending. Age derived via `time() - metric`. |
-| `dbos_conductor_v1_workflow_max_queue_wait_seconds` | Windowed | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Maximum queue wait (created to first started) in seconds across workflows completing in the window. |
-| `dbos_conductor_v1_workflow_max_total_latency_seconds` | Windowed | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Maximum total latency (created to completed) in seconds across workflows completing in the window. |
-| `dbos_conductor_v1_step_success_rate` | Rate | `application`, `step_name` | Executor-reported | Steps completed successfully per second. Aggregated from executor step execution reports. |
-| `dbos_conductor_v1_step_failed_rate` | Rate | `application`, `step_name` | Executor-reported | Steps terminating with an error per second. Aggregated from executor step execution reports. |
-| `dbos_conductor_v1_step_max_duration_seconds` | Windowed | `application`, `step_name` | Executor-reported | Maximum single-step duration in seconds across steps completing successfully in the window. |
-| `dbos_conductor_v1_executor_count` | Point-in-time | `application`, `status`, `application_version` | Computed (Control Plane) | Number of registered executors. Series omitted when no executors are connected. `status` takes values such as `HEALTHY`. |
+#### In-scope metric families (Scale tier)
+
+| Metric Name | Flavor | Labels | Origin | Status | Description |
+| --- | --- | --- | --- | --- | --- |
+| `dbos_conductor_v1_executor_count` | Point-in-time | `application`, `status`, `application_version` | Computed (Control Plane) | Supported | Number of registered executors. Series omitted when no executors are connected. `status` takes values such as `HEALTHY`, `DISCONNECTED`, or `DEAD`. |
+
+#### Deferred metric families
+
+The following metric families require either executor-reported telemetry aggregation or direct workflow queue state polling that is deferred in the current control plane tier:
+
+| Metric Name | Flavor | Labels | Origin | Status | Description |
+| --- | --- | --- | --- | --- | --- |
+| `dbos_conductor_v1_workflow_started_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Workflows created per second over the 60-second window. |
+| `dbos_conductor_v1_workflow_dequeued_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Enqueued workflows dequeued per second. Excludes workflows that were never enqueued. |
+| `dbos_conductor_v1_workflow_success_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Workflows that completed successfully per second. |
+| `dbos_conductor_v1_workflow_failed_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Workflows terminating in `ERROR` or `MAX_RECOVERY_ATTEMPTS_EXCEEDED` per second. |
+| `dbos_conductor_v1_workflow_cancelled_rate` | Rate | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Workflows cancelled per second. |
+| `dbos_conductor_v1_workflow_enqueued_count` | Point-in-time | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Current number of workflows in `ENQUEUED` state. |
+| `dbos_conductor_v1_workflow_pending_count` | Point-in-time | `application`, `workflow_name` | Computed (Control Plane) | Deferred | Current number of workflows in `PENDING` (executing) state. |
+| `dbos_conductor_v1_workflow_oldest_enqueued_timestamp_seconds` | Point-in-time | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Unix timestamp (seconds) of oldest currently enqueued workflow. Series omitted if queue is empty. Age derived via `time() - metric`. |
+| `dbos_conductor_v1_workflow_oldest_pending_timestamp_seconds` | Point-in-time | `application`, `workflow_name` | Computed (Control Plane) | Deferred | Unix timestamp (seconds) of oldest currently executing workflow. Series omitted if no workflows are pending. Age derived via `time() - metric`. |
+| `dbos_conductor_v1_workflow_max_queue_wait_seconds` | Windowed | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Maximum queue wait (created to first started) in seconds across workflows completing in the window. |
+| `dbos_conductor_v1_workflow_max_total_latency_seconds` | Windowed | `application`, `workflow_name`, `queue_name` | Computed (Control Plane) | Deferred | Maximum total latency (created to completed) in seconds across workflows completing in the window. |
+| `dbos_conductor_v1_step_success_rate` | Rate | `application`, `step_name` | Executor-reported | Deferred | Steps completed successfully per second. Aggregated from executor step execution reports. |
+| `dbos_conductor_v1_step_failed_rate` | Rate | `application`, `step_name` | Executor-reported | Deferred | Steps terminating with an error per second. Aggregated from executor step execution reports. |
+| `dbos_conductor_v1_step_max_duration_seconds` | Windowed | `application`, `step_name` | Executor-reported | Deferred | Maximum single-step duration in seconds across steps completing successfully in the window. |
 
 ## REST metrics API
 

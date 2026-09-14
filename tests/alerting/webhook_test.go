@@ -136,7 +136,7 @@ func TestAlertingChannels_EndToEnd(t *testing.T) {
 	}
 
 	evaluator := alerting.NewEvaluator(mockStore, &testDispatcher{}, nil)
-	httpDispatcher := alerting.NewHTTPChannelDispatcher(nil)
+	httpDispatcher := alerting.NewHTTPChannelDispatcher(nil, alerting.WithAllowLoopback(true))
 	evaluator.SetChannelDispatcher(httpDispatcher)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

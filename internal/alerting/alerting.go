@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,11 @@ type Store interface {
 	ListAlertingRulesByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.AlertingRule, error)
 	ListExecutorsByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.Executor, error)
 	TouchAlertRuleLastFired(ctx context.Context, id pgtype.UUID) error
+}
+
+// ClaimAlertRuleStore is an optional interface for stores that support atomic alert rule claim / CAS.
+type ClaimAlertRuleStore interface {
+	ClaimAlertRuleFire(ctx context.Context, id pgtype.UUID, minIntervalSecs int32) (bool, error)
 }
 
 // Dispatcher dispatches alert messages to receiving applications.
@@ -87,24 +93,48 @@ func (e *Evaluator) Start(ctx context.Context, interval time.Duration) func() {
 	}
 }
 
-// EvaluateOnce executes an evaluation pass over all applications and their rules concurrently.
+// EvaluateOnce executes an evaluation pass over all applications and their rules concurrently with bounded concurrency.
 func (e *Evaluator) EvaluateOnce(ctx context.Context) error {
 	apps, err := e.store.ListAllApplications(ctx)
 	if err != nil {
 		return fmt.Errorf("listing applications: %w", err)
 	}
 
+	maxWorkers := 16
+	if len(apps) < maxWorkers {
+		maxWorkers = len(apps)
+	}
+	if maxWorkers == 0 {
+		return nil
+	}
+
+	sem := make(chan struct{}, maxWorkers)
 	var wg sync.WaitGroup
+
+AppLoop:
 	for _, app := range apps {
+		if ctx.Err() != nil {
+			break
+		}
+
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break AppLoop
+		}
+
 		wg.Add(1)
 		go func(a gen.Application) {
-			defer wg.Done()
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
 			e.evaluateApp(ctx, a)
 		}(app)
 	}
 	wg.Wait()
 
-	return nil
+	return ctx.Err()
 }
 
 func (e *Evaluator) evaluateApp(ctx context.Context, app gen.Application) {
@@ -118,20 +148,43 @@ func (e *Evaluator) evaluateApp(ctx context.Context, app gen.Application) {
 	}
 
 	for _, rule := range rules {
-		if e.shouldThrottle(rule) {
-			continue
+		if appCtx.Err() != nil {
+			return
 		}
 
-		triggered, meta, err := e.evaluateRule(appCtx, app, rule)
+		ruleCtx, ruleCancel := context.WithTimeout(appCtx, 5*time.Second)
+		triggered, meta, err := e.evaluateRule(ruleCtx, app, rule)
 		if err != nil {
+			ruleCancel()
 			e.logger.Warn("evaluating rule failed", "ruleID", rule.ID, "type", rule.RuleType, "error", err)
 			continue
 		}
 
 		if triggered {
-			e.fireAlert(appCtx, rule, meta)
+			e.fireAlert(ruleCtx, rule, meta)
 		}
+		ruleCancel()
 	}
+}
+
+func (e *Evaluator) claimRule(ctx context.Context, rule gen.AlertingRule) (bool, error) {
+	var minInterval int32
+	if rule.MinIntervalSecs != nil && *rule.MinIntervalSecs > 0 {
+		minInterval = *rule.MinIntervalSecs
+	}
+
+	if cs, ok := e.store.(ClaimAlertRuleStore); ok {
+		return cs.ClaimAlertRuleFire(ctx, rule.ID, minInterval)
+	}
+
+	// Fallback when ClaimAlertRuleStore is not implemented
+	if e.shouldThrottle(rule) {
+		return false, nil
+	}
+	if err := e.store.TouchAlertRuleLastFired(ctx, rule.ID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (e *Evaluator) shouldThrottle(rule gen.AlertingRule) bool {
@@ -173,32 +226,76 @@ func (e *Evaluator) evaluateRule(ctx context.Context, app gen.Application, rule 
 		return false, nil, nil
 
 	case "WorkflowFailure":
-		// Check metadata threshold
 		var metaMap map[string]any
 		if len(rule.RuleMetadata) > 0 {
 			_ = json.Unmarshal(rule.RuleMetadata, &metaMap)
 		}
-		thresholdStr := "1"
-		if t, ok := metaMap["threshold"].(string); ok && t != "" {
-			thresholdStr = t
+		threshold := 1
+		if t, ok := metaMap["threshold"].(float64); ok && t > 0 {
+			threshold = int(t)
+		} else if s, ok := metaMap["threshold"].(string); ok {
+			if v, err := strconv.Atoi(s); err == nil && v > 0 {
+				threshold = v
+			}
 		}
 		wfName := "*"
 		if w, ok := metaMap["workflow_name"].(string); ok && w != "" {
 			wfName = w
 		}
-		periodSecs := "60"
-		if p, ok := metaMap["period_secs"].(string); ok && p != "" {
-			periodSecs = p
+		periodSecs := 60
+		if p, ok := metaMap["period_secs"].(float64); ok && p > 0 {
+			periodSecs = int(p)
+		} else if s, ok := metaMap["period_secs"].(string); ok {
+			if v, err := strconv.Atoi(s); err == nil && v > 0 {
+				periodSecs = v
+			}
 		}
 
-		// In clean-room mode, evaluate threshold against control-plane tracking
-		meta := map[string]string{
-			"workflow_name":         wfName,
-			"failed_workflow_count": thresholdStr,
-			"threshold":             thresholdStr,
-			"period_secs":           periodSecs,
+		if e.dispatcher == nil {
+			return false, nil, nil
 		}
-		return false, meta, nil
+
+		startTime := time.Now().UTC().Add(-time.Duration(periodSecs) * time.Second)
+		req := &protocol.ListWorkflowsRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeListWorkflows,
+				RequestID: uuid.New().String(),
+			},
+			Body: protocol.ListWorkflowsRequestBody{
+				StartTime: &startTime,
+				Status:    protocol.StringOrList{"ERROR"},
+			},
+		}
+		if wfName != "*" && wfName != "" {
+			req.Body.WorkflowName = protocol.StringOrList{wfName}
+		}
+
+		respMsg, err := e.dispatcher.Dispatch(ctx, app.ID, req)
+		if err != nil {
+			e.logger.Warn("evaluating workflow failure rule failed to query executor", "app", app.Name, "error", err)
+			return false, nil, nil
+		}
+
+		failedCount := 0
+		if resp, ok := respMsg.(*protocol.ListWorkflowsResponse); ok {
+			for _, wf := range resp.Output {
+				if wfName != "*" && wfName != "" && wf.WorkflowName != nil && *wf.WorkflowName != wfName {
+					continue
+				}
+				failedCount++
+			}
+		}
+
+		if failedCount >= threshold {
+			meta := map[string]string{
+				"workflow_name":         wfName,
+				"failed_workflow_count": strconv.Itoa(failedCount),
+				"threshold":             strconv.Itoa(threshold),
+				"period_secs":           strconv.Itoa(periodSecs),
+			}
+			return true, meta, nil
+		}
+		return false, nil, nil
 
 	case "SlowQueue":
 		var metaMap map[string]any
@@ -209,16 +306,68 @@ func (e *Evaluator) evaluateRule(ctx context.Context, app gen.Application, rule 
 		if q, ok := metaMap["queue_name"].(string); ok && q != "" {
 			qName = q
 		}
-		threshSecs := "60"
-		if ts, ok := metaMap["threshold_secs"].(string); ok && ts != "" {
-			threshSecs = ts
+		threshSecs := 60
+		if ts, ok := metaMap["threshold_secs"].(float64); ok && ts > 0 {
+			threshSecs = int(ts)
+		} else if s, ok := metaMap["threshold_secs"].(string); ok {
+			if v, err := strconv.Atoi(s); err == nil && v > 0 {
+				threshSecs = v
+			}
 		}
-		meta := map[string]string{
-			"queue_name":           qName,
-			"stuck_workflow_count": "1",
-			"threshold_secs":       threshSecs,
+
+		if e.dispatcher == nil {
+			return false, nil, nil
 		}
-		return false, meta, nil
+
+		req := &protocol.ListWorkflowsRequest{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeListQueuedWorkflows,
+				RequestID: uuid.New().String(),
+			},
+			Body: protocol.ListWorkflowsRequestBody{
+				QueuesOnly: true,
+			},
+		}
+		if qName != "*" && qName != "" {
+			req.Body.QueueName = protocol.StringOrList{qName}
+		}
+
+		respMsg, err := e.dispatcher.Dispatch(ctx, app.ID, req)
+		if err != nil {
+			e.logger.Warn("evaluating slow queue rule failed to query executor", "app", app.Name, "error", err)
+			return false, nil, nil
+		}
+
+		stuckCount := 0
+		cutoff := time.Now().UTC().Add(-time.Duration(threshSecs) * time.Second)
+		if resp, ok := respMsg.(*protocol.ListWorkflowsResponse); ok {
+			for _, wf := range resp.Output {
+				if qName != "*" && qName != "" && wf.QueueName != nil && *wf.QueueName != qName {
+					continue
+				}
+				if wf.CreatedAt != nil {
+					var createdTime time.Time
+					if ms, err := strconv.ParseInt(*wf.CreatedAt, 10, 64); err == nil {
+						createdTime = time.UnixMilli(ms).UTC()
+					} else if t, err := time.Parse(time.RFC3339, *wf.CreatedAt); err == nil {
+						createdTime = t.UTC()
+					}
+					if !createdTime.IsZero() && createdTime.Before(cutoff) {
+						stuckCount++
+					}
+				}
+			}
+		}
+
+		if stuckCount > 0 {
+			meta := map[string]string{
+				"queue_name":           qName,
+				"stuck_workflow_count": strconv.Itoa(stuckCount),
+				"threshold_secs":       strconv.Itoa(threshSecs),
+			}
+			return true, meta, nil
+		}
+		return false, nil, nil
 
 	case "RecoveryFlapping":
 		var metaMap map[string]any
@@ -283,6 +432,15 @@ func (e *Evaluator) evaluateRule(ctx context.Context, app gen.Application, rule 
 }
 
 func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta map[string]string) {
+	claimed, err := e.claimRule(ctx, rule)
+	if err != nil {
+		e.logger.Warn("failed to claim alert rule fire", "ruleID", rule.ID, "error", err)
+		return
+	}
+	if !claimed {
+		return
+	}
+
 	defaultMsg := fmt.Sprintf("%s alert triggered", rule.RuleType)
 	if rule.RuleType == "WorkflowFailure" {
 		defaultMsg = "Workflow failure threshold exceeded"
@@ -300,7 +458,9 @@ func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta m
 	}
 
 	if rule.ReceivingApplicationID.Valid && e.dispatcher != nil {
-		_, err := e.dispatcher.Dispatch(ctx, rule.ReceivingApplicationID, alertReq)
+		dispatchCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_, err := e.dispatcher.Dispatch(dispatchCtx, rule.ReceivingApplicationID, alertReq)
+		cancel()
 		if err != nil {
 			e.logger.Warn("failed to dispatch alert to receiving application",
 				"ruleID", rule.ID,
@@ -341,17 +501,15 @@ func (e *Evaluator) fireAlert(ctx context.Context, rule gen.AlertingRule, meta m
 						if rk, ok := dMap["routing_key"].(string); ok {
 							dest.RoutingKey = rk
 						}
-						if err := e.channelDispatch.Dispatch(ctx, dest, notif); err != nil {
+						destCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+						if err := e.channelDispatch.Dispatch(destCtx, dest, notif); err != nil {
 							sanitizedErr := strings.ReplaceAll(err.Error(), dest.URL, "[REDACTED]")
 							e.logger.Warn("failed to dispatch to external channel", "type", dest.Type, "error", sanitizedErr)
 						}
+						cancel()
 					}
 				}
 			}
 		}
-	}
-
-	if err := e.store.TouchAlertRuleLastFired(ctx, rule.ID); err != nil {
-		e.logger.Warn("failed to touch alert rule last fired timestamp", "ruleID", rule.ID, "error", err)
 	}
 }

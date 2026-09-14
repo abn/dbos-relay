@@ -49,83 +49,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(relay_connected_executors)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "title": "Active WebSocket Connections",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "sum(relay_active_websockets)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 1 },
-              { "color": "red", "value": 5 }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
-      "id": 4,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      },
-      "title": "Executor Recoveries (1h)",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "sum(increase(relay_executor_recoveries_total[1h]))",
+          "expr": "sum(dbos_conductor_v1_executor_count{status=\"HEALTHY\"})",
           "refId": "A"
         }
       ]
@@ -146,8 +70,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
-      "id": 5,
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -159,11 +83,48 @@
           "values": false
         }
       },
-      "title": "Alert Dispatches (1h)",
+      "title": "Total Executors Registered",
       "type": "stat",
       "targets": [
         {
-          "expr": "sum(increase(relay_alerts_dispatched_total[1h]))",
+          "expr": "sum(dbos_conductor_v1_executor_count)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "Executors by Status",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(dbos_conductor_v1_executor_count) by (status)",
           "refId": "A"
         }
       ]
@@ -171,8 +132,8 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
-      "id": 6,
-      "title": "Traffic & Routing",
+      "id": 5,
+      "title": "Fleet Distribution",
       "type": "row"
     },
     {
@@ -184,7 +145,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "req/sec",
+            "axisLabel": "executors",
             "axisPlacement": "auto",
             "fillOpacity": 15,
             "lineWidth": 2
@@ -192,13 +153,13 @@
         }
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "id": 7,
-      "title": "HTTP Request Rate by Status",
+      "id": 6,
+      "title": "Executors by Application",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total[1m])) by (status)",
-          "legendFormat": "Status {{ status }}",
+          "expr": "sum(dbos_conductor_v1_executor_count) by (application)",
+          "legendFormat": "App: {{ application }}",
           "refId": "A"
         }
       ]
@@ -212,7 +173,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "req/sec",
+            "axisLabel": "executors",
             "axisPlacement": "auto",
             "fillOpacity": 20,
             "lineWidth": 2
@@ -220,91 +181,14 @@
         }
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "id": 8,
-      "title": "Served From: Executor vs Database Fallback",
+      "id": 7,
+      "title": "Executors by Application Version",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum(rate(relay_requests_served_total[1m])) by (served_from)",
-          "legendFormat": "Served From: {{ served_from }}",
+          "expr": "sum(dbos_conductor_v1_executor_count) by (application_version)",
+          "legendFormat": "Version: {{ application_version }}",
           "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
-      "id": 9,
-      "title": "Latency & Operational Health",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "seconds",
-            "axisPlacement": "auto",
-            "lineWidth": 2
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
-      "id": 10,
-      "title": "HTTP Request Latency (p50, p90, p99)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.90, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p90",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "events/min",
-            "axisPlacement": "auto",
-            "lineWidth": 2
-          }
-        }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
-      "id": 11,
-      "title": "Executor Disconnects and Recoveries",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum(rate(relay_executor_disconnects_total[1m])) * 60",
-          "legendFormat": "Disconnects/min",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(relay_executor_recoveries_total[1m])) * 60",
-          "legendFormat": "Recoveries/min",
-          "refId": "B"
         }
       ]
     }

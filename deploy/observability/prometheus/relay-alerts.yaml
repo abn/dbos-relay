@@ -2,55 +2,19 @@ groups:
   - name: relay-alerts
     rules:
       - alert: RelayNoExecutors
-        expr: relay_connected_executors == 0
+        expr: sum(dbos_conductor_v1_executor_count{status="HEALTHY"}) == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "No executors connected for application {{ $labels.application }}"
-          description: "Relay has 0 active connected executors for application {{ $labels.application }} for more than 1 minute."
+          summary: "No healthy executors connected"
+          description: "Relay has 0 healthy connected executors for more than 1 minute."
 
-      - alert: RelayRecoveryFlapping
-        expr: increase(relay_executor_recoveries_total[1h]) >= 3
+      - alert: RelayExecutorsDisconnected
+        expr: sum(dbos_conductor_v1_executor_count{status="DISCONNECTED"}) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Executor flapping detected in {{ $labels.application }}"
-          description: "Application {{ $labels.application }} has experienced {{ $value }} executor recoveries within the past hour."
-
-      - alert: RelayHighRecoveryRate
-        expr: increase(relay_executor_recoveries_total[15m]) >= 5
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "High executor recovery rate in {{ $labels.application }}"
-          description: "Application {{ $labels.application }} has recorded {{ $value }} recovery dispatches in the last 15 minutes."
-
-      - alert: RelayHighErrorRate
-        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Elevated HTTP 5xx error rate in Relay"
-          description: "More than 5% of HTTP requests to Relay returned 5xx status codes over 5 minutes."
-
-      - alert: RelayElevatedLatency
-        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 2
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "P99 HTTP request latency elevated"
-          description: "Relay 99th percentile HTTP request duration is exceeding 2 seconds."
-
-      - alert: RelayHighDatabaseFallbackRatio
-        expr: sum(rate(relay_requests_served_total{served_from="database"}[5m])) / sum(rate(relay_requests_served_total[5m])) > 0.5
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High data-plane database fallback ratio"
-          description: "More than 50% of requests are served via database fallback due to missing or unresponsive executors."
+          summary: "Disconnected executors detected"
+          description: "Relay has detected executors in disconnected status for more than 5 minutes."
