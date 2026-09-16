@@ -37,6 +37,7 @@ import (
 
 func newServeCommand() *cobra.Command {
 	var skipMigrations bool
+	var noAuth bool
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -143,12 +144,14 @@ func newServeCommand() *cobra.Command {
 			r.SetForwarder(forwarder, haMgr.ID())
 
 			apiServer := api.NewServer(r, s.Queries(), logger)
-			if cfg.AuthEnabled() {
+			if !noAuth && cfg.AuthEnabled() {
 				val := auth.NewOIDCValidator(cfg.OIDCIssuer, cfg.OIDCAudience, nil)
 				if err := val.Init(ctx); err != nil {
 					return fmt.Errorf("failed to initialize OIDC validator: %w", err)
 				}
 				apiServer.WithAuth(true, val)
+			} else {
+				apiServer.WithAuth(false, nil)
 			}
 			handler := api.NewHandler(s, apiServer)
 
@@ -202,6 +205,7 @@ func newServeCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&skipMigrations, "skip-migrations", false, "Skip automatic database schema migrations on startup (defaults to RELAY_SKIP_MIGRATIONS env)")
+	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "Disable authentication (overrides RELAY_AUTH_ENABLED)")
 	return cmd
 }
 

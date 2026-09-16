@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/abn/relay/internal/auth"
+	storegen "github.com/abn/relay/internal/store/gen"
 )
 
 func TestRouteAuthScopes(t *testing.T) {
@@ -67,5 +68,28 @@ func TestRouteAuthScopes(t *testing.T) {
 				t.Errorf("expected 401 or 403, got %d", resp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestNoAuthMode(t *testing.T) {
+	store := newMemoryStore()
+	ts := setupServer(store, false, nil)
+	defer ts.Close()
+
+	org, _ := store.UpsertOrganisation(context.Background(), "testorg")
+	_, _ = store.UpsertApplication(context.Background(), storegen.UpsertApplicationParams{
+		OrganisationID: org.ID,
+		Name:           "testapp",
+	})
+
+	// In no-auth mode, requests succeed with local identity and without credentials
+	req, _ := http.NewRequest("GET", ts.URL+"/v2/orgs/testorg/apps", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK in no-auth mode, got %d", resp.StatusCode)
 	}
 }

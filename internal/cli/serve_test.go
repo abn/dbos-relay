@@ -25,6 +25,14 @@ func TestServeFlags(t *testing.T) {
 	if flag.DefValue != "false" {
 		t.Errorf("expected --skip-migrations default to be false, got %s", flag.DefValue)
 	}
+
+	noAuthFlag := serveCmd.Flags().Lookup("no-auth")
+	if noAuthFlag == nil {
+		t.Fatal("expected --no-auth flag to be registered")
+	}
+	if noAuthFlag.DefValue != "false" {
+		t.Errorf("expected --no-auth default to be false, got %s", noAuthFlag.DefValue)
+	}
 }
 
 func TestLoggingMiddleware(t *testing.T) {

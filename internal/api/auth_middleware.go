@@ -271,6 +271,15 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						}
 					}
 
+					if targetAppName == "" {
+						if !identity.IsAPIKey {
+							if !identity.IsAdmin && identity.Role != auth.RoleAdmin && identity.Role != auth.RoleOperator {
+								problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Organisation-level resources require admin or operator role"})
+								return
+							}
+						}
+					}
+
 					// Check permissions
 					reqPerm := ""
 					if r.Method == http.MethodGet {
@@ -280,15 +289,17 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					}
 
 					hasPerm := auth.HasPermission(identity.Permissions, reqPerm)
-					if identity.IsAPIKey && len(identity.Permissions) == 0 {
-						hasPerm = true
-					}
 					if !hasPerm && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + reqPerm})
 						return
 					}
 				}
 			} else {
+				if r.URL.Path != "/v2/users/me" && !identity.IsAdmin {
+					problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Global endpoints require admin privileges"})
+					return
+				}
+
 				// No org in path, might be like /v2/users/me, let's ensure primary org logic for OIDC users
 				if !identity.IsAPIKey {
 					user, err := server.store.GetUserBySubject(r.Context(), identity.Subject)
