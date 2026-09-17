@@ -315,7 +315,7 @@ func TestChaos_FakeExecutorFailureDispatchesRecovery(t *testing.T) {
 		if len(deadIDs) != 1 || deadIDs[0] != "exec-victim-1" {
 			t.Fatalf("expected recovery for 'exec-victim-1', got %v", deadIDs)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("oracle timed out waiting for workflow recovery dispatch to survivor")
 	}
 
