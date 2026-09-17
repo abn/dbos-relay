@@ -3,6 +3,16 @@
 This log tracks the evolution of the knowledge base and architectural capabilities:
 page additions, deprecations, and structural refactors.
 
+## 2026-09-17
+
+* **Creation**: Added [Dashboard manual acceptance checklist](manual/dashboard-acceptance.md) documenting systematic verification across fleet management, workflows, step graph visualizations, schedules, queues, and alerting rules.
+* **Update**: Expanded [Conductor Protocol (WebSocket)](protocol/executor-ws.md) covering all 32 wire protocol message types and verified bidirectional codec round trips across full request and response golden fixture corpus.
+* **Update**: Aligned executor heartbeat ping interval (10 seconds) and pong deadline (25 seconds) timing constants with upstream SDK client contracts.
+* **Update**: Enforced fine-grained authorization role checks and deny-by-default access policies for empty API key permissions.
+* **Update**: Added atomic check-and-set rule throttling for multi-instance alert dispatch and lease fencing for high-availability executor adoption.
+* **Update**: Added workflow retention scheduling and background sweep lifecycle management.
+* **Update**: Added multi-language SDK verification matrix workflow and dual-instance scaling deployment stack with reverse proxy routing.
+
 ## 2026-09-14
 
 * **Creation**: Added [Production Hardening](usage/hardening.md) documenting in-process TLS certificate configuration and reverse proxy access log restrictions against recording WebSocket URIs.
