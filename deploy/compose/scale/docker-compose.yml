@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_DB: relay
+      POSTGRES_PASSWORD: relay
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  relay-node-1:
+    image: alpine:latest
+    security_opt:
+      - "seccomp=unconfined"
+    command: ["/bin/relay", "serve"]
+    environment:
+      RELAY_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      RELAY_LISTEN_ADDR: 0.0.0.0:8091
+      RELAY_ADVERTISE_ADDRESS: relay-node-1
+      RELAY_INTERNAL_SECRET: scale-cluster-shared-secret
+    volumes:
+      - ../../../bin/relay:/bin/relay:ro,z
+    ports:
+      - "8091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8091/healthz | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  relay-node-2:
+    image: alpine:latest
+    security_opt:
+      - "seccomp=unconfined"
+    command: ["/bin/relay", "serve"]
+    environment:
+      RELAY_DATABASE_URL: postgres://relay:relay@postgres:5432/relay?sslmode=disable
+      RELAY_LISTEN_ADDR: 0.0.0.0:8092
+      RELAY_ADVERTISE_ADDRESS: relay-node-2
+      RELAY_INTERNAL_SECRET: scale-cluster-shared-secret
+      RELAY_SKIP_MIGRATIONS: "true"
+    volumes:
+      - ../../../bin/relay:/bin/relay:ro,z
+    ports:
+      - "8092:8092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      relay-node-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8092/healthz | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  proxy:
+    image: nginx:alpine
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro,z
+    depends_on:
+      relay-node-1:
+        condition: service_healthy
+      relay-node-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8090/healthz | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
