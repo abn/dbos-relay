@@ -88,8 +88,9 @@ func Transition(current State, event Event) (State, Action, error) {
 	case StateDead:
 		switch event {
 		case EventConnect:
-			// A dead executor cannot simply reconnect; workflows have already been re-enqueued for recovery
-			return current, ActionNone, ErrReconnectingDeadExecutor
+			// A dead executor cannot resume its old connection, but a fresh registration
+			// handshake from a restarted process with the same ID should be allowed.
+			return StateConnected, ActionNone, nil
 		case EventDisconnect:
 			// Redundant disconnect on dead executor
 			return StateDead, ActionNone, nil

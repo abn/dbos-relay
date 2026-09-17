@@ -101,12 +101,7 @@ func (m *Manager) OnConnect(ctx context.Context, appID pgtype.UUID, executorID, 
 
 	key := executorKey(appID, executorID)
 	exec, exists := m.executors[key]
-	if exists {
-		if exec.state == StateDead {
-			m.mu.Unlock()
-			return ErrReconnectingDeadExecutor
-		}
-	} else {
+	if !exists {
 		exec = &trackedExecutor{
 			appID:      appID,
 			executorID: executorID,
@@ -361,7 +356,8 @@ func (m *Manager) watchGracePeriod(appID pgtype.UUID, executorID, version string
 			ApplicationID: appID,
 			ExecutorID:    executorID,
 		}); err != nil {
-			m.logger.Error("failed to set executor dead in store", "executorID", executorID, "error", err)
+			m.logger.Warn("executor state changed or not found during dead transition, skipping recovery dispatch", "executorID", executorID, "error", err)
+			return
 		}
 	}
 
@@ -370,19 +366,46 @@ func (m *Manager) watchGracePeriod(appID pgtype.UUID, executorID, version string
 		m.wg.Add(1)
 		safego.Go(m.logger, "liveness-recovery-dispatch", func() {
 			defer m.wg.Done()
-			if err := m.recovery.RecoverDeadExecutor(m.ctx, appID, executorID, version); err != nil {
-				m.logger.Error("recovery dispatch failed for dead executor",
+
+			const maxRetries = 3
+			backoff := 1 * time.Second
+
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				err := m.recovery.RecoverDeadExecutor(m.ctx, appID, executorID, version)
+				if err == nil {
+					return
+				}
+
+				if attempt == maxRetries {
+					m.logger.Error("recovery dispatch failed for dead executor and retry budget exhausted",
+						"executorID", executorID,
+						"error", err,
+						"attempts", attempt,
+					)
+					m.mu.Lock()
+					if e, ok := m.executors[key]; ok {
+						s, _, terr := Transition(e.state, EventRecoveryFailed)
+						if terr == nil {
+							e.state = s
+						}
+					}
+					m.mu.Unlock()
+					return
+				}
+
+				m.logger.Warn("recovery dispatch failed, retrying",
 					"executorID", executorID,
 					"error", err,
+					"attempt", attempt,
+					"nextBackoff", backoff,
 				)
-				m.mu.Lock()
-				if e, ok := m.executors[key]; ok {
-					s, _, terr := Transition(e.state, EventRecoveryFailed)
-					if terr == nil {
-						e.state = s
-					}
+
+				select {
+				case <-m.ctx.Done():
+					return
+				case <-time.After(backoff):
 				}
-				m.mu.Unlock()
+				backoff *= 2
 			}
 		})
 	}

@@ -95,12 +95,11 @@ func TestStateTransitions(t *testing.T) {
 
 		// 3. Dead state
 		{
-			name:       "dead + connect (reconnect after death refused)",
+			name:       "dead + connect (reconnect fresh registration allowed)",
 			current:    liveness.StateDead,
 			event:      liveness.EventConnect,
-			wantState:  liveness.StateDead,
+			wantState:  liveness.StateConnected,
 			wantAction: liveness.ActionNone,
-			wantErr:    liveness.ErrReconnectingDeadExecutor,
 		},
 		{
 			name:       "dead + disconnect (idempotent)",

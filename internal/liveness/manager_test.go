@@ -162,10 +162,10 @@ func TestManager_GracePeriodAndRecovery(t *testing.T) {
 	}
 	store.mu.Unlock()
 
-	// 3. Attempting to reconnect dead executor is rejected
+	// 3. Attempting to reconnect dead executor is now allowed (fresh registration)
 	err := mgr.OnConnect(ctx, appID, execID, "v1.0.0")
-	if !errors.Is(err, liveness.ErrReconnectingDeadExecutor) {
-		t.Fatalf("expected ErrReconnectingDeadExecutor, got %v", err)
+	if err != nil {
+		t.Fatalf("expected nil, got %v", err)
 	}
 }
 
@@ -336,10 +336,10 @@ func TestManager_DeadExecutorEvictionAndReconnection(t *testing.T) {
 		t.Fatal("timed out waiting for recovery")
 	}
 
-	// Verify executor is declared dead
+	// Verify executor can now reconnect immediately due to fresh registration handling
 	err := mgr.OnConnect(ctx, appID, execID, "v1.0.0")
-	if !errors.Is(err, liveness.ErrReconnectingDeadExecutor) {
-		t.Fatalf("expected ErrReconnectingDeadExecutor while dead, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected nil while dead (fresh reconnect), got: %v", err)
 	}
 
 	// Delete/evict executor from manager (as triggered upon recovery ack)
@@ -351,8 +351,8 @@ func TestManager_DeadExecutorEvictionAndReconnection(t *testing.T) {
 		t.Fatalf("DeleteExecutor failed: %v", err)
 	}
 
-	// Now executor can reconnect cleanly
-	if err := mgr.OnConnect(ctx, appID, execID, "v2.0.0"); err != nil {
+	// Reconnection still works after eviction
+	if err := mgr.OnConnect(ctx, appID, execID, "v1.0.0"); err != nil {
 		t.Fatalf("reconnect after eviction failed: %v", err)
 	}
 }
