@@ -1,0 +1,5 @@
+{
+  "type": "get_queue",
+  "request_id": "req-uuid",
+  "name": "default-queue"
+}

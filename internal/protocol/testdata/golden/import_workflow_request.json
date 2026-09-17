@@ -1,0 +1,5 @@
+{
+  "type": "import_workflow",
+  "request_id": "req-uuid",
+  "serialized_workflow": "{\"version\":1}"
+}

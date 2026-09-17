@@ -1,0 +1,6 @@
+{
+  "type": "exist_pending_workflows",
+  "request_id": "req-uuid",
+  "executor_id": "exec-123",
+  "application_version": "v1.0.0"
+}

@@ -1,0 +1,13 @@
+{
+  "type": "get_step_aggregates",
+  "request_id": "req-uuid",
+  "body": {
+    "group_by_function_name": true,
+    "group_by_status": false,
+    "select_count": true,
+    "select_max_duration_ms": true,
+    "function_name": [
+      "step-1"
+    ]
+  }
+}

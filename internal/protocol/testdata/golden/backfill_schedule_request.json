@@ -1,0 +1,7 @@
+{
+  "type": "backfill_schedule",
+  "request_id": "req-uuid",
+  "schedule_name": "daily-report",
+  "start": "2026-09-01T00:00:00Z",
+  "end": "2026-09-02T00:00:00Z"
+}

@@ -1,0 +1,8 @@
+{
+  "type": "backfill_schedule",
+  "request_id": "req-uuid",
+  "workflow_ids": [
+    "wf-bf-1",
+    "wf-bf-2"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "type": "get_workflow_notifications",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123"
+}

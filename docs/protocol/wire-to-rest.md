@@ -92,6 +92,19 @@ Wire `ScheduleOutput` maps to OpenAPI `#/components/schemas/Schedule`:
 
 Wire `queue_name` is dropped because OpenAPI `#/components/schemas/Schedule` has no corresponding property.
 
+## Metrics
+
+REST query `GET /v2/orgs/{org}/apps/{app}/metrics` maps to `GetMetricsRequest`:
+* Query `startTime` -> `StartTime` (`start_time`, RFC 3339 timestamp)
+* Query `endTime` -> `EndTime` (`end_time`, RFC 3339 timestamp)
+* Query metric class -> `MetricClass` (`metric_class`, string)
+* Path `app` -> `ApplicationName` (`application_name`, list)
+
+Wire `GetMetricsResponse` contains `metrics` (array of `MetricData` with `metric_name`, `metric_type`, `value`), mapped to OpenAPI `#/components/schemas/Metric`:
+* `MetricName` -> `metricName`
+* `MetricType` -> `metricType`
+* `Value` -> `value`
+
 ## Error Mapping
 
 All REST API errors map to RFC 9457 Problem Details (`application/problem+json`):

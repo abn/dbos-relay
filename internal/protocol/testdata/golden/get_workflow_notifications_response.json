@@ -1,0 +1,12 @@
+{
+  "type": "get_workflow_notifications",
+  "request_id": "req-uuid",
+  "notifications": [
+    {
+      "topic": "billing",
+      "message": "invoice-generated",
+      "created_at_epoch_ms": 1756713600000,
+      "consumed": false
+    }
+  ]
+}

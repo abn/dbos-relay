@@ -1,0 +1,10 @@
+{
+  "type": "get_workflow_events",
+  "request_id": "req-uuid",
+  "events": [
+    {
+      "key": "order_confirmed",
+      "value": "{\"order_id\":\"ord-1\"}"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "type": "trigger_schedule",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-trig-1"
+}

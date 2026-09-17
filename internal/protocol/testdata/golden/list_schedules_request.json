@@ -1,0 +1,12 @@
+{
+  "type": "list_schedules",
+  "request_id": "req-uuid",
+  "body": {
+    "status": [
+      "ACTIVE"
+    ],
+    "application_name": [
+      "sample-app"
+    ]
+  }
+}

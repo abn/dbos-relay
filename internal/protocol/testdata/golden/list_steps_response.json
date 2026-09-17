@@ -1,0 +1,11 @@
+{
+  "type": "list_steps",
+  "request_id": "req-uuid",
+  "output": [
+    {
+      "function_id": 1,
+      "function_name": "processPayment",
+      "output": "{\"status\":\"ok\"}"
+    }
+  ]
+}

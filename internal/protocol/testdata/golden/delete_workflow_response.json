@@ -1,0 +1,5 @@
+{
+  "type": "delete",
+  "request_id": "req-uuid",
+  "success": true
+}

@@ -1,0 +1,13 @@
+{
+  "type": "list_queued_workflows",
+  "request_id": "req-uuid",
+  "body": {
+    "queue_name": [
+      "order-queue"
+    ],
+    "sort_desc": false,
+    "load_input": false,
+    "load_output": false,
+    "queues_only": true
+  }
+}

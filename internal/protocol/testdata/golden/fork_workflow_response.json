@@ -1,0 +1,5 @@
+{
+  "type": "fork_workflow",
+  "request_id": "req-uuid",
+  "new_workflow_id": "wf-forked-2"
+}

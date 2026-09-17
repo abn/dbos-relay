@@ -1,0 +1,9 @@
+{
+  "type": "list_queues",
+  "request_id": "req-uuid",
+  "body": {
+    "application_name": [
+      "sample-app"
+    ]
+  }
+}

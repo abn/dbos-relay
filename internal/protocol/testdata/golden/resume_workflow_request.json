@@ -1,0 +1,9 @@
+{
+  "type": "resume",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123",
+  "workflow_ids": [
+    "wf-123"
+  ],
+  "queue_name": "recovery-queue"
+}

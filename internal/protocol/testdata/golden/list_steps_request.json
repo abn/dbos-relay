@@ -1,0 +1,6 @@
+{
+  "type": "list_steps",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123",
+  "load_output": true
+}

@@ -1,0 +1,7 @@
+{
+  "type": "fork_from_failure",
+  "request_id": "req-uuid",
+  "forked_workflow_ids": [
+    "wf-forked-1"
+  ]
+}

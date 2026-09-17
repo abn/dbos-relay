@@ -1,0 +1,10 @@
+{
+  "type": "retention",
+  "request_id": "req-uuid",
+  "body": {
+    "gc_cutoff_epoch_ms": 1725753600000,
+    "gc_rows_threshold": 50000,
+    "gc_batch_size": 10000,
+    "timeout_cutoff_epoch_ms": 1725750000000
+  }
+}

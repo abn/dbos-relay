@@ -1,0 +1,13 @@
+{
+  "type": "get_workflow_streams",
+  "request_id": "req-uuid",
+  "streams": [
+    {
+      "key": "sensor-stream",
+      "values": [
+        "v1",
+        "v2"
+      ]
+    }
+  ]
+}

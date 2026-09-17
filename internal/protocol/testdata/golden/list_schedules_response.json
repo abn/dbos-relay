@@ -1,0 +1,20 @@
+{
+  "type": "list_schedules",
+  "request_id": "req-uuid",
+  "output": [
+    {
+      "schedule_id": "sched-1",
+      "schedule_name": "daily-report",
+      "workflow_name": "report_wf",
+      "workflow_class_name": null,
+      "schedule": "0 0 * * *",
+      "status": "ACTIVE",
+      "context": null,
+      "last_fired_at": null,
+      "automatic_backfill": false,
+      "cron_timezone": null,
+      "queue_name": null,
+      "application_name": "sample-app"
+    }
+  ]
+}

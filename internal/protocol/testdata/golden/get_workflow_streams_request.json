@@ -1,0 +1,5 @@
+{
+  "type": "get_workflow_streams",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123"
+}

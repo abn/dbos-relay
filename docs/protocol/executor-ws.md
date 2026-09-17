@@ -81,23 +81,23 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
    * Response: `success` (boolean).
 
 3. `cancel`
-   * Request: `workflow_id` (string), `cancel_children` (boolean).
+   * Request: `workflow_id` (string, optional), `workflow_ids` (array of strings, optional), `cancel_children` (boolean).
    * Response: `success` (boolean).
 
 4. `resume`
-   * Request: `workflow_id` (string).
+   * Request: `workflow_id` (string, optional), `workflow_ids` (array of strings, optional), `queue_name` (string, optional).
    * Response: `success` (boolean).
 
 5. `delete`
-   * Request: `workflow_ids` (array of strings).
+   * Request: `workflow_id` (string, optional), `workflow_ids` (array of strings, optional), `delete_children` (boolean).
    * Response: `success` (boolean).
 
 6. `exist_pending_workflows`
-   * Request: Envelope only.
+   * Request: `executor_id` (string), `application_version` (string).
    * Response: `exist` (boolean).
 
 7. `retention`
-   * Request: Envelope only.
+   * Request: `body` (object): `gc_cutoff_epoch_ms` (integer, optional), `gc_rows_threshold` (integer, optional), `gc_batch_size` (integer, optional), `timeout_cutoff_epoch_ms` (integer, optional).
    * Response: `success` (boolean).
 
 ### Workflow Inspection and Queries
@@ -115,20 +115,20 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
     * Response: `output` (single workflow status record).
 
 11. `list_steps`
-    * Request: `workflow_id` (string).
+    * Request: `workflow_id` (string), `load_output` (boolean), `limit` (integer, optional), `offset` (integer, optional).
     * Response: `output` (array of step records).
 
 12. `get_workflow_events`
     * Request: `workflow_id` (string).
-    * Response: `output` (map of event key to serialized event data).
+    * Response: `events` (array of `{key, value}`).
 
 13. `get_workflow_notifications`
     * Request: `workflow_id` (string).
-    * Response: `output` (array of notification records).
+    * Response: `notifications` (array of `{topic, message, created_at_epoch_ms, consumed}`).
 
 14. `get_workflow_streams`
     * Request: `workflow_id` (string).
-    * Response: `output` (map of stream key to string array).
+    * Response: `streams` (array of `{key, values}`).
 
 15. `get_workflow_aggregates`
     * Request body: Aggregation filter parameters.
@@ -142,15 +142,15 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
 
 17. `fork_workflow`
     * Request body: `workflow_id` (string), `start_step` (integer), `new_workflow_id` (string, optional), `application_version` (string, optional), `queue_name` (string, optional), `queue_partition_key` (string, optional).
-    * Response: `workflow_id` (string).
+    * Response: `new_workflow_id` (string, optional).
 
 18. `fork_from_failure`
-    * Request body: `workflow_id` (string), `new_workflow_id` (string, optional), `application_version` (string, optional).
+    * Request body: `workflow_ids` (array of strings), `application_version` (string, optional), `queue_name` (string, optional), `queue_partition_key` (string, optional), `from_last_failure` (boolean, optional), `from_last_step` (boolean, optional), `from_step` (integer, optional), `from_step_name` (string, optional).
     * Response: `forked_workflow_ids` (array of strings).
 
 19. `export_workflow`
     * Request: `workflow_id` (string), `export_children` (boolean).
-    * Response: `output` (serialized workflow execution structure).
+    * Response: `serialized_workflow` (string, optional).
 
 20. `import_workflow`
     * Request: `serialized_workflow` (string).
@@ -159,56 +159,56 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
 ### Schedules
 
 21. `list_schedules`
-    * Request: Envelope only.
+    * Request: `body` (object, optional filter parameters: `status`, `workflow_name`, `schedule_name_prefix`, `application_name`, `load_context`).
     * Response: `output` (array of schedule objects).
 
 22. `get_schedule`
-    * Request: `schedule_id` (string).
+    * Request: `schedule_name` (string), `load_context` (boolean, optional).
     * Response: `output` (schedule object).
 
 23. `pause_schedule`
-    * Request: `schedule_id` (string).
+    * Request: `schedule_name` (string).
     * Response: `success` (boolean).
 
 24. `resume_schedule`
-    * Request: `schedule_id` (string).
+    * Request: `schedule_name` (string).
     * Response: `success` (boolean).
 
 25. `trigger_schedule`
-    * Request: `schedule_id` (string).
-    * Response: `workflow_id` (string).
+    * Request: `schedule_name` (string).
+    * Response: `workflow_id` (string, optional).
 
 26. `backfill_schedule`
-    * Request: `schedule_id` (string), `start_time` (timestamp), `end_time` (timestamp).
+    * Request: `schedule_name` (string), `start` (timestamp string, ISO 8601), `end` (timestamp string, ISO 8601).
     * Response: `workflow_ids` (array of strings).
 
 ### Queues and Metrics
 
 27. `list_queues`
-    * Request: Envelope only.
+    * Request: `body` (object, optional filter parameter `application_name`).
     * Response: `output` (array of queue metadata objects).
 
 28. `get_queue`
-    * Request: `queue_name` (string).
+    * Request: `name` (string).
     * Response: `output` (queue metadata object).
 
 29. `get_metrics`
-    * Request: `start_time` (timestamp, optional), `end_time` (timestamp, optional).
+    * Request: `start_time` (timestamp string, RFC 3339), `end_time` (timestamp string, RFC 3339), `metric_class` (string), `application_name` (array of strings, optional).
     * Response: `metrics` (array of `{metric_name, metric_type, value}`).
 
 ### Applications and Alerts
 
 30. `list_application_versions`
     * Request: Envelope only.
-    * Response: `output` (array of application version strings).
+    * Response: `output` (array of application version objects with `{version_id, version_name, version_timestamp, created_at}`).
 
 31. `set_latest_application_version`
-    * Request: `application_version` (string).
+    * Request: `version_name` (string).
     * Response: `success` (boolean).
 
 32. `alert`
     * Request: Dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:590-595`).
-    * Response: None required (unidirectional notification).
+    * Response: `success` (boolean).
 
 ### Unimplemented Types
 
@@ -218,9 +218,9 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
 
 Relay and connected executors exchange heartbeats to maintain active connection health:
 
-* Server ping interval: 20 seconds (`_PING_INTERVAL` in `internal/hub/conn.go`).
-* Client ping interval: 20 seconds default across SDKs.
-* Pong timeout: 15 seconds.
+* Server ping interval: 10 seconds.
+* Client ping interval: 10 seconds (or SDK default of 20 seconds).
+* Pong deadline: 25 seconds (`executorPingWait`).
 * Reconnect backoff: Executors apply exponential backoff between 1 second and SDK-defined ceilings on disconnect.
 
 ## Recovery Semantics
@@ -240,7 +240,7 @@ Each executor registration transitions through four discrete states:
 
 * Default grace period: 60 seconds (cited from DBOS public documentation `/production/workflow-recovery`).
 * Application override: Configurable per-application via the `executorTimeoutSecs` setting in application metadata (Conductor OpenAPI `Application` and `PatchAppInputBody`).
-* Server ping interval: 20 seconds.
+* Server ping interval: 10 seconds.
 
 ### Recovery Failover and Peer Selection
 

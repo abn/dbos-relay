@@ -1,0 +1,5 @@
+{
+  "type": "pause_schedule",
+  "request_id": "req-uuid",
+  "success": true
+}

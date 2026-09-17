@@ -1,0 +1,15 @@
+{
+  "type": "get_queue",
+  "request_id": "req-uuid",
+  "output": {
+    "name": "default-queue",
+    "concurrency": 10,
+    "worker_concurrency": 2,
+    "rate_limit_max": 100,
+    "rate_limit_period_sec": 60,
+    "priority_enabled": true,
+    "partition_queue": false,
+    "polling_interval_sec": 1.5,
+    "application_name": "sample-app"
+  }
+}

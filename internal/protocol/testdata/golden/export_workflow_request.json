@@ -1,0 +1,6 @@
+{
+  "type": "export_workflow",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123",
+  "export_children": true
+}

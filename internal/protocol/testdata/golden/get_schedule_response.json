@@ -1,0 +1,18 @@
+{
+  "type": "get_schedule",
+  "request_id": "req-uuid",
+  "output": {
+    "schedule_id": "sched-123",
+    "schedule_name": "daily-report",
+    "workflow_name": "report_wf",
+    "workflow_class_name": "Reports",
+    "schedule": "0 0 * * *",
+    "status": "ACTIVE",
+    "context": "{}",
+    "last_fired_at": "2026-09-01T00:00:00Z",
+    "automatic_backfill": true,
+    "cron_timezone": "UTC",
+    "queue_name": "sched-queue",
+    "application_name": "sample-app"
+  }
+}

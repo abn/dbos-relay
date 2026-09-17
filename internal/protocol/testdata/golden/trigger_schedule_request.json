@@ -1,0 +1,5 @@
+{
+  "type": "trigger_schedule",
+  "request_id": "req-uuid",
+  "schedule_name": "daily-report"
+}

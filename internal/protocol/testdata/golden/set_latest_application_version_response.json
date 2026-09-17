@@ -1,0 +1,5 @@
+{
+  "type": "set_latest_application_version",
+  "request_id": "req-uuid",
+  "success": true
+}

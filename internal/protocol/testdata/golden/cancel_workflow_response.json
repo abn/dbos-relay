@@ -1,0 +1,5 @@
+{
+  "type": "cancel",
+  "request_id": "req-uuid",
+  "success": true
+}

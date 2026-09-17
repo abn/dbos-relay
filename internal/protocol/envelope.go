@@ -1,5 +1,14 @@
 package protocol
 
+import "time"
+
+// Heartbeat timing constants for the executor WebSocket protocol.
+// Provenance: Go SDK dbos-transact-go/dbos/conductor.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+const (
+	DefaultPingInterval = 10 * time.Second
+	DefaultPongDeadline = 25 * time.Second
+)
+
 // MessageType represents the type of message exchanged with the conductor.
 type MessageType string
 

@@ -1,0 +1,19 @@
+{
+  "type": "get_workflow_aggregates",
+  "request_id": "req-uuid",
+  "body": {
+    "group_by_status": true,
+    "group_by_name": false,
+    "group_by_queue_name": false,
+    "group_by_executor_id": false,
+    "group_by_application_version": false,
+    "group_by_application_name": false,
+    "select_count": true,
+    "select_min_created_at": true,
+    "select_max_queue_wait_ms": true,
+    "select_max_total_latency_ms": true,
+    "status": [
+      "SUCCESS"
+    ]
+  }
+}

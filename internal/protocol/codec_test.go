@@ -10,26 +10,640 @@ import (
 	"testing"
 )
 
-func TestDecodeEncodeRoundTrip(t *testing.T) {
-	tests := []struct {
-		name       string
-		msg        Message
-		isResponse bool
-	}{
-		{"ExecutorInfoRequest", &ExecutorInfoRequest{Envelope: Envelope{Type: MessageTypeExecutorInfo, RequestID: "r1"}}, false},
-		{"ExecutorInfoResponse", &ExecutorInfoResponse{Envelope: Envelope{Type: MessageTypeExecutorInfo, RequestID: "r1"}, ExecutorID: "e1"}, true},
-		{"RecoveryRequest", &RecoveryRequest{Envelope: Envelope{Type: MessageTypeRecovery, RequestID: "r2"}, ExecutorIDs: []string{"e1"}}, false},
-		{"RecoveryResponse", &RecoveryResponse{Envelope: Envelope{Type: MessageTypeRecovery, RequestID: "r2"}, Success: true}, true},
-		{"ListWorkflowsRequest", &ListWorkflowsRequest{Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "r3"}, Body: ListWorkflowsRequestBody{Limit: intPtr(10)}}, false},
-		{"ListWorkflowsResponse", &ListWorkflowsResponse{Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "r3"}, Output: []ListWorkflowsResponseBody{{WorkflowUUID: "wf-1"}}}, true},
-		{"GetWorkflowRequest", &GetWorkflowRequest{Envelope: Envelope{Type: MessageTypeGetWorkflow, RequestID: "r4"}, WorkflowID: "wf-1"}, false},
-		{"GetWorkflowResponse", &GetWorkflowResponse{Envelope: Envelope{Type: MessageTypeGetWorkflow, RequestID: "r4"}, Output: &ListWorkflowsResponseBody{WorkflowUUID: "wf-1"}}, true},
-		{"AlertRequest", &AlertRequest{Envelope: Envelope{Type: MessageTypeAlert, RequestID: "r5"}, Name: "alert"}, false},
-	}
+func boolPtr(b bool) *bool {
+	return &b
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			encoded, err := Encode(tt.msg)
+func int64Ptr(i int64) *int64 {
+	return &i
+}
+
+func float64Ptr(f float64) *float64 {
+	return &f
+}
+
+func getAllGoldenFixtures() map[string]struct {
+	isResponse bool
+	expected   Message
+} {
+	return map[string]struct {
+		isResponse bool
+		expected   Message
+	}{
+		"alert_request.json": {
+			isResponse: false,
+			expected: &AlertRequest{
+				Envelope: Envelope{Type: MessageTypeAlert, RequestID: "req-uuid"},
+				Name:     "system_failure",
+				Message:  "High memory usage",
+				Metadata: map[string]string{"cpu": "90%"},
+			},
+		},
+		"alert_response.json": {
+			isResponse: true,
+			expected: &AlertResponse{
+				Envelope: Envelope{Type: MessageTypeAlert, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"backfill_schedule_request.json": {
+			isResponse: false,
+			expected: &BackfillScheduleRequest{
+				Envelope:     Envelope{Type: MessageTypeBackfillSchedule, RequestID: "req-uuid"},
+				ScheduleName: "daily-report",
+				Start:        "2026-09-01T00:00:00Z",
+				End:          "2026-09-02T00:00:00Z",
+			},
+		},
+		"backfill_schedule_response.json": {
+			isResponse: true,
+			expected: &BackfillScheduleResponse{
+				Envelope:    Envelope{Type: MessageTypeBackfillSchedule, RequestID: "req-uuid"},
+				WorkflowIDs: []string{"wf-bf-1", "wf-bf-2"},
+			},
+		},
+		"cancel_workflow_request.json": {
+			isResponse: false,
+			expected: &CancelWorkflowRequest{
+				Envelope:       Envelope{Type: MessageTypeCancel, RequestID: "req-uuid"},
+				WorkflowID:     "wf-123",
+				WorkflowIDs:    []string{"wf-123"},
+				CancelChildren: true,
+			},
+		},
+		"cancel_workflow_response.json": {
+			isResponse: true,
+			expected: &CancelWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeCancel, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"delete_workflow_request.json": {
+			isResponse: false,
+			expected: &DeleteWorkflowRequest{
+				Envelope:       Envelope{Type: MessageTypeDelete, RequestID: "req-uuid"},
+				WorkflowID:     "wf-123",
+				WorkflowIDs:    []string{"wf-123"},
+				DeleteChildren: true,
+			},
+		},
+		"delete_workflow_response.json": {
+			isResponse: true,
+			expected: &DeleteWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeDelete, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"executor_info_request.json": {
+			isResponse: false,
+			expected: &ExecutorInfoRequest{
+				Envelope: Envelope{Type: MessageTypeExecutorInfo, RequestID: "req-uuid"},
+			},
+		},
+		"executor_info_response.json": {
+			isResponse: true,
+			expected: &ExecutorInfoResponse{
+				Envelope:           Envelope{Type: MessageTypeExecutorInfo, RequestID: "req-uuid"},
+				ExecutorID:         "exec-123",
+				ApplicationVersion: "v1.0.0",
+				Hostname:           stringPtr("localhost"),
+				Language:           "go",
+				DBOSVersion:        "0.1.0",
+			},
+		},
+		"exist_pending_workflows_request.json": {
+			isResponse: false,
+			expected: &ExistPendingWorkflowsRequest{
+				Envelope:           Envelope{Type: MessageTypeExistPendingWorkflows, RequestID: "req-uuid"},
+				ExecutorID:         "exec-123",
+				ApplicationVersion: "v1.0.0",
+			},
+		},
+		"exist_pending_workflows_response.json": {
+			isResponse: true,
+			expected: &ExistPendingWorkflowsResponse{
+				Envelope: Envelope{Type: MessageTypeExistPendingWorkflows, RequestID: "req-uuid"},
+				Exist:    true,
+			},
+		},
+		"export_workflow_request.json": {
+			isResponse: false,
+			expected: &ExportWorkflowRequest{
+				Envelope:       Envelope{Type: MessageTypeExportWorkflow, RequestID: "req-uuid"},
+				WorkflowID:     "wf-123",
+				ExportChildren: true,
+			},
+		},
+		"export_workflow_response.json": {
+			isResponse: true,
+			expected: &ExportWorkflowResponse{
+				Envelope:           Envelope{Type: MessageTypeExportWorkflow, RequestID: "req-uuid"},
+				SerializedWorkflow: stringPtr("{\"version\":1}"),
+			},
+		},
+		"fork_from_failure_request.json": {
+			isResponse: false,
+			expected: &ForkFromFailureRequest{
+				Envelope: Envelope{Type: MessageTypeForkFromFailure, RequestID: "req-uuid"},
+				Body: ForkFromFailureRequestBody{
+					WorkflowIDs:        []string{"wf-123"},
+					ApplicationVersion: stringPtr("v1.0.0"),
+					FromLastFailure:    true,
+				},
+			},
+		},
+		"fork_from_failure_response.json": {
+			isResponse: true,
+			expected: &ForkFromFailureResponse{
+				Envelope:          Envelope{Type: MessageTypeForkFromFailure, RequestID: "req-uuid"},
+				ForkedWorkflowIDs: []string{"wf-forked-1"},
+			},
+		},
+		"fork_workflow_request.json": {
+			isResponse: false,
+			expected: &ForkWorkflowRequest{
+				Envelope: Envelope{Type: MessageTypeForkWorkflow, RequestID: "req-uuid"},
+				Body: ForkWorkflowRequestBody{
+					WorkflowID:         "wf-123",
+					StartStep:          2,
+					ApplicationVersion: stringPtr("v1.0.0"),
+					NewWorkflowID:      stringPtr("wf-forked-2"),
+				},
+			},
+		},
+		"fork_workflow_response.json": {
+			isResponse: true,
+			expected: &ForkWorkflowResponse{
+				Envelope:      Envelope{Type: MessageTypeForkWorkflow, RequestID: "req-uuid"},
+				NewWorkflowID: stringPtr("wf-forked-2"),
+			},
+		},
+		"get_metrics_request.json": {
+			isResponse: false,
+			expected: &GetMetricsRequest{
+				Envelope:        Envelope{Type: MessageTypeGetMetrics, RequestID: "req-uuid"},
+				StartTime:       "2026-09-01T00:00:00Z",
+				EndTime:         "2026-09-02T00:00:00Z",
+				MetricClass:     "workflow_count",
+				ApplicationName: []string{"sample-app"},
+			},
+		},
+		"get_metrics_response.json": {
+			isResponse: true,
+			expected: &GetMetricsResponse{
+				Envelope: Envelope{Type: MessageTypeGetMetrics, RequestID: "r1"},
+				Metrics: []MetricData{
+					{
+						MetricName: "dbos_workflows",
+						MetricType: "counter",
+						Value:      1,
+					},
+				},
+			},
+		},
+		"get_queue_request.json": {
+			isResponse: false,
+			expected: &GetQueueRequest{
+				Envelope: Envelope{Type: MessageTypeGetQueue, RequestID: "req-uuid"},
+				Name:     "default-queue",
+			},
+		},
+		"get_queue_response.json": {
+			isResponse: true,
+			expected: &GetQueueResponse{
+				Envelope: Envelope{Type: MessageTypeGetQueue, RequestID: "req-uuid"},
+				Output: &QueueOutput{
+					Name:               "default-queue",
+					Concurrency:        intPtr(10),
+					WorkerConcurrency:  intPtr(2),
+					RateLimitMax:       intPtr(100),
+					RateLimitPeriodSec: float64Ptr(60),
+					PriorityEnabled:    true,
+					PartitionQueue:     false,
+					PollingIntervalSec: 1.5,
+					ApplicationName:    stringPtr("sample-app"),
+				},
+			},
+		},
+		"get_schedule_request.json": {
+			isResponse: false,
+			expected: &GetScheduleRequest{
+				Envelope:     Envelope{Type: MessageTypeGetSchedule, RequestID: "req-uuid"},
+				ScheduleName: "daily-report",
+				LoadContext:  boolPtr(true),
+			},
+		},
+		"get_schedule_response.json": {
+			isResponse: true,
+			expected: &GetScheduleResponse{
+				Envelope: Envelope{Type: MessageTypeGetSchedule, RequestID: "req-uuid"},
+				Output: &ScheduleOutput{
+					ScheduleID:        "sched-123",
+					ScheduleName:      "daily-report",
+					WorkflowName:      "report_wf",
+					WorkflowClassName: stringPtr("Reports"),
+					Schedule:          "0 0 * * *",
+					Status:            "ACTIVE",
+					Context:           stringPtr("{}"),
+					LastFiredAt:       stringPtr("2026-09-01T00:00:00Z"),
+					AutomaticBackfill: true,
+					CronTimezone:      stringPtr("UTC"),
+					QueueName:         stringPtr("sched-queue"),
+					ApplicationName:   stringPtr("sample-app"),
+				},
+			},
+		},
+		"get_step_aggregates_request.json": {
+			isResponse: false,
+			expected: &GetStepAggregatesRequest{
+				Envelope: Envelope{Type: MessageTypeGetStepAggregates, RequestID: "req-uuid"},
+				Body: GetStepAggregatesRequestBody{
+					GroupByFunctionName: true,
+					GroupByStatus:       false,
+					SelectCount:         true,
+					SelectMaxDurationMs: true,
+					FunctionName:        StringOrList{"step-1"},
+				},
+			},
+		},
+		"get_step_aggregates_response.json": {
+			isResponse: true,
+			expected: &GetStepAggregatesResponse{
+				Envelope: Envelope{Type: MessageTypeGetStepAggregates, RequestID: "req-uuid"},
+				Output: []StepAggregateRow{
+					{
+						Group:         map[string]*string{"function_name": stringPtr("step-1")},
+						Count:         int64Ptr(5),
+						MaxDurationMs: int64Ptr(120),
+					},
+				},
+			},
+		},
+		"get_workflow_aggregates_request.json": {
+			isResponse: false,
+			expected: &GetWorkflowAggregatesRequest{
+				Envelope: Envelope{Type: MessageTypeGetWorkflowAggregates, RequestID: "req-uuid"},
+				Body: GetWorkflowAggregatesRequestBody{
+					GroupByStatus:           true,
+					SelectCount:             true,
+					SelectMinCreatedAt:      true,
+					SelectMaxQueueWaitMs:    true,
+					SelectMaxTotalLatencyMs: true,
+					Status:                  StringOrList{"SUCCESS"},
+				},
+			},
+		},
+		"get_workflow_aggregates_response.json": {
+			isResponse: true,
+			expected: &GetWorkflowAggregatesResponse{
+				Envelope: Envelope{Type: MessageTypeGetWorkflowAggregates, RequestID: "req-uuid"},
+				Output: []WorkflowAggregateRow{
+					{
+						Group:             map[string]*string{"status": stringPtr("SUCCESS")},
+						Count:             int64Ptr(42),
+						MinCreatedAt:      int64Ptr(1756713600000),
+						MaxQueueWaitMs:    int64Ptr(150),
+						MaxTotalLatencyMs: int64Ptr(500),
+					},
+				},
+			},
+		},
+		"get_workflow_events_request.json": {
+			isResponse: false,
+			expected: &GetWorkflowEventsRequest{
+				Envelope:   Envelope{Type: MessageTypeGetWorkflowEvents, RequestID: "req-uuid"},
+				WorkflowID: "wf-123",
+			},
+		},
+		"get_workflow_events_response.json": {
+			isResponse: true,
+			expected: &GetWorkflowEventsResponse{
+				Envelope: Envelope{Type: MessageTypeGetWorkflowEvents, RequestID: "req-uuid"},
+				Events: []EventOutput{
+					{Key: "order_confirmed", Value: "{\"order_id\":\"ord-1\"}"},
+				},
+			},
+		},
+		"get_workflow_notifications_request.json": {
+			isResponse: false,
+			expected: &GetWorkflowNotificationsRequest{
+				Envelope:   Envelope{Type: MessageTypeGetWorkflowNotifications, RequestID: "req-uuid"},
+				WorkflowID: "wf-123",
+			},
+		},
+		"get_workflow_notifications_response.json": {
+			isResponse: true,
+			expected: &GetWorkflowNotificationsResponse{
+				Envelope: Envelope{Type: MessageTypeGetWorkflowNotifications, RequestID: "req-uuid"},
+				Notifications: []NotificationOutput{
+					{
+						Topic:            stringPtr("billing"),
+						Message:          "invoice-generated",
+						CreatedAtEpochMs: 1756713600000,
+						Consumed:         false,
+					},
+				},
+			},
+		},
+		"get_workflow_request.json": {
+			isResponse: false,
+			expected: &GetWorkflowRequest{
+				Envelope:   Envelope{Type: MessageTypeGetWorkflow, RequestID: "req-uuid"},
+				WorkflowID: "wf-123",
+				LoadInput:  true,
+				LoadOutput: true,
+			},
+		},
+		"get_workflow_response.json": {
+			isResponse: true,
+			expected: &GetWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeGetWorkflow, RequestID: "req-uuid"},
+				Output: &ListWorkflowsResponseBody{
+					WorkflowUUID: "wf-123",
+					Status:       stringPtr("PENDING"),
+				},
+			},
+		},
+		"get_workflow_streams_request.json": {
+			isResponse: false,
+			expected: &GetWorkflowStreamsRequest{
+				Envelope:   Envelope{Type: MessageTypeGetWorkflowStreams, RequestID: "req-uuid"},
+				WorkflowID: "wf-123",
+			},
+		},
+		"get_workflow_streams_response.json": {
+			isResponse: true,
+			expected: &GetWorkflowStreamsResponse{
+				Envelope: Envelope{Type: MessageTypeGetWorkflowStreams, RequestID: "req-uuid"},
+				Streams: []StreamEntryOutput{
+					{Key: "sensor-stream", Values: []string{"v1", "v2"}},
+				},
+			},
+		},
+		"import_workflow_request.json": {
+			isResponse: false,
+			expected: &ImportWorkflowRequest{
+				Envelope:           Envelope{Type: MessageTypeImportWorkflow, RequestID: "req-uuid"},
+				SerializedWorkflow: "{\"version\":1}",
+			},
+		},
+		"import_workflow_response.json": {
+			isResponse: true,
+			expected: &ImportWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeImportWorkflow, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"list_application_versions_request.json": {
+			isResponse: false,
+			expected: &ListApplicationVersionsRequest{
+				Envelope: Envelope{Type: MessageTypeListApplicationVersions, RequestID: "req-uuid"},
+			},
+		},
+		"list_application_versions_response.json": {
+			isResponse: true,
+			expected: &ListApplicationVersionsResponse{
+				Envelope: Envelope{Type: MessageTypeListApplicationVersions, RequestID: "req-uuid"},
+				Output: []ApplicationVersionOutput{
+					{
+						ID:        "ver-1",
+						Name:      "v1.0.0",
+						Timestamp: 1756713600000,
+						CreatedAt: 1756713600000,
+					},
+				},
+			},
+		},
+		"list_queues_request.json": {
+			isResponse: false,
+			expected: &ListQueuesRequest{
+				Envelope: Envelope{Type: MessageTypeListQueues, RequestID: "req-uuid"},
+				Body:     ListQueuesRequestBody{ApplicationName: StringOrList{"sample-app"}},
+			},
+		},
+		"list_queues_response.json": {
+			isResponse: true,
+			expected: &ListQueuesResponse{
+				Envelope: Envelope{Type: MessageTypeListQueues, RequestID: "req-uuid"},
+				Output: []QueueOutput{
+					{
+						Name:               "default-queue",
+						Concurrency:        intPtr(5),
+						WorkerConcurrency:  intPtr(1),
+						PriorityEnabled:    false,
+						PartitionQueue:     false,
+						PollingIntervalSec: 1,
+						ApplicationName:    stringPtr("sample-app"),
+					},
+				},
+			},
+		},
+		"list_queued_workflows_request.json": {
+			isResponse: false,
+			expected: &ListWorkflowsRequest{
+				Envelope: Envelope{Type: MessageTypeListQueuedWorkflows, RequestID: "req-uuid"},
+				Body: ListWorkflowsRequestBody{
+					QueueName:  StringOrList{"order-queue"},
+					QueuesOnly: true,
+				},
+			},
+		},
+		"list_queued_workflows_response.json": {
+			isResponse: true,
+			expected: &ListWorkflowsResponse{
+				Envelope: Envelope{Type: MessageTypeListQueuedWorkflows, RequestID: "req-uuid"},
+				Output: []ListWorkflowsResponseBody{
+					{
+						WorkflowUUID: "wf-q-1",
+						Status:       stringPtr("ENQUEUED"),
+						QueueName:    stringPtr("order-queue"),
+					},
+				},
+			},
+		},
+		"list_schedules_request.json": {
+			isResponse: false,
+			expected: &ListSchedulesRequest{
+				Envelope: Envelope{Type: MessageTypeListSchedules, RequestID: "req-uuid"},
+				Body: ListSchedulesRequestBody{
+					Status:          StringOrList{"ACTIVE"},
+					ApplicationName: StringOrList{"sample-app"},
+				},
+			},
+		},
+		"list_schedules_response.json": {
+			isResponse: true,
+			expected: &ListSchedulesResponse{
+				Envelope: Envelope{Type: MessageTypeListSchedules, RequestID: "req-uuid"},
+				Output: []ScheduleOutput{
+					{
+						ScheduleID:        "sched-1",
+						ScheduleName:      "daily-report",
+						WorkflowName:      "report_wf",
+						Schedule:          "0 0 * * *",
+						Status:            "ACTIVE",
+						AutomaticBackfill: false,
+						ApplicationName:   stringPtr("sample-app"),
+					},
+				},
+			},
+		},
+		"list_steps_request.json": {
+			isResponse: false,
+			expected: &ListStepsRequest{
+				Envelope:   Envelope{Type: MessageTypeListSteps, RequestID: "req-uuid"},
+				WorkflowID: "wf-123",
+				LoadOutput: true,
+			},
+		},
+		"list_steps_response.json": {
+			isResponse: true,
+			expected: &ListStepsResponse{
+				Envelope: Envelope{Type: MessageTypeListSteps, RequestID: "req-uuid"},
+				Output: &[]WorkflowStepsResponseBody{
+					{
+						FunctionID:   1,
+						FunctionName: "processPayment",
+						Output:       stringPtr("{\"status\":\"ok\"}"),
+					},
+				},
+			},
+		},
+		"list_workflows_request.json": {
+			isResponse: false,
+			expected: &ListWorkflowsRequest{
+				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
+				Body: ListWorkflowsRequestBody{
+					WorkflowName: StringOrList{"my_workflow"},
+					Limit:        intPtr(10),
+				},
+			},
+		},
+		"list_workflows_response.json": {
+			isResponse: true,
+			expected: &ListWorkflowsResponse{
+				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
+				Output: []ListWorkflowsResponseBody{
+					{
+						WorkflowUUID: "wf-123",
+						Status:       stringPtr("SUCCESS"),
+					},
+				},
+			},
+		},
+		"pause_schedule_request.json": {
+			isResponse: false,
+			expected: &PauseScheduleRequest{
+				Envelope:     Envelope{Type: MessageTypePauseSchedule, RequestID: "req-uuid"},
+				ScheduleName: "daily-report",
+			},
+		},
+		"pause_schedule_response.json": {
+			isResponse: true,
+			expected: &PauseScheduleResponse{
+				Envelope: Envelope{Type: MessageTypePauseSchedule, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"recovery_request.json": {
+			isResponse: false,
+			expected: &RecoveryRequest{
+				Envelope:    Envelope{Type: MessageTypeRecovery, RequestID: "req-uuid"},
+				ExecutorIDs: []string{"exec-123"},
+			},
+		},
+		"recovery_response.json": {
+			isResponse: true,
+			expected: &RecoveryResponse{
+				Envelope: Envelope{Type: MessageTypeRecovery, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"resume_schedule_request.json": {
+			isResponse: false,
+			expected: &ResumeScheduleRequest{
+				Envelope:     Envelope{Type: MessageTypeResumeSchedule, RequestID: "req-uuid"},
+				ScheduleName: "daily-report",
+			},
+		},
+		"resume_schedule_response.json": {
+			isResponse: true,
+			expected: &ResumeScheduleResponse{
+				Envelope: Envelope{Type: MessageTypeResumeSchedule, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"resume_workflow_request.json": {
+			isResponse: false,
+			expected: &ResumeWorkflowRequest{
+				Envelope:    Envelope{Type: MessageTypeResume, RequestID: "req-uuid"},
+				WorkflowID:  "wf-123",
+				WorkflowIDs: []string{"wf-123"},
+				QueueName:   stringPtr("recovery-queue"),
+			},
+		},
+		"resume_workflow_response.json": {
+			isResponse: true,
+			expected: &ResumeWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeResume, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"retention_request.json": {
+			isResponse: false,
+			expected: &RetentionRequest{
+				Envelope: Envelope{Type: MessageTypeRetention, RequestID: "req-uuid"},
+				Body: RetentionRequestBody{
+					GCCutoffEpochMs:      intPtr(1725753600000),
+					GCRowsThreshold:      intPtr(50000),
+					GCBatchSize:          intPtr(10000),
+					TimeoutCutoffEpochMs: intPtr(1725750000000),
+				},
+			},
+		},
+		"retention_response.json": {
+			isResponse: true,
+			expected: &RetentionResponse{
+				Envelope: Envelope{Type: MessageTypeRetention, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"set_latest_application_version_request.json": {
+			isResponse: false,
+			expected: &SetLatestApplicationVersionRequest{
+				Envelope:    Envelope{Type: MessageTypeSetLatestApplicationVersion, RequestID: "req-uuid"},
+				VersionName: "v2.0.0",
+			},
+		},
+		"set_latest_application_version_response.json": {
+			isResponse: true,
+			expected: &SetLatestApplicationVersionResponse{
+				Envelope: Envelope{Type: MessageTypeSetLatestApplicationVersion, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
+		"trigger_schedule_request.json": {
+			isResponse: false,
+			expected: &TriggerScheduleRequest{
+				Envelope:     Envelope{Type: MessageTypeTriggerSchedule, RequestID: "req-uuid"},
+				ScheduleName: "daily-report",
+			},
+		},
+		"trigger_schedule_response.json": {
+			isResponse: true,
+			expected: &TriggerScheduleResponse{
+				Envelope:   Envelope{Type: MessageTypeTriggerSchedule, RequestID: "req-uuid"},
+				WorkflowID: stringPtr("wf-trig-1"),
+			},
+		},
+	}
+}
+
+func TestDecodeEncodeRoundTrip(t *testing.T) {
+	fixtures := getAllGoldenFixtures()
+	for name, tt := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := Encode(tt.expected)
 			if err != nil {
 				t.Fatalf("Encode failed: %v", err)
 			}
@@ -62,104 +676,9 @@ func TestGoldenFiles(t *testing.T) {
 		t.Fatalf("No golden files found")
 	}
 
-	expectedMap := map[string]struct {
-		isResponse bool
-		expected   Message
-	}{
-		"alert_request.json": {
-			isResponse: false,
-			expected: &AlertRequest{
-				Envelope: Envelope{Type: MessageTypeAlert, RequestID: "req-uuid"},
-				Name:     "system_failure",
-				Message:  "High memory usage",
-				Metadata: map[string]string{"cpu": "90%"},
-			},
-		},
-		"executor_info_request.json": {
-			isResponse: false,
-			expected: &ExecutorInfoRequest{
-				Envelope: Envelope{Type: MessageTypeExecutorInfo, RequestID: "req-uuid"},
-			},
-		},
-		"executor_info_response.json": {
-			isResponse: true,
-			expected: &ExecutorInfoResponse{
-				Envelope:           Envelope{Type: MessageTypeExecutorInfo, RequestID: "req-uuid"},
-				ExecutorID:         "exec-123",
-				ApplicationVersion: "v1.0.0",
-				Hostname:           stringPtr("localhost"),
-				Language:           "go",
-				DBOSVersion:        "0.1.0",
-			},
-		},
-		"get_metrics_response.json": {
-			isResponse: true,
-			expected: &GetMetricsResponse{
-				Envelope: Envelope{Type: MessageTypeGetMetrics, RequestID: "r1"},
-				Metrics: []MetricData{
-					{
-						MetricName: "dbos_workflows",
-						MetricType: "counter",
-						Value:      1,
-					},
-				},
-			},
-		},
-		"get_workflow_request.json": {
-			isResponse: false,
-			expected: &GetWorkflowRequest{
-				Envelope:   Envelope{Type: MessageTypeGetWorkflow, RequestID: "req-uuid"},
-				WorkflowID: "wf-123",
-				LoadInput:  true,
-				LoadOutput: true,
-			},
-		},
-		"get_workflow_response.json": {
-			isResponse: true,
-			expected: &GetWorkflowResponse{
-				Envelope: Envelope{Type: MessageTypeGetWorkflow, RequestID: "req-uuid"},
-				Output: &ListWorkflowsResponseBody{
-					WorkflowUUID: "wf-123",
-					Status:       stringPtr("PENDING"),
-				},
-			},
-		},
-		"list_workflows_request.json": {
-			isResponse: false,
-			expected: &ListWorkflowsRequest{
-				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
-				Body: ListWorkflowsRequestBody{
-					WorkflowName: StringOrList{"my_workflow"},
-					Limit:        intPtr(10),
-				},
-			},
-		},
-		"list_workflows_response.json": {
-			isResponse: true,
-			expected: &ListWorkflowsResponse{
-				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
-				Output: []ListWorkflowsResponseBody{
-					{
-						WorkflowUUID: "wf-123",
-						Status:       stringPtr("SUCCESS"),
-					},
-				},
-			},
-		},
-		"recovery_request.json": {
-			isResponse: false,
-			expected: &RecoveryRequest{
-				Envelope:    Envelope{Type: MessageTypeRecovery, RequestID: "req-uuid"},
-				ExecutorIDs: []string{"exec-123"},
-			},
-		},
-		"recovery_response.json": {
-			isResponse: true,
-			expected: &RecoveryResponse{
-				Envelope: Envelope{Type: MessageTypeRecovery, RequestID: "req-uuid"},
-				Success:  true,
-			},
-		},
+	expectedMap := getAllGoldenFixtures()
+	if len(files) != len(expectedMap) {
+		t.Errorf("Expected %d golden files, found %d", len(expectedMap), len(files))
 	}
 
 	for _, file := range files {

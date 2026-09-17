@@ -1,0 +1,10 @@
+{
+  "type": "fork_workflow",
+  "request_id": "req-uuid",
+  "body": {
+    "workflow_id": "wf-123",
+    "start_step": 2,
+    "application_version": "v1.0.0",
+    "new_workflow_id": "wf-forked-2"
+  }
+}

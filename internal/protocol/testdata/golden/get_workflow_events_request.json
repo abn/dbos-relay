@@ -1,0 +1,5 @@
+{
+  "type": "get_workflow_events",
+  "request_id": "req-uuid",
+  "workflow_id": "wf-123"
+}

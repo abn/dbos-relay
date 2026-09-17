@@ -1,0 +1,5 @@
+{
+  "type": "exist_pending_workflows",
+  "request_id": "req-uuid",
+  "exist": true
+}

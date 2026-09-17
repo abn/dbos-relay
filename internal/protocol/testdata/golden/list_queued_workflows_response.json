@@ -1,0 +1,11 @@
+{
+  "type": "list_queued_workflows",
+  "request_id": "req-uuid",
+  "output": [
+    {
+      "WorkflowUUID": "wf-q-1",
+      "Status": "ENQUEUED",
+      "QueueName": "order-queue"
+    }
+  ]
+}
