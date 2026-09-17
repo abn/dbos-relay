@@ -4,6 +4,7 @@ package alerting
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/protocol"
@@ -25,6 +27,11 @@ type Store interface {
 	ListAlertingRulesByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.AlertingRule, error)
 	ListExecutorsByApplication(ctx context.Context, appID pgtype.UUID) ([]gen.Executor, error)
 	TouchAlertRuleLastFired(ctx context.Context, id pgtype.UUID) error
+}
+
+// AtomicAlertRuleStore is an optional interface for stores that support atomic alert rule touch via CAS.
+type AtomicAlertRuleStore interface {
+	TouchAlertRuleLastFiredAtomic(ctx context.Context, arg gen.TouchAlertRuleLastFiredAtomicParams) (gen.AlertingRule, error)
 }
 
 // ClaimAlertRuleStore is an optional interface for stores that support atomic alert rule claim / CAS.
@@ -169,6 +176,20 @@ func (e *Evaluator) evaluateApp(ctx context.Context, app gen.Application) {
 }
 
 func (e *Evaluator) claimRule(ctx context.Context, rule gen.AlertingRule) (bool, error) {
+	if as, ok := e.store.(AtomicAlertRuleStore); ok {
+		_, err := as.TouchAlertRuleLastFiredAtomic(ctx, gen.TouchAlertRuleLastFiredAtomicParams{
+			ID:            rule.ID,
+			ApplicationID: rule.ApplicationID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	}
+
 	var minInterval int32
 	if rule.MinIntervalSecs != nil && *rule.MinIntervalSecs > 0 {
 		minInterval = *rule.MinIntervalSecs

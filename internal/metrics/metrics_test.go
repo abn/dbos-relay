@@ -433,6 +433,103 @@ func TestMetricsEndpoint_GroupedExecutorStoreOptimization(t *testing.T) {
 	}
 }
 
+type mockOrgGroupedMetricsStore struct {
+	mockMetricsStore
+	rows       []metrics.ExecutorCountRow
+	queriedOrg pgtype.UUID
+	callCount  int
+}
+
+func (m *mockOrgGroupedMetricsStore) GetExecutorCountsGroupedByOrg(ctx context.Context, orgID pgtype.UUID) ([]metrics.ExecutorCountRow, error) {
+	m.callCount++
+	m.queriedOrg = orgID
+	var result []metrics.ExecutorCountRow
+	for _, r := range m.rows {
+		if r.OrganisationID == orgID {
+			result = append(result, r)
+		}
+	}
+	return result, nil
+}
+
+func TestMetricsEndpoint_GroupedExecutorStoreOrgScoping(t *testing.T) {
+	orgA := pgtype.UUID{Bytes: [16]byte{0xA}, Valid: true}
+	orgB := pgtype.UUID{Bytes: [16]byte{0xB}, Valid: true}
+
+	store := &mockGroupedMetricsStore{
+		rows: []metrics.ExecutorCountRow{
+			{OrganisationID: orgA, ApplicationName: "app-a", ApplicationVersion: "v1.0.0", Status: "connected", Count: 5},
+			{OrganisationID: orgB, ApplicationName: "app-b", ApplicationVersion: "v1.0.0", Status: "connected", Count: 10},
+		},
+	}
+	handler := metrics.NewHandler(store)
+	req := httptest.NewRequest(http.MethodGet, "/v1/metrics", nil)
+	ctx := auth.WithIdentity(req.Context(), &auth.UserIdentity{
+		Subject:     "org-a-user",
+		IsAdmin:     false,
+		IsAPIKey:    true,
+		OrgID:       orgA,
+		Permissions: []string{auth.PermApplicationRead},
+	})
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `application="app-a"`) {
+		t.Errorf("expected body to contain app-a, got:\n%s", body)
+	}
+	if strings.Contains(body, `application="app-b"`) {
+		t.Errorf("expected body NOT to contain app-b from different org, got:\n%s", body)
+	}
+}
+
+func TestMetricsEndpoint_OrgGroupedExecutorStore(t *testing.T) {
+	orgA := pgtype.UUID{Bytes: [16]byte{0xA}, Valid: true}
+	orgB := pgtype.UUID{Bytes: [16]byte{0xB}, Valid: true}
+
+	store := &mockOrgGroupedMetricsStore{
+		rows: []metrics.ExecutorCountRow{
+			{OrganisationID: orgA, ApplicationName: "app-a", ApplicationVersion: "v1.0.0", Status: "connected", Count: 7},
+			{OrganisationID: orgB, ApplicationName: "app-b", ApplicationVersion: "v1.0.0", Status: "connected", Count: 14},
+		},
+	}
+	handler := metrics.NewHandler(store)
+	req := httptest.NewRequest(http.MethodGet, "/v1/metrics", nil)
+	ctx := auth.WithIdentity(req.Context(), &auth.UserIdentity{
+		Subject:     "org-a-user",
+		IsAdmin:     false,
+		IsAPIKey:    true,
+		OrgID:       orgA,
+		Permissions: []string{auth.PermApplicationRead},
+	})
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+	if store.callCount != 1 {
+		t.Errorf("expected 1 call to GetExecutorCountsGroupedByOrg, got %d", store.callCount)
+	}
+	if store.queriedOrg != orgA {
+		t.Errorf("expected query for orgA, got %v", store.queriedOrg)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, `application="app-a"`) {
+		t.Errorf("expected body to contain app-a, got:\n%s", body)
+	}
+	if strings.Contains(body, `application="app-b"`) {
+		t.Errorf("expected body NOT to contain app-b, got:\n%s", body)
+	}
+}
+
 func TestObservabilityAssets_MetricParity(t *testing.T) {
 	alertRulesData, err := os.ReadFile("../../deploy/observability/prometheus/relay-alerts.yaml")
 	if err != nil {

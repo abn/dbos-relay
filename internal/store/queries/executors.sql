@@ -64,7 +64,7 @@ UPDATE executors
 SET status = 'dead',
     owner_instance_id = NULL,
     lease_expires_at = NULL
-WHERE application_id = $1 AND executor_id = $2
+WHERE application_id = $1 AND executor_id = $2 AND status != 'dead'
 RETURNING *;
 
 -- name: DeleteExecutor :exec
@@ -80,5 +80,39 @@ ORDER BY disconnected_at ASC;
 UPDATE executors
 SET owner_instance_id = $1,
     lease_expires_at = $2
-WHERE status = 'connected' AND (lease_expires_at IS NULL OR lease_expires_at < now())
+WHERE status = 'connected'
+  AND (owner_instance_id IS NULL OR owner_instance_id != $1)
+  AND (lease_expires_at IS NULL OR lease_expires_at < now())
 RETURNING *;
+
+-- name: ListApplicationVersionsDistinct :many
+SELECT
+    application_version,
+    max(connected_at)::timestamptz AS latest_connected_at
+FROM executors
+WHERE application_id = $1 AND application_version != ''
+GROUP BY application_version
+ORDER BY latest_connected_at DESC;
+
+-- name: GetExecutorCountsGrouped :many
+SELECT
+    a.organisation_id,
+    a.name AS application_name,
+    e.application_version,
+    e.status,
+    count(*)::bigint AS count
+FROM executors e
+JOIN applications a ON e.application_id = a.id
+GROUP BY a.organisation_id, a.name, e.application_version, e.status;
+
+-- name: GetExecutorCountsGroupedByOrg :many
+SELECT
+    a.organisation_id,
+    a.name AS application_name,
+    e.application_version,
+    e.status,
+    count(*)::bigint AS count
+FROM executors e
+JOIN applications a ON e.application_id = a.id
+WHERE a.organisation_id = $1
+GROUP BY a.organisation_id, a.name, e.application_version, e.status;

@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/store/gen"
@@ -100,6 +102,41 @@ func TestAlertingRules(t *testing.T) {
 		}
 		if !rule.LastFiredAt.Valid {
 			t.Errorf("expected LastFiredAt to be valid after touch")
+		}
+	})
+
+	t.Run("TouchAlertRuleLastFiredAtomic", func(t *testing.T) {
+		interval := int32(60)
+		rule2, err := s.Queries().CreateAlertingRule(ctx, gen.CreateAlertingRuleParams{
+			ApplicationID:          app1.ID,
+			ReceivingApplicationID: app2.ID,
+			RuleType:               "SlowQueue",
+			RuleMetadata:           []byte(`{}`),
+			MinIntervalSecs:        &interval,
+		})
+		if err != nil {
+			t.Fatalf("CreateAlertingRule for atomic test failed: %v", err)
+		}
+
+		// First touch with atomic CAS should succeed
+		updated, err := s.Queries().TouchAlertRuleLastFiredAtomic(ctx, gen.TouchAlertRuleLastFiredAtomicParams{
+			ID:            rule2.ID,
+			ApplicationID: app1.ID,
+		})
+		if err != nil {
+			t.Fatalf("TouchAlertRuleLastFiredAtomic failed: %v", err)
+		}
+		if !updated.LastFiredAt.Valid {
+			t.Errorf("expected LastFiredAt to be valid")
+		}
+
+		// Since min_interval_secs is 60, touching again immediately should return pgx.ErrNoRows
+		_, err = s.Queries().TouchAlertRuleLastFiredAtomic(ctx, gen.TouchAlertRuleLastFiredAtomicParams{
+			ID:            rule2.ID,
+			ApplicationID: app1.ID,
+		})
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Errorf("expected pgx.ErrNoRows for throttled alert rule, got %v", err)
 		}
 	})
 

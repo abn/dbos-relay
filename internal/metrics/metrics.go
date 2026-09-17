@@ -26,8 +26,24 @@ type GroupedExecutorStore interface {
 	GetExecutorCountsGrouped(ctx context.Context) ([]ExecutorCountRow, error)
 }
 
+// OrgGroupedExecutorStore provides an optimized organization-scoped grouped aggregation.
+type OrgGroupedExecutorStore interface {
+	GetExecutorCountsGroupedByOrg(ctx context.Context, orgID pgtype.UUID) ([]ExecutorCountRow, error)
+}
+
+// GenGroupedStore provides sqlc-generated grouped aggregation across applications.
+type GenGroupedStore interface {
+	GetExecutorCountsGrouped(ctx context.Context) ([]gen.GetExecutorCountsGroupedRow, error)
+}
+
+// GenOrgGroupedStore provides sqlc-generated organization-scoped grouped aggregation.
+type GenOrgGroupedStore interface {
+	GetExecutorCountsGroupedByOrg(ctx context.Context, orgID pgtype.UUID) ([]gen.GetExecutorCountsGroupedByOrgRow, error)
+}
+
 // ExecutorCountRow represents aggregated executor counts grouped by application, version, and status.
 type ExecutorCountRow struct {
+	OrganisationID     pgtype.UUID
 	ApplicationName    string
 	ApplicationVersion string
 	Status             string
@@ -109,17 +125,67 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	executorCounts := make(map[string]int)
 
-	if groupedStore, ok := h.store.(GroupedExecutorStore); ok {
-		rows, err := groupedStore.GetExecutorCountsGrouped(r.Context())
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to query grouped executor metrics: %v", err), http.StatusInternalServerError)
-			return
+	var rows []ExecutorCountRow
+	var queryErr error
+
+	if !identity.IsAdmin {
+		if orgStore, ok := h.store.(GenOrgGroupedStore); ok {
+			genRows, err := orgStore.GetExecutorCountsGroupedByOrg(r.Context(), identity.OrgID)
+			if err != nil {
+				queryErr = err
+			} else {
+				rows = make([]ExecutorCountRow, len(genRows))
+				for i, r := range genRows {
+					rows[i] = ExecutorCountRow{
+						OrganisationID:     r.OrganisationID,
+						ApplicationName:    r.ApplicationName,
+						ApplicationVersion: r.ApplicationVersion,
+						Status:             string(r.Status),
+						Count:              r.Count,
+					}
+				}
+			}
+		} else if orgStore, ok := h.store.(OrgGroupedExecutorStore); ok {
+			rows, queryErr = orgStore.GetExecutorCountsGroupedByOrg(r.Context(), identity.OrgID)
 		}
+	}
+
+	if rows == nil && queryErr == nil {
+		if genStore, ok := h.store.(GenGroupedStore); ok {
+			genRows, err := genStore.GetExecutorCountsGrouped(r.Context())
+			if err != nil {
+				queryErr = err
+			} else {
+				rows = make([]ExecutorCountRow, len(genRows))
+				for i, r := range genRows {
+					rows[i] = ExecutorCountRow{
+						OrganisationID:     r.OrganisationID,
+						ApplicationName:    r.ApplicationName,
+						ApplicationVersion: r.ApplicationVersion,
+						Status:             string(r.Status),
+						Count:              r.Count,
+					}
+				}
+			}
+		} else if groupedStore, ok := h.store.(GroupedExecutorStore); ok {
+			rows, queryErr = groupedStore.GetExecutorCountsGrouped(r.Context())
+		}
+	}
+
+	if queryErr != nil {
+		http.Error(w, fmt.Sprintf("failed to query grouped executor metrics: %v", queryErr), http.StatusInternalServerError)
+		return
+	}
+
+	if rows != nil {
 		for _, row := range rows {
 			if len(appsFilter) > 0 && !contains(appsFilter, row.ApplicationName) {
 				continue
 			}
 			if !identity.IsAdmin {
+				if row.OrganisationID.Valid && row.OrganisationID != identity.OrgID {
+					continue
+				}
 				if len(identity.ApplicationNames) > 0 && !contains(identity.ApplicationNames, row.ApplicationName) {
 					continue
 				}
@@ -141,6 +207,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			executorCounts[labels] += int(row.Count)
 		}
 	} else {
+
 		apps, err := h.store.ListAllApplications(r.Context())
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to list applications: %v", err), http.StatusInternalServerError)

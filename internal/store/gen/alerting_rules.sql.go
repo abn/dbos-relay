@@ -141,3 +141,38 @@ func (q *Queries) TouchAlertRuleLastFired(ctx context.Context, id pgtype.UUID) e
 	_, err := q.db.Exec(ctx, touchAlertRuleLastFired, id)
 	return err
 }
+
+const touchAlertRuleLastFiredAtomic = `-- name: TouchAlertRuleLastFiredAtomic :one
+UPDATE alerting_rules
+SET last_fired_at = now()
+WHERE id = $1
+  AND application_id = $2
+  AND (
+    last_fired_at IS NULL
+    OR min_interval_secs IS NULL
+    OR min_interval_secs <= 0
+    OR last_fired_at <= now() - (min_interval_secs * interval '1 second')
+  )
+RETURNING id, application_id, receiving_application_id, rule_type, rule_metadata, min_interval_secs, last_fired_at, created_at
+`
+
+type TouchAlertRuleLastFiredAtomicParams struct {
+	ID            pgtype.UUID
+	ApplicationID pgtype.UUID
+}
+
+func (q *Queries) TouchAlertRuleLastFiredAtomic(ctx context.Context, arg TouchAlertRuleLastFiredAtomicParams) (AlertingRule, error) {
+	row := q.db.QueryRow(ctx, touchAlertRuleLastFiredAtomic, arg.ID, arg.ApplicationID)
+	var i AlertingRule
+	err := row.Scan(
+		&i.ID,
+		&i.ApplicationID,
+		&i.ReceivingApplicationID,
+		&i.RuleType,
+		&i.RuleMetadata,
+		&i.MinIntervalSecs,
+		&i.LastFiredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}

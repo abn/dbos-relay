@@ -15,7 +15,9 @@ const adoptExpiredExecutors = `-- name: AdoptExpiredExecutors :many
 UPDATE executors
 SET owner_instance_id = $1,
     lease_expires_at = $2
-WHERE status = 'connected' AND (lease_expires_at IS NULL OR lease_expires_at < now())
+WHERE status = 'connected'
+  AND (owner_instance_id IS NULL OR owner_instance_id != $1)
+  AND (lease_expires_at IS NULL OR lease_expires_at < now())
 RETURNING id, application_id, executor_id, application_version, hostname, metadata, status, owner_instance_id, lease_expires_at, connected_at, last_seen_at, disconnected_at
 `
 
@@ -135,6 +137,134 @@ func (q *Queries) GetExecutorByID(ctx context.Context, arg GetExecutorByIDParams
 		&i.DisconnectedAt,
 	)
 	return i, err
+}
+
+const getExecutorCountsGrouped = `-- name: GetExecutorCountsGrouped :many
+SELECT
+    a.organisation_id,
+    a.name AS application_name,
+    e.application_version,
+    e.status,
+    count(*)::bigint AS count
+FROM executors e
+JOIN applications a ON e.application_id = a.id
+GROUP BY a.organisation_id, a.name, e.application_version, e.status
+`
+
+type GetExecutorCountsGroupedRow struct {
+	OrganisationID     pgtype.UUID
+	ApplicationName    string
+	ApplicationVersion string
+	Status             ExecutorStatus
+	Count              int64
+}
+
+func (q *Queries) GetExecutorCountsGrouped(ctx context.Context) ([]GetExecutorCountsGroupedRow, error) {
+	rows, err := q.db.Query(ctx, getExecutorCountsGrouped)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetExecutorCountsGroupedRow
+	for rows.Next() {
+		var i GetExecutorCountsGroupedRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ApplicationName,
+			&i.ApplicationVersion,
+			&i.Status,
+			&i.Count,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getExecutorCountsGroupedByOrg = `-- name: GetExecutorCountsGroupedByOrg :many
+SELECT
+    a.organisation_id,
+    a.name AS application_name,
+    e.application_version,
+    e.status,
+    count(*)::bigint AS count
+FROM executors e
+JOIN applications a ON e.application_id = a.id
+WHERE a.organisation_id = $1
+GROUP BY a.organisation_id, a.name, e.application_version, e.status
+`
+
+type GetExecutorCountsGroupedByOrgRow struct {
+	OrganisationID     pgtype.UUID
+	ApplicationName    string
+	ApplicationVersion string
+	Status             ExecutorStatus
+	Count              int64
+}
+
+func (q *Queries) GetExecutorCountsGroupedByOrg(ctx context.Context, organisationID pgtype.UUID) ([]GetExecutorCountsGroupedByOrgRow, error) {
+	rows, err := q.db.Query(ctx, getExecutorCountsGroupedByOrg, organisationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetExecutorCountsGroupedByOrgRow
+	for rows.Next() {
+		var i GetExecutorCountsGroupedByOrgRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ApplicationName,
+			&i.ApplicationVersion,
+			&i.Status,
+			&i.Count,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listApplicationVersionsDistinct = `-- name: ListApplicationVersionsDistinct :many
+SELECT
+    application_version,
+    max(connected_at)::timestamptz AS latest_connected_at
+FROM executors
+WHERE application_id = $1 AND application_version != ''
+GROUP BY application_version
+ORDER BY latest_connected_at DESC
+`
+
+type ListApplicationVersionsDistinctRow struct {
+	ApplicationVersion string
+	LatestConnectedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) ListApplicationVersionsDistinct(ctx context.Context, applicationID pgtype.UUID) ([]ListApplicationVersionsDistinctRow, error) {
+	rows, err := q.db.Query(ctx, listApplicationVersionsDistinct, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListApplicationVersionsDistinctRow
+	for rows.Next() {
+		var i ListApplicationVersionsDistinctRow
+		if err := rows.Scan(&i.ApplicationVersion, &i.LatestConnectedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listConnectedExecutorsByApplication = `-- name: ListConnectedExecutorsByApplication :many
@@ -273,7 +403,7 @@ UPDATE executors
 SET status = 'dead',
     owner_instance_id = NULL,
     lease_expires_at = NULL
-WHERE application_id = $1 AND executor_id = $2
+WHERE application_id = $1 AND executor_id = $2 AND status != 'dead'
 RETURNING id, application_id, executor_id, application_version, hostname, metadata, status, owner_instance_id, lease_expires_at, connected_at, last_seen_at, disconnected_at
 `
 

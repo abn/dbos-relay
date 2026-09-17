@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/store/gen"
@@ -217,6 +219,15 @@ func TestExecutors(t *testing.T) {
 		if len(deadList) != 1 || deadList[0].ExecutorID != executorID {
 			t.Fatalf("expected 1 dead executor with ID %q, got %+v", executorID, deadList)
 		}
+
+		// Second call should return pgx.ErrNoRows due to status != 'dead' CAS condition
+		_, err = s.Queries().SetExecutorDead(ctx, gen.SetExecutorDeadParams{
+			ApplicationID: appID,
+			ExecutorID:    executorID,
+		})
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Errorf("expected pgx.ErrNoRows on second SetExecutorDead, got %v", err)
+		}
 	})
 
 	t.Run("AdoptExpiredExecutors", func(t *testing.T) {
@@ -268,6 +279,47 @@ func TestExecutors(t *testing.T) {
 		if !found {
 			t.Errorf("did not find %q in adopted list", executorID)
 		}
+
+		// Ensure that the same owner does not re-adopt its own executor
+		selfAdopted, err := s.Queries().AdoptExpiredExecutors(ctx, gen.AdoptExpiredExecutorsParams{
+			OwnerInstanceID: newInstanceID,
+			LeaseExpiresAt:  newLease,
+		})
+		if err != nil {
+			t.Fatalf("AdoptExpiredExecutors failed: %v", err)
+		}
+		for _, e := range selfAdopted {
+			if e.ExecutorID == executorID {
+				t.Errorf("expected executor not to be re-adopted by same instance")
+			}
+		}
+
+		// Ensure active lease is not adopted
+		futureLease := pgtype.Timestamptz{Time: time.Now().Add(10 * time.Minute), Valid: true}
+		_, err = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+			ApplicationID:      appID,
+			ExecutorID:         "active-exec",
+			ApplicationVersion: "v1",
+			Metadata:           []byte(`{}`),
+			OwnerInstanceID:    ownerID,
+			LeaseExpiresAt:     futureLease,
+		})
+		if err != nil {
+			t.Fatalf("UpsertExecutor with active lease failed: %v", err)
+		}
+		thirdInstanceID := pgtype.UUID{Bytes: [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}, Valid: true}
+		thirdAdopted, err := s.Queries().AdoptExpiredExecutors(ctx, gen.AdoptExpiredExecutorsParams{
+			OwnerInstanceID: thirdInstanceID,
+			LeaseExpiresAt:  newLease,
+		})
+		if err != nil {
+			t.Fatalf("AdoptExpiredExecutors failed: %v", err)
+		}
+		for _, e := range thirdAdopted {
+			if e.ExecutorID == "active-exec" {
+				t.Errorf("active executor lease was unexpectedly adopted prematurely")
+			}
+		}
 	})
 
 	t.Run("DeleteExecutor", func(t *testing.T) {
@@ -287,4 +339,144 @@ func TestExecutors(t *testing.T) {
 			t.Fatalf("expected error querying deleted executor, got nil")
 		}
 	})
+}
+
+func TestListApplicationVersionsDistinct(t *testing.T) {
+	s := testStore(t)
+	if s == nil {
+		t.Skip("skipping test; no database")
+	}
+
+	ctx := context.Background()
+	org, err := s.Queries().CreateOrganisation(ctx, "versions_org")
+	if err != nil {
+		t.Fatalf("CreateOrganisation failed: %v", err)
+	}
+
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           "versioned-app",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("CreateApplication failed: %v", err)
+	}
+
+	_, err = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      app.ID,
+		ExecutorID:         "exec-v1",
+		ApplicationVersion: "1.0.0",
+		Metadata:           []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("UpsertExecutor v1 failed: %v", err)
+	}
+
+	_, err = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      app.ID,
+		ExecutorID:         "exec-v2",
+		ApplicationVersion: "2.0.0",
+		Metadata:           []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("UpsertExecutor v2 failed: %v", err)
+	}
+
+	_, err = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      app.ID,
+		ExecutorID:         "exec-v1-dup",
+		ApplicationVersion: "1.0.0",
+		Metadata:           []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("UpsertExecutor v1 duplicate failed: %v", err)
+	}
+
+	versions, err := s.Queries().ListApplicationVersionsDistinct(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("ListApplicationVersionsDistinct failed: %v", err)
+	}
+
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 distinct versions, got %d", len(versions))
+	}
+	versionSet := make(map[string]bool)
+	for _, v := range versions {
+		versionSet[v.ApplicationVersion] = true
+	}
+	if !versionSet["1.0.0"] || !versionSet["2.0.0"] {
+		t.Errorf("expected versions 1.0.0 and 2.0.0, got %v", versions)
+	}
+}
+
+func TestGetExecutorCountsGrouped(t *testing.T) {
+	s := testStore(t)
+	if s == nil {
+		t.Skip("skipping test; no database")
+	}
+
+	ctx := context.Background()
+	orgA, err := s.Queries().CreateOrganisation(ctx, "grouped_org_a")
+	if err != nil {
+		t.Fatalf("CreateOrganisation failed: %v", err)
+	}
+	orgB, err := s.Queries().CreateOrganisation(ctx, "grouped_org_b")
+	if err != nil {
+		t.Fatalf("CreateOrganisation failed: %v", err)
+	}
+
+	appA, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: orgA.ID,
+		Name:           "app-a",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("CreateApplication failed: %v", err)
+	}
+	appB, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: orgB.ID,
+		Name:           "app-b",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("CreateApplication failed: %v", err)
+	}
+
+	_, _ = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      appA.ID,
+		ExecutorID:         "exec-a-1",
+		ApplicationVersion: "v1",
+		Metadata:           []byte(`{}`),
+	})
+	_, _ = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      appA.ID,
+		ExecutorID:         "exec-a-2",
+		ApplicationVersion: "v1",
+		Metadata:           []byte(`{}`),
+	})
+	_, _ = s.Queries().UpsertExecutor(ctx, gen.UpsertExecutorParams{
+		ApplicationID:      appB.ID,
+		ExecutorID:         "exec-b-1",
+		ApplicationVersion: "v2",
+		Metadata:           []byte(`{}`),
+	})
+
+	allGrouped, err := s.Queries().GetExecutorCountsGrouped(ctx)
+	if err != nil {
+		t.Fatalf("GetExecutorCountsGrouped failed: %v", err)
+	}
+	if len(allGrouped) < 2 {
+		t.Errorf("expected at least 2 grouped rows across orgs, got %d", len(allGrouped))
+	}
+
+	orgAGrouped, err := s.Queries().GetExecutorCountsGroupedByOrg(ctx, orgA.ID)
+	if err != nil {
+		t.Fatalf("GetExecutorCountsGroupedByOrg failed: %v", err)
+	}
+	if len(orgAGrouped) != 1 {
+		t.Fatalf("expected exactly 1 grouped row for orgA, got %d", len(orgAGrouped))
+	}
+	if orgAGrouped[0].ApplicationName != "app-a" || orgAGrouped[0].Count != 2 {
+		t.Errorf("unexpected orgA row: %+v", orgAGrouped[0])
+	}
 }

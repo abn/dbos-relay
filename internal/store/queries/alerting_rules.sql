@@ -25,3 +25,16 @@ WHERE id = $1 AND application_id = $2;
 UPDATE alerting_rules
 SET last_fired_at = now()
 WHERE id = $1;
+
+-- name: TouchAlertRuleLastFiredAtomic :one
+UPDATE alerting_rules
+SET last_fired_at = now()
+WHERE id = $1
+  AND application_id = $2
+  AND (
+    last_fired_at IS NULL
+    OR min_interval_secs IS NULL
+    OR min_interval_secs <= 0
+    OR last_fired_at <= now() - (min_interval_secs * interval '1 second')
+  )
+RETURNING *;

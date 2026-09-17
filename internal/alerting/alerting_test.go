@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/alerting"
@@ -503,14 +505,14 @@ func TestAlertEvaluator_ConcurrentTenantEvaluation(t *testing.T) {
 				ApplicationID:          appA,
 				ReceivingApplicationID: appA,
 				RuleType:               "UnresponsiveApplication",
-				RuleMetadata: []byte(`{"destinations":[{"type":"slow","url":"http://slow.example"}]}`),
+				RuleMetadata:           []byte(`{"destinations":[{"type":"slow","url":"http://slow.example"}]}`),
 			},
 			{
 				ID:                     pgtype.UUID{Bytes: [16]byte{102}, Valid: true},
 				ApplicationID:          appB,
 				ReceivingApplicationID: appB,
 				RuleType:               "UnresponsiveApplication",
-				RuleMetadata: []byte(`{"destinations":[{"type":"fast","url":"http://fast.example"}]}`),
+				RuleMetadata:           []byte(`{"destinations":[{"type":"fast","url":"http://fast.example"}]}`),
 			},
 		},
 		executors: map[pgtype.UUID][]gen.Executor{
@@ -542,5 +544,76 @@ func TestAlertEvaluator_ConcurrentTenantEvaluation(t *testing.T) {
 
 	if len(delayedDispatcher.dispatchedCh) != 2 {
 		t.Fatalf("expected 2 dispatched alerts, got %d", len(delayedDispatcher.dispatchedCh))
+	}
+}
+
+type mockAtomicAlertStore struct {
+	mockAlertStore
+	claimCount atomic.Int32
+}
+
+func (m *mockAtomicAlertStore) TouchAlertRuleLastFiredAtomic(ctx context.Context, arg gen.TouchAlertRuleLastFiredAtomicParams) (gen.AlertingRule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, r := range m.rules {
+		if r.ID == arg.ID && r.ApplicationID == arg.ApplicationID {
+			now := time.Now()
+			if r.MinIntervalSecs != nil && *r.MinIntervalSecs > 0 && r.LastFiredAt.Valid {
+				minDur := time.Duration(*r.MinIntervalSecs) * time.Second
+				if now.Sub(r.LastFiredAt.Time) < minDur {
+					return gen.AlertingRule{}, pgx.ErrNoRows
+				}
+			}
+			m.rules[i].LastFiredAt = pgtype.Timestamptz{Time: now, Valid: true}
+			m.touchedRules = append(m.touchedRules, arg.ID)
+			m.claimCount.Add(1)
+			return m.rules[i], nil
+		}
+	}
+	return gen.AlertingRule{}, pgx.ErrNoRows
+}
+
+func TestAlertEvaluator_AtomicCAS(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	recvAppID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+	ruleID := pgtype.UUID{Bytes: [16]byte{99}, Valid: true}
+	interval := int32(60)
+
+	store := &mockAtomicAlertStore{
+		mockAlertStore: mockAlertStore{
+			rules: []gen.AlertingRule{
+				{
+					ID:                     ruleID,
+					ApplicationID:          appID,
+					ReceivingApplicationID: recvAppID,
+					RuleType:               "UnresponsiveApplication",
+					RuleMetadata:           []byte(`{}`),
+					MinIntervalSecs:        &interval,
+				},
+			},
+			executors: map[pgtype.UUID][]gen.Executor{
+				appID: {},
+			},
+		},
+	}
+
+	evaluator := alerting.NewEvaluator(store, &mockAlertDispatcher{}, nil)
+
+	// First evaluation should claim and fire
+	err := evaluator.EvaluateOnce(context.Background())
+	if err != nil {
+		t.Fatalf("first EvaluateOnce failed: %v", err)
+	}
+	if store.claimCount.Load() != 1 {
+		t.Fatalf("expected claimCount=1 on first evaluation, got %d", store.claimCount.Load())
+	}
+
+	// Second evaluation immediately afterwards should be throttled by CAS
+	err = evaluator.EvaluateOnce(context.Background())
+	if err != nil {
+		t.Fatalf("second EvaluateOnce failed: %v", err)
+	}
+	if store.claimCount.Load() != 1 {
+		t.Fatalf("expected claimCount to remain 1 due to CAS throttling, got %d", store.claimCount.Load())
 	}
 }
