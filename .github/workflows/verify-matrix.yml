@@ -1,0 +1,147 @@
+name: verify-matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdk-matrix:
+    name: SDK Build Matrix (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Go
+            language: golang
+          - name: Python
+            language: python
+          - name: TypeScript
+            language: typescript
+          - name: Java
+            language: java
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Go Sample
+        if: matrix.language == 'golang'
+        run: |
+          make build
+
+      - name: Set up Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify Python Sample
+        if: matrix.language == 'python'
+        run: |
+          cd examples/python
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python3 -m py_compile main.py
+
+      - name: Set up Node.js
+        if: matrix.language == 'typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build TypeScript Sample
+        if: matrix.language == 'typescript'
+        run: |
+          make build/typescript
+
+      - name: Set up Java
+        if: matrix.language == 'java'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build Java Sample
+        if: matrix.language == 'java'
+        run: |
+          make build/java
+
+      - name: Verify SDK and Example Isolation
+        run: |
+          make lint/sdk-isolation
+          make lint/examples-isolation
+
+  identity-oidc-matrix:
+    name: Identity & OIDC Device Flow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Identity and Device Flow Tests
+        run: |
+          go test -v -race ./tests/identity/...
+
+      - name: Verify OIDC Test Stack Startup
+        run: |
+          docker compose -f deploy/compose/oidc/docker-compose.yaml up -d
+          timeout 30s bash -c 'until curl -sf http://localhost:5556/dex/.well-known/openid-configuration > /dev/null; do sleep 1; done'
+          curl -sf http://localhost:5556/dex/healthz
+          docker compose -f deploy/compose/oidc/docker-compose.yaml down
+
+  integration-matrix:
+    name: Multi-SDK Conformance Matrix
+    runs-on: ubuntu-latest
+    needs: [sdk-matrix]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Podman Compose
+        run: |
+          pip install podman-compose
+
+      - name: Run Multi-SDK Conformance Suite
+        run: |
+          make verify-sdk

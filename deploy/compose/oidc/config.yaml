@@ -1,0 +1,41 @@
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+telemetry:
+  http: 0.0.0.0:5558
+
+oauth2:
+  responseTypes: ["code", "token", "id_token"]
+  skipApprovalScreen: true
+  passwordConnector: local
+
+staticClients:
+  - id: relay-client
+    name: "Relay Client"
+    secret: relay-client-secret
+    public: true
+    redirectURIs:
+      - "http://127.0.0.1:8080/callback"
+      - "http://localhost:8080/callback"
+      - "http://127.0.0.1:8090/callback"
+      - "http://localhost:8090/callback"
+
+enablePasswordDB: true
+staticPasswords:
+  - email: "admin@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "admin"
+    userID: "08a5ba03-8ea8-4647-a33e-14975299fa52"
+  - email: "alice@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "alice"
+    userID: "18a5ba03-8ea8-4647-a33e-14975299fa53"
+  - email: "bob@acme.corp"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "bob"
+    userID: "28a5ba03-8ea8-4647-a33e-14975299fa54"

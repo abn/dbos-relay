@@ -1,0 +1,16 @@
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.41.1
+    container_name: relay-oidc-dex
+    ports:
+      - "5556:5556"
+      - "5558:5558"
+    volumes:
+      - ./config.yaml:/etc/dex/config.docker.yaml:ro,z
+    command: ["dex", "serve", "/etc/dex/config.docker.yaml"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5556/dex/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
