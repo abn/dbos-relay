@@ -44,6 +44,9 @@ type conformanceProbeRunner struct {
 	conductorKey string
 	orgName      string
 	appName      string
+	lang         string
+	appVersion   string
+	wfID         string
 }
 
 func executeConformanceCheck(name string, fn func() error) ConformanceCheckResult {
@@ -51,6 +54,14 @@ func executeConformanceCheck(name string, fn func() error) ConformanceCheckResul
 	err := fn()
 	elapsed := time.Since(start)
 	if err != nil {
+		if strings.HasPrefix(err.Error(), "skip:") {
+			return ConformanceCheckResult{
+				Name:    name,
+				Status:  CellStatusSkip,
+				Detail:  strings.TrimSpace(strings.TrimPrefix(err.Error(), "skip:")),
+				Elapsed: elapsed,
+			}
+		}
 		return ConformanceCheckResult{
 			Name:    name,
 			Status:  CellStatusFail,
@@ -215,6 +226,385 @@ func (r *conformanceProbeRunner) runBattery1(ctx context.Context) ConformanceBat
 	}))
 
 	return summarizeConformanceChecks(1, "Specification & System Probes", checks)
+}
+
+func (r *conformanceProbeRunner) runBattery2(ctx context.Context) ConformanceBatteryResult {
+	var checks []ConformanceCheckResult
+
+	checks = append(checks, executeConformanceCheck("2.1 Invalid Key Handshake Rejection", func() error {
+		reqURL := fmt.Sprintf("%s/websocket/%s/dbos_invalidkey99999", r.httpURL, r.appName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			return fmt.Errorf("expected status 401 Unauthorized for invalid key, got %d", resp.StatusCode)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.Contains(ct, "application/problem+json") {
+			return fmt.Errorf("expected Content-Type application/problem+json, got %q", ct)
+		}
+		return nil
+	}))
+
+	checks = append(checks, executeConformanceCheck("2.2 Live Executor Fleet Presence", func() error {
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/executors", r.httpURL, r.orgName, r.appName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		var execs []map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&execs); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
+		foundHealthy := false
+		for _, e := range execs {
+			status, _ := e["status"].(string)
+			if status == "HEALTHY" || status == "connected" {
+				foundHealthy = true
+				break
+			}
+		}
+		if !foundHealthy {
+			return errors.New("no live executor in fleet with HEALTHY status")
+		}
+		return nil
+	}))
+
+	return summarizeConformanceChecks(2, "WebSocket Handshake & Fleet Registration", checks)
+}
+
+func (r *conformanceProbeRunner) runBattery3(ctx context.Context) ConformanceBatteryResult {
+	var checks []ConformanceCheckResult
+
+	checks = append(checks, executeConformanceCheck("3.1 List Workflows Multiplexing", func() error {
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/search", r.httpURL, r.orgName, r.appName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(`{"limit":10}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		var list []map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
+		return nil
+	}))
+
+	checks = append(checks, executeConformanceCheck("3.2 Get Workflow Details Multiplexing", func() error {
+		if r.wfID == "" {
+			return fmt.Errorf("skip: no target workflow id")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", r.httpURL, r.orgName, r.appName, r.wfID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		var wf map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&wf); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
+		gotID, _ := wf["workflowId"].(string)
+		if gotID != r.wfID {
+			return fmt.Errorf("expected workflowId %q, got %q", r.wfID, gotID)
+		}
+		return nil
+	}))
+
+	checks = append(checks, executeConformanceCheck("3.3 List Steps Multiplexing", func() error {
+		if r.wfID == "" {
+			return fmt.Errorf("skip: no target workflow id")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/steps", r.httpURL, r.orgName, r.appName, r.wfID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		var steps []map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&steps); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
+		return nil
+	}))
+
+	checks = append(checks, executeConformanceCheck("3.4 Workflow Events Multiplexing", func() error {
+		if r.wfID == "" {
+			return fmt.Errorf("skip: no target workflow id")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/events", r.httpURL, r.orgName, r.appName, r.wfID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		return nil
+	}))
+
+	return summarizeConformanceChecks(3, "REST & Wire Multiplexing (Observability)", checks)
+}
+
+func (r *conformanceProbeRunner) runBattery4(ctx context.Context) ConformanceBatteryResult {
+	var checks []ConformanceCheckResult
+	var ctrlWfID string
+
+	// 4.1 Fork Workflow Mutation (to produce a dedicated controllable workflow instance)
+	checks = append(checks, executeConformanceCheck("4.1 Fork Workflow Mutation", func() error {
+		if r.wfID == "" {
+			return fmt.Errorf("skip: no target workflow id for fork")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/fork", r.httpURL, r.orgName, r.appName, r.wfID)
+		bodyData := map[string]any{
+			"appVersion": r.appVersion,
+			"startStep":  1,
+		}
+		bBytes, _ := json.Marshal(bodyData)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			return fmt.Errorf("expected status 200 or 201, got %d", resp.StatusCode)
+		}
+		var res struct {
+			WorkflowID string `json:"workflowId"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
+		if res.WorkflowID == "" {
+			return errors.New("empty workflowId returned from fork")
+		}
+		ctrlWfID = res.WorkflowID
+		return nil
+	}))
+
+	// 4.2 Restart Workflow Mutation (step-0 fork semantics)
+	checks = append(checks, executeConformanceCheck("4.2 Restart (Step-0 Fork) Mutation", func() error {
+		if r.wfID == "" {
+			return fmt.Errorf("skip: no target workflow id for restart")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/fork", r.httpURL, r.orgName, r.appName, r.wfID)
+		bodyData := map[string]any{
+			"appVersion": r.appVersion,
+			"startStep":  0,
+		}
+		bBytes, _ := json.Marshal(bodyData)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			return fmt.Errorf("expected status 200 or 201, got %d", resp.StatusCode)
+		}
+		var res struct {
+			WorkflowID string `json:"workflowId"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return fmt.Errorf("invalid json: %w", err)
+		}
+		if res.WorkflowID == "" {
+			return errors.New("empty workflowId returned from restart")
+		}
+		return nil
+	}))
+
+	// 4.3 Cancel Workflow Mutation
+	checks = append(checks, executeConformanceCheck("4.3 Cancel Workflow Mutation", func() error {
+		targetID := ctrlWfID
+		if targetID == "" {
+			targetID = r.wfID
+		}
+		if targetID == "" {
+			return fmt.Errorf("skip: no target workflow id for cancel")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/cancel", r.httpURL, r.orgName, r.appName, targetID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(`{}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+		}
+		return nil
+	}))
+
+	// 4.4 Resume Workflow Mutation
+	checks = append(checks, executeConformanceCheck("4.4 Resume Workflow Mutation", func() error {
+		targetID := ctrlWfID
+		if targetID == "" {
+			targetID = r.wfID
+		}
+		if targetID == "" {
+			return fmt.Errorf("skip: no target workflow id for resume")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/resume", r.httpURL, r.orgName, r.appName, targetID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(`{}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+		}
+		return nil
+	}))
+
+	return summarizeConformanceChecks(4, "Workflow Control Operations", checks)
+}
+
+func (r *conformanceProbeRunner) runBattery5(ctx context.Context) ConformanceBatteryResult {
+	var checks []ConformanceCheckResult
+
+	checks = append(checks, executeConformanceCheck("5.1 List Queues", func() error {
+		if strings.ToLower(r.lang) == "java" {
+			return fmt.Errorf("skip: Java SDK 0.8.0 does not implement queues")
+		}
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/queues", r.httpURL, r.orgName, r.appName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		return nil
+	}))
+
+	checks = append(checks, executeConformanceCheck("5.2 List Schedules", func() error {
+		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/schedules", r.httpURL, r.orgName, r.appName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return err
+		}
+		if r.conductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.conductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		return nil
+	}))
+
+	return summarizeConformanceChecks(5, "Queues & Schedules Operations", checks)
 }
 
 func (r *conformanceProbeRunner) runBattery7(ctx context.Context) ConformanceBatteryResult {
@@ -401,13 +791,16 @@ func (r *conformanceProbeRunner) runBattery8(ctx context.Context) ConformanceBat
 	return summarizeConformanceChecks(8, "RFC 9457 Problem Details & Identity Gating", checks)
 }
 
-func runConformanceProbes(ctx context.Context, targetURL, conductorKey, org, app string) (*ConformanceReport, error) {
+func runConformanceProbes(ctx context.Context, targetURL, conductorKey, org, app, lang, appVersion, wfID string) (*ConformanceReport, error) {
 	runner := &conformanceProbeRunner{
 		client:       &http.Client{Timeout: 15 * time.Second},
 		httpURL:      strings.TrimRight(targetURL, "/"),
 		conductorKey: conductorKey,
 		orgName:      org,
 		appName:      app,
+		lang:         lang,
+		appVersion:   appVersion,
+		wfID:         wfID,
 	}
 
 	report := &ConformanceReport{
@@ -415,21 +808,21 @@ func runConformanceProbes(ctx context.Context, targetURL, conductorKey, org, app
 		Batteries: make([]ConformanceBatteryResult, 0, 8),
 	}
 
-	skipReason := "batteries require synthetic executor; excluded during multi-SDK verification"
 	batteries := []struct {
 		id      int
 		title   string
 		isSkip  bool
+		skipMsg string
 		runFunc func(context.Context) ConformanceBatteryResult
 	}{
-		{1, "Specification & System Probes", false, runner.runBattery1},
-		{2, "WebSocket Handshake & Fleet Registration", true, nil},
-		{3, "REST & Wire Multiplexing (Observability)", true, nil},
-		{4, "Workflow Control Operations", true, nil},
-		{5, "Queues & Schedules Operations", true, nil},
-		{6, "Workflow Recovery & Liveness Lifecycle", true, nil},
-		{7, "Alerting Rules Management", false, runner.runBattery7},
-		{8, "RFC 9457 Problem Details & Identity Gating", false, runner.runBattery8},
+		{1, "Specification & System Probes", false, "", runner.runBattery1},
+		{2, "WebSocket Handshake & Fleet Registration", false, "", runner.runBattery2},
+		{3, "REST & Wire Multiplexing (Observability)", false, "", runner.runBattery3},
+		{4, "Workflow Control Operations", false, "", runner.runBattery4},
+		{5, "Queues & Schedules Operations", false, "", runner.runBattery5},
+		{6, "Workflow Recovery & Liveness Lifecycle", true, "Hard disconnect and recovery adoption verified across all runtimes in Cell 5", nil},
+		{7, "Alerting Rules Management", false, "", runner.runBattery7},
+		{8, "RFC 9457 Problem Details & Identity Gating", false, "", runner.runBattery8},
 	}
 
 	for _, b := range batteries {
@@ -438,7 +831,7 @@ func runConformanceProbes(ctx context.Context, targetURL, conductorKey, org, app
 				ID:     b.id,
 				Title:  b.title,
 				Status: CellStatusSkip,
-				Error:  skipReason,
+				Error:  b.skipMsg,
 			}
 			report.Batteries = append(report.Batteries, res)
 			report.TotalSkip++

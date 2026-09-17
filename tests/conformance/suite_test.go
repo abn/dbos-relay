@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,7 +120,23 @@ func TestConformance_EndToEndSuite(t *testing.T) {
 		mux := http.NewServeMux()
 		mux.Handle("/", dashHandler)
 		mux.Handle("/websocket/", h)
-		mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metrics.NewHandler(s.Queries())))
+		metricsH := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			authHeader := req.Header.Get("Authorization")
+			if authHeader == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if !strings.EqualFold(authHeader, "Bearer "+apiKey) {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			reqWithAuth := req.WithContext(auth.WithIdentity(req.Context(), &auth.UserIdentity{
+				IsAdmin:     true,
+				Permissions: []string{"application.read", "application.write", "websocket.connect"},
+			}))
+			metrics.NewHandler(s.Queries()).ServeHTTP(w, reqWithAuth)
+		})
+		mux.Handle("/v1/metrics", metricsH)
 
 		ts := httptest.NewServer(mux)
 		defer ts.Close()

@@ -461,9 +461,17 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 			}, nil
 		case *protocol.ForkWorkflowRequest:
 			forkedID := "wf-forked-456"
+			if m.Body.NewWorkflowID != nil && *m.Body.NewWorkflowID != "" {
+				forkedID = *m.Body.NewWorkflowID
+			}
 			return &protocol.ForkWorkflowResponse{
 				Envelope:      protocol.Envelope{Type: protocol.MessageTypeForkWorkflow, RequestID: m.RequestID},
 				NewWorkflowID: &forkedID,
+			}, nil
+		case *protocol.ForkFromFailureRequest:
+			return &protocol.ForkFromFailureResponse{
+				Envelope:          protocol.Envelope{Type: protocol.MessageTypeForkFromFailure, RequestID: m.RequestID},
+				ForkedWorkflowIDs: []string{"wf-forked-from-fail-1"},
 			}, nil
 		case *protocol.DeleteWorkflowRequest:
 			return &protocol.DeleteWorkflowResponse{
@@ -596,7 +604,70 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Errorf("fork response workflowId = %q, want wf-forked-456", forkResp.WorkflowId)
 	}
 
-	// 8. Delete workflow
+	// 8. Restart workflow (step-zero fork mutation)
+	restartReq := `{"startStep":0,"newWorkflowId":"wf-restarted-789"}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID+"/fork", "application/json", strings.NewReader(restartReq))
+	if err != nil {
+		t.Fatalf("restart workflow: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		t.Fatalf("restart status = %d, want 201 or 200", resp.StatusCode)
+	}
+	restartMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.ForkWorkflowRequest)
+	if !ok {
+		t.Fatalf("expected ForkWorkflowRequest for restart, got %T", capturedMsgs[len(capturedMsgs)-1])
+	}
+	if restartMsg.Body.StartStep != 0 {
+		t.Errorf("restart StartStep = %d, want 0", restartMsg.Body.StartStep)
+	}
+	if restartMsg.Body.WorkflowID != wfUUID {
+		t.Errorf("restart WorkflowID = %q, want %q", restartMsg.Body.WorkflowID, wfUUID)
+	}
+	var restartResp struct {
+		WorkflowId string `json:"workflowId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&restartResp); err != nil {
+		t.Fatalf("decode restart response: %v", err)
+	}
+	if restartResp.WorkflowId != "wf-restarted-789" {
+		t.Errorf("restart response workflowId = %q, want wf-restarted-789", restartResp.WorkflowId)
+	}
+
+	// 9. Bulk cancel workflows
+	bulkCancelReq := `{"workflowIds":["wf-123","wf-456"]}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-cancel", "application/json", strings.NewReader(bulkCancelReq))
+	if err != nil {
+		t.Fatalf("bulk cancel: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk cancel status = %d, want 204 or 200", resp.StatusCode)
+	}
+
+	// 10. Bulk resume workflows
+	bulkResumeReq := `{"workflowIds":["wf-123","wf-456"]}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-resume", "application/json", strings.NewReader(bulkResumeReq))
+	if err != nil {
+		t.Fatalf("bulk resume: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk resume status = %d, want 204 or 200", resp.StatusCode)
+	}
+
+	// 11. Bulk fork workflows from failure
+	bulkForkReq := `{"workflowIds":["wf-failed-1"]}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-fork-from-failure", "application/json", strings.NewReader(bulkForkReq))
+	if err != nil {
+		t.Fatalf("bulk fork from failure: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk fork status = %d, want 200", resp.StatusCode)
+	}
+
+	// 12. Delete workflow
 	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID, nil)
 	resp, err = http.DefaultClient.Do(delReq)
 	if err != nil {
@@ -612,6 +683,17 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 	}
 	if deleteMsg.WorkflowID != wfUUID {
 		t.Errorf("delete WorkflowID = %q, want %q", deleteMsg.WorkflowID, wfUUID)
+	}
+
+	// 13. Bulk delete workflows
+	bulkDelReq := `{"workflowIds":["wf-123","wf-456"]}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-delete", "application/json", strings.NewReader(bulkDelReq))
+	if err != nil {
+		t.Fatalf("bulk delete: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk delete status = %d, want 204 or 200", resp.StatusCode)
 	}
 }
 

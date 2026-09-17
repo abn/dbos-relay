@@ -76,10 +76,12 @@ type containerInfo struct {
 	Cell6CancelStep2Count  int
 	Cell6ResumeStep2Count  int
 
-	// Cell 7 Fork Evidence
-	Cell7Duration    time.Duration
-	ForkedWfID       string
-	ForkedExecutorID string
+	// Cell 7 Fork and Restart Evidence
+	Cell7Duration       time.Duration
+	ForkedWfID          string
+	ForkedExecutorID    string
+	RestartedWfID       string
+	RestartedExecutorID string
 }
 
 type executorAPIResponse struct {
@@ -353,6 +355,51 @@ func triggerRelayFork(t *testing.T, appName, originalWorkflowID, appVersion stri
 	}
 	if res.WorkflowID == "" {
 		t.Fatalf("fork endpoint returned empty workflowId")
+	}
+	return res.WorkflowID
+}
+
+func triggerRelayRestart(t *testing.T, appName, originalWorkflowID, appVersion string) string {
+	t.Helper()
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/fork", relayBaseURL, orgName, appName, originalWorkflowID)
+	reqBody := map[string]any{
+		"appVersion": appVersion,
+		"startStep":  0,
+	}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("failed to marshal restart request: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("failed to create restart request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := getAPIKey(); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to dispatch restart via Relay API: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("restart via Relay API returned status %d: %s", resp.StatusCode, string(b))
+	}
+
+	var res struct {
+		WorkflowID string `json:"workflowId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("failed to decode restart response: %v", err)
+	}
+	if res.WorkflowID == "" {
+		t.Fatalf("restart endpoint returned empty workflowId")
 	}
 	return res.WorkflowID
 }
@@ -804,7 +851,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				t.Logf("[%s] %s", lang, d5Summary)
 
 				// 2. Execute genuine conformance test runner against live app
-				report, err := runConformanceProbes(context.Background(), relayBaseURL, getAPIKey(), orgName, info.AppName)
+				report, err := runConformanceProbes(context.Background(), relayBaseURL, getAPIKey(), orgName, info.AppName, info.Language, info.AppVersion, wfID)
 				if err != nil {
 					cellResults[2][lang] = CellResult{Status: CellStatusFail, Reason: err.Error()}
 					t.Fatalf("[%s] Conformance runner failed: %v", lang, err)
@@ -1559,11 +1606,46 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				info.ForkedWfID = forkedID
 				info.ForkedExecutorID = finalExecID
+
+				t.Logf("[%s] Dispatching restart request via Relay API for original workflow %s", lang, origID)
+				restartedID := triggerRelayRestart(t, info.AppName, origID, forkAppVersion)
+				t.Logf("[%s] Restarted workflow initiated via Relay API: %s", lang, restartedID)
+
+				if restartedID == origID || restartedID == forkedID {
+					t.Fatalf("[%s] Expected distinct workflow ID for restart, got %s", lang, restartedID)
+				}
+
+				// Wait for restarted workflow to reach terminal SUCCESS state via Relay API
+				var restartStatus, restartExecID string
+				restartDeadline := time.Now().Add(25 * time.Second)
+				for time.Now().Before(restartDeadline) {
+					restartStatus, restartExecID = getWorkflowViaAPI(t, info.AppName, restartedID)
+					if restartStatus == "SUCCESS" {
+						break
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
+
+				if restartStatus != "SUCCESS" {
+					t.Fatalf("[%s] Expected restarted workflow %s to reach SUCCESS, got %s", lang, restartedID, restartStatus)
+				}
+				if restartExecID == "" {
+					t.Fatalf("[%s] Expected restarted workflow executor_id to be set to a live executor", lang)
+				}
+
+				restartedWf := getFullWorkflowViaAPI(t, info.AppName, restartedID)
+				if restartedWf.ForkedFrom != nil && *restartedWf.ForkedFrom != origID {
+					t.Errorf("[%s] Expected restarted workflow ForkedFrom to point to %s, got %s", lang, origID, *restartedWf.ForkedFrom)
+					return
+				}
+
+				info.RestartedWfID = restartedID
+				info.RestartedExecutorID = restartExecID
 				info.Cell7Duration = time.Since(cellLangStart)
 				containers[lang] = info
 
-				t.Logf("[%s] Forked workflow %s dequeued and executed to SUCCESS by executor %s in %v",
-					lang, forkedID, finalExecID, info.Cell7Duration)
+				t.Logf("[%s] Forked workflow %s and restarted workflow %s dequeued and executed to SUCCESS by executor %s in %v",
+					lang, forkedID, restartedID, restartExecID, info.Cell7Duration)
 				cellResults[7][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
@@ -1705,8 +1787,13 @@ func generateReportMarkdown(containers map[string]containerInfo, cellResults map
 			} else {
 				sb.WriteString(fmt.Sprintf("- **Cell 6 Duration**: `%v`\n", c.Cell6Duration.Round(time.Millisecond)))
 			}
-			sb.WriteString(fmt.Sprintf("- **Cell 7 Duration**: `%v` (forked workflow `%s` executed to SUCCESS by live executor `%s`)\n\n",
-				c.Cell7Duration.Round(time.Millisecond), c.ForkedWfID, c.ForkedExecutorID))
+			if c.RestartedWfID != "" {
+				sb.WriteString(fmt.Sprintf("- **Cell 7 Duration**: `%v` (forked workflow `%s` by `%s`; restarted workflow `%s` by `%s` executed to SUCCESS)\n\n",
+					c.Cell7Duration.Round(time.Millisecond), c.ForkedWfID, c.ForkedExecutorID, c.RestartedWfID, c.RestartedExecutorID))
+			} else {
+				sb.WriteString(fmt.Sprintf("- **Cell 7 Duration**: `%v` (forked workflow `%s` executed to SUCCESS by live executor `%s`)\n\n",
+					c.Cell7Duration.Round(time.Millisecond), c.ForkedWfID, c.ForkedExecutorID))
+			}
 		}
 	}
 
