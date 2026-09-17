@@ -34,7 +34,10 @@ The conformance suite evaluates 8 distinct batteries (for detailed per-check spe
 5. **Queues & Schedules Operations**: Verifies listing and pausing/resuming queues
    and schedules.
 6. **Workflow Recovery & Liveness Lifecycle**: Tests disconnect detection and
-   replacement executor adoption readiness.
+   replacement executor adoption readiness. In live multi-SDK verification, the full
+   recovery lifecycle is certified end-to-end by the dedicated chaos test harness
+   (`tests/chaos/chaos_test.go`), which verifies process termination, grace period
+   expiration, and workflow reassignment across live executors.
 7. **Alerting Rules Management**: Validates creating, listing, and deleting
    alerting rules.
 8. **RFC 9457 Problem Details & Identity Gating**: Verifies that all client errors

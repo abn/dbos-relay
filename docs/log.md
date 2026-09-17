@@ -12,6 +12,9 @@ page additions, deprecations, and structural refactors.
 * **Update**: Added atomic check-and-set rule throttling for multi-instance alert dispatch and lease fencing for high-availability executor adoption.
 * **Update**: Added workflow retention scheduling and background sweep lifecycle management.
 * **Update**: Added multi-language SDK verification matrix workflow and dual-instance scaling deployment stack with reverse proxy routing.
+* **Update**: Clarified application autoscaling policy as an orchestrator responsibility and deferred non-goal in [Goals and boundaries](design/goals.md).
+* **Update**: Clarified workflow recovery lifecycle test verification via chaos testing harness (`tests/chaos/chaos_test.go`) in [Conformance testing](usage/conformance.md).
+* **Update**: Documented multi-SDK system database schema compatibility requirements for direct data-plane queries in [Data plane](architecture/dataplane.md).
 
 ## 2026-09-14
 
