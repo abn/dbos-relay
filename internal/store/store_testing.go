@@ -10,8 +10,6 @@ import (
 
 // Truncate empties all application tables and reseeds global roles.
 // It is intended for test environments only.
-//
-// Deprecated: Store.Truncate is deprecated and only available in test helpers.
 func (s *Store) Truncate(ctx context.Context) error {
 
 	tables := []string{
