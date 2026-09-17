@@ -349,6 +349,9 @@ func TestDashboard_LiveServerRootServesUI(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200 OK, got %d", resp.StatusCode)
 	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("expected Content-Type text/html for /, got %q", ct)
+	}
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	body := string(bodyBytes)
@@ -424,6 +427,10 @@ func TestDashboard_StaticAssetsAndSPARoutes(t *testing.T) {
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected status 200 for SPA route %s, got %d", sp, resp.StatusCode)
+		}
+		ct := resp.Header.Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Errorf("expected content type text/html for SPA route %s, got %s", sp, ct)
 		}
 		if !strings.Contains(string(bodyBytes), "Relay Dashboard") {
 			t.Errorf("expected SPA route %s to serve index.html", sp)
