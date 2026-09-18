@@ -79,6 +79,35 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.2);
+  color: inherit;
+}
+
+[data-theme="dark"] ::selection {
+  background: rgba(59, 130, 246, 0.35);
 }
 
 body {
@@ -88,6 +117,20 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  caret-color: var(--color-primary);
+}
+
+/* Numerals in technical data */
+table.data-table,
+.stat-value,
+.node-duration,
+.node-step-id,
+.relative-time,
+.badge,
+.pill,
+.kpi-sub-pill,
+.group-card-meta {
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 /* App Shell */
@@ -325,12 +368,27 @@ body {
   font-size: 11px;
 }
 
+.hotkey-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-sunken);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  margin-left: 6px;
+  line-height: 1;
+}
+
 /* Cards & Tables */
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
   margin-bottom: 20px;
   overflow: hidden;
 }

@@ -269,7 +269,10 @@
           </div>
         </div>
         <div class="json-header-right">
-          <button class="btn btn-xs btn-secondary" data-action="expandPayload" data-payload-title="${escapeHtml2(title)}" data-payload-raw="${escapeHtml2(raw)}" type="button" title="Expand to fullscreen modal">\u26F6 Expand</button>
+          <button class="btn btn-xs btn-secondary" data-action="expandPayload" data-payload-title="${escapeHtml2(title)}" data-payload-raw="${escapeHtml2(raw)}" type="button" title="Expand to fullscreen modal">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            <span style="margin-left:4px;">Expand</span>
+          </button>
           <button class="btn btn-xs btn-secondary copy-btn" data-copy="${escapeHtml2(raw)}" type="button">Copy</button>
         </div>
       </div>
@@ -408,10 +411,10 @@
           <rect width="${childCardWidth}" height="36" rx="10" class="group-card-header-bg" />
           <rect y="26" width="${childCardWidth}" height="10" class="group-card-header-fill" />
           <circle cx="16" cy="18" r="4.5" fill="${childStatusColor}" />
-          <text x="28" y="22" class="group-card-title">\u21B3 Child: ${escapeHtml3(childWf.workflowName || child.childWorkflowId)}</text>
+          <text x="28" y="22" class="group-card-title">Child Workflow: ${escapeHtml3(childWf.workflowName || child.childWorkflowId)}</text>
           <g class="child-card-action" data-action="viewChildWorkflow" data-child-wf-id="${escapeHtml3(child.childWorkflowId)}" cursor="pointer" role="button" tabindex="0" aria-label="Inspect child workflow">
             <rect x="${childCardWidth - 84}" y="7" width="72" height="22" rx="4" class="action-pill-bg" />
-            <text x="${childCardWidth - 48}" y="21" class="action-pill-text" text-anchor="middle">Open \u2197</text>
+            <text x="${childCardWidth - 48}" y="21" class="action-pill-text" text-anchor="middle">Inspect</text>
           </g>
         </g>
       `;
@@ -469,9 +472,16 @@
           ${hasChildren ? `<span class="legend-item"><span class="legend-dot status-child"></span> Child WF</span>` : ""}
         </div>
         <div class="dag-controls">
-          <button class="dag-btn" data-action="dagZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
-          <button class="dag-btn" data-action="dagZoomOut" title="Zoom out" aria-label="Zoom out">\u2212</button>
-          <button class="dag-btn" data-action="dagReset" title="Reset view" aria-label="Reset view">\u27F2 Reset</button>
+          <button class="dag-btn" data-action="dagZoomIn" title="Zoom in" aria-label="Zoom in">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button class="dag-btn" data-action="dagZoomOut" title="Zoom out" aria-label="Zoom out">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button class="dag-btn" data-action="dagReset" title="Reset view" aria-label="Reset view">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+            <span style="margin-left:4px; font-size:11px;">Reset</span>
+          </button>
         </div>
       </div>
       <div class="dag-viewport" id="dag-viewport" tabindex="0" role="region" aria-label="Workflow DAG Canvas. Use mouse or buttons to zoom and pan.">
@@ -513,19 +523,19 @@
        cursor="pointer" tabindex="0" role="button"
        aria-label="Step ${step.stepId}: ${escapeHtml3(step.stepName || "step")} (${statusText})">
       <rect width="${width}" height="${height}" rx="8" class="node-bg" />
-      <rect width="4" height="${height}" rx="2" class="node-stripe" fill="${statusColor}" />
+      <circle cx="18" cy="20" r="4.5" fill="${statusColor}" />
 
-      <text x="14" y="24" class="node-step-id">#${step.stepId}</text>
-      <text x="36" y="24" class="node-name" width="${width - 45}">
-        ${truncate(escapeHtml3(step.stepName || "step"), 17)}
+      <text x="28" y="24" class="node-step-id">#${step.stepId}</text>
+      <text x="48" y="24" class="node-name" width="${width - 55}">
+        ${truncate(escapeHtml3(step.stepName || "step"), 15)}
       </text>
 
-      <text x="14" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
+      <text x="18" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
       ${durationText ? `<text x="${width - 12}" y="48" class="node-duration" text-anchor="end">${durationText}</text>` : ""}
 
       ${isChildCaller ? `
         <rect x="${width - 24}" y="8" width="16" height="16" rx="4" class="child-wf-badge" fill="var(--color-purple)" />
-        <text x="${width - 16}" y="20" class="child-wf-icon" text-anchor="middle" fill="#ffffff" font-size="10">\u21B3</text>
+        <path d="M ${width - 18} 12 L ${width - 14} 16 L ${width - 10} 12" stroke="#ffffff" stroke-width="1.8" fill="none" />
       ` : ""}
     </g>
   `;
@@ -691,8 +701,8 @@
       }
       const toast = document.createElement("div");
       toast.className = `toast toast-${type}`;
-      const icon = type === "success" ? "\u2713" : type === "error" ? "\u26A0" : "\u2139";
-      toast.innerHTML = `<span aria-hidden="true">${icon}</span><span>${escapeHtml4(message)}</span>`;
+      const icon = type === "success" ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>` : type === "error" ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>` : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+      toast.innerHTML = `<span aria-hidden="true" style="display:inline-flex; align-items:center;">${icon}</span><span>${escapeHtml4(message)}</span>`;
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = "0";
@@ -710,7 +720,9 @@
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="confirm-dialog-title">${escapeHtml4(title)}</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Cancel">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Cancel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <p id="confirm-dialog-desc" style="font-size: 13px; color: var(--text-primary);">
@@ -784,7 +796,9 @@
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="signin-modal-title">Relay Authentication</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
@@ -932,7 +946,13 @@
         <div class="sidebar-footer">
           <span>Relay Control Plane</span>
           <button class="btn btn-xs btn-secondary" data-action="toggleTheme" aria-label="Toggle dark and light theme">
-            ${this.theme === "dark" ? "\u2600\uFE0F Light" : "\u{1F319} Dark"}
+            ${this.theme === "dark" ? `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <span style="margin-left:4px;">Light</span>
+            ` : `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span style="margin-left:4px;">Dark</span>
+            `}
           </button>
         </div>
       </aside>
@@ -970,7 +990,11 @@
               <option value="15000" ${this.pollInterval === 15e3 ? "selected" : ""}>15s</option>
             </select>
           </div>
-          <button class="btn btn-xs btn-secondary" data-action="refresh" aria-label="Refresh view">\u21BB Refresh</button>
+          <button class="btn btn-xs btn-secondary" data-action="refresh" aria-label="Refresh telemetry (Shortcut: R)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            <span style="margin-left:4px;">Refresh</span>
+            <span class="hotkey-badge">R</span>
+          </button>
           ${hasKey ? `
             <button class="btn btn-xs btn-secondary" data-action="signOut" title="Clear saved credential">Sign Out</button>
           ` : `
@@ -1219,7 +1243,7 @@
         el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." data-input="wfTable" aria-label="Search workflow ID">
+            <input type="text" id="filter-id" class="input-text" placeholder="Search workflows... [/]" data-input="wfTable" aria-label="Search workflows by ID or name">
             <select id="filter-status" class="select-sm" data-change="wfStatus" aria-label="Filter workflows by status">
               <option value="">All Statuses</option>
               <option value="SUCCESS">SUCCESS</option>
@@ -1531,7 +1555,9 @@
         <aside class="drawer-panel" role="document">
           <div class="drawer-header">
             <span id="drawer-step-title">Step #${step.stepId}: ${escapeHtml4(step.stepName)}</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="drawer-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1599,7 +1625,9 @@
         <div class="modal-dialog modal-dialog-large" role="document">
           <div class="modal-header">
             <h3 class="modal-title" id="payload-modal-title">${escapeHtml4(title || "Payload Details")}</h3>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <div class="json-viewer" id="modal-expanded-viewer">
@@ -1850,7 +1878,9 @@
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="modal-alert-title">Create Alert Rule</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1988,7 +2018,9 @@
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="modal-key-title">Mint Scoped API Key</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">\u2715</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -2237,6 +2269,33 @@
       const modal = document.getElementById("modal-root");
       if (modal && modal.children.length > 0) {
         window.app.closeModal();
+        return;
+      }
+    }
+    if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+        return;
+      }
+      const filterInput = document.getElementById("filter-id") || document.querySelector("input[data-input]");
+      if (filterInput) {
+        e.preventDefault();
+        filterInput.focus();
+        filterInput.select();
+        return;
+      }
+    }
+    if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey) {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+        return;
+      }
+      const modal = document.getElementById("modal-root");
+      if (modal && modal.children.length > 0) return;
+      if (window.app) {
+        e.preventDefault();
+        window.app.renderContentView();
+        window.app.showToast("Telemetry refreshed", "info");
         return;
       }
     }

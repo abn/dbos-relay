@@ -92,8 +92,12 @@ class DashboardApp {
     }
     const toast = document.createElement("div");
     toast.className = `toast toast-${type}`;
-    const icon = type === "success" ? "✓" : type === "error" ? "⚠" : "ℹ";
-    toast.innerHTML = `<span aria-hidden="true">${icon}</span><span>${escapeHtml(message)}</span>`;
+    const icon = type === "success"
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>`
+      : type === "error"
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`;
+    toast.innerHTML = `<span aria-hidden="true" style="display:inline-flex; align-items:center;">${icon}</span><span>${escapeHtml(message)}</span>`;
     container.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = "0";
@@ -114,7 +118,9 @@ class DashboardApp {
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="confirm-dialog-title">${escapeHtml(title)}</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Cancel">✕</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Cancel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <p id="confirm-dialog-desc" style="font-size: 13px; color: var(--text-primary);">
@@ -193,7 +199,9 @@ class DashboardApp {
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="signin-modal-title">Relay Authentication</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
@@ -360,7 +368,13 @@ class DashboardApp {
         <div class="sidebar-footer">
           <span>Relay Control Plane</span>
           <button class="btn btn-xs btn-secondary" data-action="toggleTheme" aria-label="Toggle dark and light theme">
-            ${this.theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+            ${this.theme === "dark" ? `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <span style="margin-left:4px;">Light</span>
+            ` : `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              <span style="margin-left:4px;">Dark</span>
+            `}
           </button>
         </div>
       </aside>
@@ -399,7 +413,11 @@ class DashboardApp {
               <option value="15000" ${this.pollInterval === 15000 ? "selected" : ""}>15s</option>
             </select>
           </div>
-          <button class="btn btn-xs btn-secondary" data-action="refresh" aria-label="Refresh view">↻ Refresh</button>
+          <button class="btn btn-xs btn-secondary" data-action="refresh" aria-label="Refresh telemetry (Shortcut: R)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            <span style="margin-left:4px;">Refresh</span>
+            <span class="hotkey-badge">R</span>
+          </button>
           ${hasKey ? `
             <button class="btn btn-xs btn-secondary" data-action="signOut" title="Clear saved credential">Sign Out</button>
           ` : `
@@ -658,7 +676,7 @@ class DashboardApp {
       el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." data-input="wfTable" aria-label="Search workflow ID">
+            <input type="text" id="filter-id" class="input-text" placeholder="Search workflows... [/]" data-input="wfTable" aria-label="Search workflows by ID or name">
             <select id="filter-status" class="select-sm" data-change="wfStatus" aria-label="Filter workflows by status">
               <option value="">All Statuses</option>
               <option value="SUCCESS">SUCCESS</option>
@@ -991,7 +1009,9 @@ class DashboardApp {
         <aside class="drawer-panel" role="document">
           <div class="drawer-header">
             <span id="drawer-step-title">Step #${step.stepId}: ${escapeHtml(step.stepName)}</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">✕</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="drawer-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1066,7 +1086,9 @@ class DashboardApp {
         <div class="modal-dialog modal-dialog-large" role="document">
           <div class="modal-header">
             <h3 class="modal-title" id="payload-modal-title">${escapeHtml(title || "Payload Details")}</h3>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <div class="json-viewer" id="modal-expanded-viewer">
@@ -1341,7 +1363,9 @@ class DashboardApp {
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="modal-alert-title">Create Alert Rule</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1487,7 +1511,9 @@ class DashboardApp {
         <div class="modal-dialog">
           <div class="modal-header">
             <span id="modal-key-title">Mint Scoped API Key</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
           <div class="modal-body">
             <div class="form-field">
@@ -1766,6 +1792,37 @@ document.addEventListener("keydown", (e) => {
     const modal = document.getElementById("modal-root");
     if (modal && modal.children.length > 0) {
       window.app.closeModal();
+      return;
+    }
+  }
+
+  // Hotkey '/' to focus search input
+  if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+      return;
+    }
+    const filterInput = document.getElementById("filter-id") || document.querySelector("input[data-input]");
+    if (filterInput) {
+      e.preventDefault();
+      filterInput.focus();
+      filterInput.select();
+      return;
+    }
+  }
+
+  // Hotkey 'r' or 'R' to refresh content view
+  if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey) {
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+      return;
+    }
+    const modal = document.getElementById("modal-root");
+    if (modal && modal.children.length > 0) return;
+    if (window.app) {
+      e.preventDefault();
+      window.app.renderContentView();
+      window.app.showToast("Telemetry refreshed", "info");
       return;
     }
   }

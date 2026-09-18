@@ -136,10 +136,10 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
           <rect width="${childCardWidth}" height="36" rx="10" class="group-card-header-bg" />
           <rect y="26" width="${childCardWidth}" height="10" class="group-card-header-fill" />
           <circle cx="16" cy="18" r="4.5" fill="${childStatusColor}" />
-          <text x="28" y="22" class="group-card-title">↳ Child: ${escapeHtml(childWf.workflowName || child.childWorkflowId)}</text>
+          <text x="28" y="22" class="group-card-title">Child Workflow: ${escapeHtml(childWf.workflowName || child.childWorkflowId)}</text>
           <g class="child-card-action" data-action="viewChildWorkflow" data-child-wf-id="${escapeHtml(child.childWorkflowId)}" cursor="pointer" role="button" tabindex="0" aria-label="Inspect child workflow">
             <rect x="${childCardWidth - 84}" y="7" width="72" height="22" rx="4" class="action-pill-bg" />
-            <text x="${childCardWidth - 48}" y="21" class="action-pill-text" text-anchor="middle">Open ↗</text>
+            <text x="${childCardWidth - 48}" y="21" class="action-pill-text" text-anchor="middle">Inspect</text>
           </g>
         </g>
       `;
@@ -208,9 +208,16 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
           ${hasChildren ? `<span class="legend-item"><span class="legend-dot status-child"></span> Child WF</span>` : ""}
         </div>
         <div class="dag-controls">
-          <button class="dag-btn" data-action="dagZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
-          <button class="dag-btn" data-action="dagZoomOut" title="Zoom out" aria-label="Zoom out">−</button>
-          <button class="dag-btn" data-action="dagReset" title="Reset view" aria-label="Reset view">⟲ Reset</button>
+          <button class="dag-btn" data-action="dagZoomIn" title="Zoom in" aria-label="Zoom in">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button class="dag-btn" data-action="dagZoomOut" title="Zoom out" aria-label="Zoom out">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button class="dag-btn" data-action="dagReset" title="Reset view" aria-label="Reset view">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
+            <span style="margin-left:4px; font-size:11px;">Reset</span>
+          </button>
         </div>
       </div>
       <div class="dag-viewport" id="dag-viewport" tabindex="0" role="region" aria-label="Workflow DAG Canvas. Use mouse or buttons to zoom and pan.">
@@ -253,19 +260,19 @@ function renderStepNodeSvg(step, x, y, width, height, statusClass, statusText, s
        cursor="pointer" tabindex="0" role="button"
        aria-label="Step ${step.stepId}: ${escapeHtml(step.stepName || "step")} (${statusText})">
       <rect width="${width}" height="${height}" rx="8" class="node-bg" />
-      <rect width="4" height="${height}" rx="2" class="node-stripe" fill="${statusColor}" />
+      <circle cx="18" cy="20" r="4.5" fill="${statusColor}" />
 
-      <text x="14" y="24" class="node-step-id">#${step.stepId}</text>
-      <text x="36" y="24" class="node-name" width="${width - 45}">
-        ${truncate(escapeHtml(step.stepName || "step"), 17)}
+      <text x="28" y="24" class="node-step-id">#${step.stepId}</text>
+      <text x="48" y="24" class="node-name" width="${width - 55}">
+        ${truncate(escapeHtml(step.stepName || "step"), 15)}
       </text>
 
-      <text x="14" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
+      <text x="18" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
       ${durationText ? `<text x="${width - 12}" y="48" class="node-duration" text-anchor="end">${durationText}</text>` : ""}
 
       ${isChildCaller ? `
         <rect x="${width - 24}" y="8" width="16" height="16" rx="4" class="child-wf-badge" fill="var(--color-purple)" />
-        <text x="${width - 16}" y="20" class="child-wf-icon" text-anchor="middle" fill="#ffffff" font-size="10">↳</text>
+        <path d="M ${width - 18} 12 L ${width - 14} 16 L ${width - 10} 12" stroke="#ffffff" stroke-width="1.8" fill="none" />
       ` : ""}
     </g>
   `;
