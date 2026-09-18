@@ -895,3 +895,21 @@ func TestDashboard_FleetWideAndPerSectionFiltering(t *testing.T) {
 		t.Errorf("bundle should include workflowAppMap for cross-app workflow routing")
 	}
 }
+
+func TestDashboard_ApplicationDataAccessIndicator(t *testing.T) {
+	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+
+	if !strings.Contains(bundle, "Data Access Mode") {
+		t.Errorf("bundle should include 'Data Access Mode' label in Application Details")
+	}
+	if !strings.Contains(bundle, "Application Data Plane") {
+		t.Errorf("bundle should include 'Application Data Plane' info section")
+	}
+	if !strings.Contains(bundle, "Executor Hub") {
+		t.Errorf("bundle should include 'Executor Hub' access status pill")
+	}
+}

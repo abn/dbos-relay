@@ -859,6 +859,30 @@ class DashboardApp {
                   </span>
                 </div>
               </div>
+              <div>
+                <span class="stat-label">Data Access Mode</span>
+                <div>
+                  <span class="badge ${activeExecutors > 0 ? 'badge-success' : 'badge-warning'}" title="${activeExecutors > 0 ? 'Operational telemetry accessible via active executor runtime' : 'No live executors connected for application database queries'}">
+                    ${activeExecutors > 0 ? `Executor Hub (${activeExecutors} active)` : 'No Live Executors'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:16px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:var(--radius-sm); font-size:12px; color:var(--text-secondary); display:flex; align-items:flex-start; gap:10px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px; color:var(--color-info-text);" aria-hidden="true">
+                <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+              </svg>
+              <div>
+                <div style="color:var(--text-primary); font-weight:600; margin-bottom:2px;">Application Data Plane</div>
+                <div>
+                  ${activeExecutors > 0
+                    ? `Operational telemetry and workflow dispatches are serviced via ${activeExecutors} connected ${activeExecutors === 1 ? 'executor' : 'executors'} connecting to the application system database. Relay coordinates executions without storing database credentials.`
+                    : `No executors are currently connected. Live dispatch and queue operations require an active executor connected to the application database (or direct data plane fallback configured in Relay server).`
+                  }
+                </div>
+              </div>
             </div>
           </div>
         </div>
