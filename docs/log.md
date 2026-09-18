@@ -5,6 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-18
 
+* **Update**: Documented multi-database fleet architecture and design rationale for omitting database credentials and topology management from the control plane UI in [Data plane access via SDK client](architecture/dataplane.md).
 * **Creation**: Added standalone Cloudflare-deployable project landing page and documentation site in `site/` with live dashboard screenshot showcase, feature comparison matrix, and static OKF wiki generator.
 * **Update**: Added Server-Sent Events (SSE) streaming mode for real-time dashboard telemetry, broadcasting workflow updates and heartbeats with EventSource token query authorization.
 * **Update**: Converted Python sample application to PEP 723 inline script metadata in `examples/python/main.py`, removing `requirements.txt` and enabling direct invocation with `uv run main.py`.

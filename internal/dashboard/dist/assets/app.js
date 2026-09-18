@@ -1078,7 +1078,7 @@
         { id: "queues", label: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
         { id: "schedules", label: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
         { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
-        { id: "keys", label: "API Keys", icon: `<path d="M21 2l-2 2m-1.5 1.5L10 13l-4 4-2-2-4 4 3 3 7-7 7.5-7.5z"/>` }
+        { id: "keys", label: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` }
       ];
       return `
       <aside class="sidebar ${this.mobileNavOpen ? "mobile-open" : ""}">
@@ -1460,6 +1460,7 @@
                   <th>Status</th>
                   <th>Runtime</th>
                   <th>Live Executors</th>
+                  <th>Data Access</th>
                   <th>Workflows</th>
                   <th>Queues / Schedules</th>
                   <th>Actions</th>
@@ -1470,7 +1471,11 @@
           const m = appMetrics.get(a.name) || { healthyExecutors: 0, workflowsCount: 0, queuesCount: 0, schedulesCount: 0 };
           return `
                     <tr>
-                      <td><strong>${escapeHtml4(a.name)}</strong></td>
+                      <td>
+                        <a href="#/fleet" class="clickable-app-name" data-app-change='${escapeHtml4(a.name)}' style="font-weight:600; text-decoration:none; color:inherit;" title="Inspect ${escapeHtml4(a.name)} details on Fleet view">
+                          ${escapeHtml4(a.name)}
+                        </a>
+                      </td>
                       <td>${renderStatusPill(a.status)}</td>
                       <td><span class="badge badge-neutral">${escapeHtml4(a.language || "dbos")}</span></td>
                       <td>
@@ -1478,17 +1483,22 @@
                           ${m.healthyExecutors} live
                         </span>
                       </td>
+                      <td>
+                        <span class="badge ${m.healthyExecutors > 0 ? "badge-success" : "badge-warning"}" style="font-size:11px;" title="${m.healthyExecutors > 0 ? "Data plane active via " + m.healthyExecutors + " connected executor(s)" : "No live executors connected"}">
+                          ${m.healthyExecutors > 0 ? "Executor Hub" : "No Executors"}
+                        </span>
+                      </td>
                       <td>${m.workflowsCount} recorded</td>
                       <td>${m.queuesCount}q / ${m.schedulesCount}s</td>
                       <td>
                         <div style="display:flex; gap:6px;">
+                          <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(a.name)}' title="Inspect application details on Fleet view">Details</button>
                           <button class="btn btn-xs btn-primary" data-app-change='${escapeHtml4(a.name)}' data-navigate="workflows">Workflows \u2192</button>
-                          <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(a.name)}' data-navigate="queues">Queues</button>
                         </div>
                       </td>
                     </tr>
                   `;
-        }).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No applications registered.</td></tr>`}
+        }).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No applications registered.</td></tr>`}
               </tbody>
             </table>
           </div>

@@ -34,18 +34,42 @@ Data-plane access is configured per-application in `relay.yaml`:
 ```yaml
 data_plane:
   order-service:
-    connection_url: "postgres://dbos_read:secret@db.internal:5432/order_system_db"
+    connection_url: "postgres://dbos_read:secret@db1.internal:5432/order_system_db"
     mode: "read"
     statement_timeout_secs: 10
+    max_connections: 5
+
+  payment-gateway:
+    connection_string_from:
+      env: "PAYMENT_DB_URL"
+    mode: "read"
+    statement_timeout_secs: 15
     max_connections: 5
 ```
 
 Configuration parameters:
 
 * `connection_url`: PostgreSQL connection string for the application system database.
+* `connection_string_from`: Environment variable (`env`) or secret file (`file`) indirection for database credentials.
 * `mode`: Access mode (`read` or `read-write`). Defaults to `read`.
 * `statement_timeout_secs`: Enforced statement timeout bounding queries.
 * `max_connections`: Maximum pool size allocated for this application's data plane client.
+
+## Multi-database fleet architecture
+
+In a DBOS Transact deployment, each registered application operates with its own isolated PostgreSQL database:
+
+* **Default executor model**: Each executor service manages its own database connection locally via the standard DBOS configuration (`DBOS_SYSTEM_DATABASE_URL` or `dbos-config.yaml`). When executors register with Relay over WebSocket, they handle workflow execution, step recording, and transaction persistence directly against their respective application databases. Relay acts strictly as the control plane coordinator, dispatching commands without holding or inspecting application database credentials.
+* **Direct fallback model**: If an operator configures data-plane fallback in `relay.yaml`, Relay maintains independent client pools for each configured application. Requests for `order-service` route to the `order-service` database pool, while requests for `payment-gateway` route to the `payment-gateway` pool. Relay completely isolates connection pools and schemas across applications.
+
+## Design rationale: why database connections are not managed in the UI
+
+Relay deliberately does not manage, configure, or expose database credentials in the web dashboard interface:
+
+1. **Control plane and data plane separation**: The control plane coordinates execution workflows, dispatches tasks, and collects operational telemetry. Application database storage belongs to the data plane. Storing application database secrets in the control plane violates this separation of concerns.
+2. **Credential security and isolation**: Database connection strings contain sensitive credentials such as passwords, private VPC endpoints, and authentication certificates. Submitting credentials through web forms or exposing them in dashboard REST payloads exposes them to browser history, client-side memory, and proxy logs. In Relay, database connection strings are supplied exclusively through server-side environment variables, secret files, or infrastructure-as-code manifests (`relay.yaml`).
+3. **Upstream DBOS Conductor protocol parity**: The upstream DBOS Conductor REST API specification (`/v2/orgs/{org}/apps`) does not accept, store, or return database credentials. Adding database configuration endpoints to Relay would diverge from the upstream contract and create non-standard behavior for DBOS SDK clients.
+4. **Data plane status without credential exposure**: Rather than displaying sensitive connection strings, Relay reflects data plane operational readiness through live executor health indicators in the dashboard (`Executor Hub (N active)` versus `No Live Executors`). This allows operators to verify data-plane availability across applications at a glance without leaking infrastructure secrets.
 
 ## Wire and data-plane parity
 

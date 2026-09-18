@@ -36,8 +36,8 @@ This document provides the definitive manual acceptance test checklist for verif
   - Confirm status pills use distinct visual styling for healthy versus disconnected executors.
 - [ ] **Registered Applications Table**:
   - Verify listing of all registered applications in the organization.
-  - Confirm columns show Application Name, Status, Executor Timeout, and Private Mode configuration.
-  - Clicking an application row updates the active application context.
+  - Confirm columns show Application Name, Status, Runtime, Live Executors, Data Access mode, Workflows, Queues / Schedules, and Actions.
+  - Clicking an application row or Details button filters the Fleet view and displays the Application Details card with runtime configuration and data plane context.
 
 ---
 
