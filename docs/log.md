@@ -3,6 +3,13 @@
 This log tracks the evolution of the knowledge base and architectural capabilities:
 page additions, deprecations, and structural refactors.
 
+## 2026-09-18
+
+* **Update**: Converted Python sample application to PEP 723 inline script metadata in `examples/python/main.py`, removing `requirements.txt` and enabling direct invocation with `uv run main.py`.
+* **Update**: Enhanced dashboard workflow visualization with multi-level workflow family grouping, cubic bezier execution curves between parent steps and child workflows, and interactive canvas viewport with pan, zoom, and dot-grid background.
+* **Update**: Updated [Dashboard manual acceptance checklist](manual/dashboard-acceptance.md) to cover canvas viewport controls, workflow family hierarchies, live telemetry polling options, and shortcut cheat sheets.
+* **Update**: Overhauled dashboard design tokens to an industrial zinc and technical cobalt palette, achieving WCAG AA/AAA contrast ratios, tabular lining numerals, authored inline SVGs, and intentional alternatives under `prefers-reduced-motion`.
+
 ## 2026-09-17
 
 * **Creation**: Added [Dashboard manual acceptance checklist](manual/dashboard-acceptance.md) documenting systematic verification across fleet management, workflows, step graph visualizations, schedules, queues, and alerting rules.

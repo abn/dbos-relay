@@ -60,13 +60,18 @@ This document provides the definitive manual acceptance test checklist for verif
     - For pending or enqueued workflows, verify the **Cancel** button functions correctly and updates workflow state.
     - For cancelled workflows, verify the **Resume** button restores execution.
     - For failed workflows, verify the **Restart** button forks a new workflow execution and redirects to the new execution ID.
-- [ ] **Step Execution DAG Visualization**:
-  - Verify the bespoke SVG DAG renderer graphs execution steps and child workflow branches correctly.
-  - Confirm step nodes display step names, sequence IDs, and status styling.
-- [ ] **Step Inspection Modal**:
-  - Clicking any step node in the DAG opens the step inspection modal.
-  - Verify modal displays step ID, name, status, start and completion timestamps, and JSON viewer for output/result or error stacks.
-  - If a step spawned a child workflow, verify the "View Child Workflow" action button navigates directly to the child workflow.
+- [ ] **Workflow Family DAG & Canvas Viewport**:
+  - Verify the bespoke SVG DAG renderer graphs execution steps and child workflow branches in dedicated container cards.
+  - Confirm cubic bezier execution curves link parent steps to child workflow nodes with outcome-colored strokes (`SUCCESS`, `ERROR`, `PENDING`).
+  - Verify the canvas viewport controls (`+`, `-`, `Reset`), mouse wheel zooming, and drag-to-pan across the dot-grid background.
+  - Confirm step nodes display step names, sequence IDs, and status indicator dots.
+- [ ] **Step Inspection Drawer & Modal**:
+  - Clicking any step node in the DAG opens the step inspection drawer or modal.
+  - Verify drawer displays step ID, name, status, start and completion timestamps, and JSON viewer for output/result or error stacks.
+  - If a step spawned child workflows, verify child cards display quick-navigation action pills.
+- [ ] **Live Telemetry & Hotkeys**:
+  - Verify the polling selector allows switching between Off, 2s, 5s, and 15s intervals with an active status indicator dot.
+  - Verify keyboard navigation: press `?` to open the hotkey cheat sheet and `/` to focus search filters.
 - [ ] **Workflow Tabs (Inputs/Outputs, Events, Notifications)**:
   - **Inputs & Outputs Tab**: Verify JSON viewer renders workflow input payloads and output results (or error details).
   - **Events Tab**: Verify table lists workflow synchronization event keys and JSON values.
