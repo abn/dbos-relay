@@ -425,8 +425,8 @@ class PlaygroundController {
       // Step 3: authorizePaymentGateway (Child Workflow)
       this.log(`[Step 3/5] Spawning Child Workflow AuthorizePaymentGateway (${childAuthId})...`, "step");
       await window.pgliteDb.query(`
-        INSERT INTO dbos.workflow_status (workflow_id, status, name, status, authenticated_user)
-        VALUES ($1, 'RUNNING', 'AuthorizePaymentGateway', 'RUNNING', 'playground-user');
+        INSERT INTO dbos.workflow_status (workflow_id, status, name, authenticated_user)
+        VALUES ($1, 'RUNNING', 'AuthorizePaymentGateway', 'playground-user');
       `, [childAuthId]);
 
       await window.pgliteDb.query(`
