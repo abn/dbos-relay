@@ -62,6 +62,7 @@ type Server struct {
 	authEnabled bool
 	validator   any
 	orgSecrets  sync.Map
+	broadcaster *EventBroadcaster
 }
 
 // NewServer creates a new API server instance.
@@ -70,9 +71,22 @@ func NewServer(r router.Router, s StoreReader, logger *slog.Logger) *Server {
 		logger = slog.Default()
 	}
 	return &Server{
-		router: r,
-		store:  s,
-		logger: logger,
+		router:      r,
+		store:       s,
+		logger:      logger,
+		broadcaster: NewEventBroadcaster(),
+	}
+}
+
+// Broadcaster returns the server's event broadcaster.
+func (s *Server) Broadcaster() *EventBroadcaster {
+	return s.broadcaster
+}
+
+// PublishEvent distributes a streaming event to subscribers.
+func (s *Server) PublishEvent(evt StreamEvent) {
+	if s.broadcaster != nil {
+		s.broadcaster.Publish(evt)
 	}
 }
 

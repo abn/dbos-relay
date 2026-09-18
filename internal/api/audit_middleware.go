@@ -21,6 +21,12 @@ func (w *auditResponseWriter) WriteHeader(code int) {
 	}
 }
 
+func (w *auditResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func getRealIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")

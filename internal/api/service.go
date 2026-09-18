@@ -209,6 +209,12 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		})
 		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/needs-attention", AuditMiddleware(server)(AuthMiddleware(server)(needsAttentionHandler)))
 
+		eventsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server.ServeEvents(w, r)
+		})
+		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/events", AuditMiddleware(server)(AuthMiddleware(server)(eventsHandler)))
+		mux.Handle("GET /v2/orgs/{orgName}/events", AuditMiddleware(server)(AuthMiddleware(server)(eventsHandler)))
+
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 				problem.Write(w, &problem.Problem{
@@ -275,6 +281,12 @@ func (rw *problemResponseWriter) Write(b []byte) (int, error) {
 		rw.WriteHeader(http.StatusOK)
 	}
 	return rw.ResponseWriter.Write(b)
+}
+
+func (rw *problemResponseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 type problemHandler struct {

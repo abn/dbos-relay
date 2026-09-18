@@ -286,4 +286,15 @@ export class ApiClient {
       { method: "DELETE" }
     );
   }
+
+  // Server-Sent Events (SSE) Stream URL
+  getEventsUrl(orgName: string, appName?: string): string {
+    const base = appName
+      ? `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/events`
+      : `/v2/orgs/${encodeURIComponent(orgName)}/events`;
+    if (this.apiKey) {
+      return `${this.baseUrl}${base}?token=${encodeURIComponent(this.apiKey)}`;
+    }
+    return `${this.baseUrl}${base}`;
+  }
 }

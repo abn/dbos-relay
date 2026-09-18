@@ -62,6 +62,19 @@ Wire `WorkflowStepsResponseBody` maps to OpenAPI `#/components/schemas/WorkflowS
 * `GetWorkflowEventsRequest` retrieves custom events. Wire `EventOutput` maps `Key` and `Value` to OpenAPI `EventInformation`.
 * `GetWorkflowNotificationsRequest` retrieves pending or consumed workflow notifications. Wire `NotificationOutput` maps `Topic`, `Message`, `CreatedAtEpochMs`, and `Consumed` to OpenAPI `NotificationInformation`.
 
+## Real-Time Telemetry (Server-Sent Events)
+
+Relay provides HTTP Server-Sent Events (SSE) endpoints for reactive UI telemetry:
+* `GET /v2/orgs/{orgName}/apps/{appName}/events`: Streams real-time lifecycle updates for an application.
+* `GET /v2/orgs/{orgName}/events`: Streams organization-wide lifecycle updates.
+
+Clients authenticate with standard `Authorization: Bearer <token>` headers or via `?token=<token>` query parameters for browser `EventSource` compatibility.
+
+The stream emits chunked `text/event-stream` payloads:
+* `ready`: Emitted on stream connection confirmation.
+* `workflow_update`: Emitted when workflows start, finish, or transition status.
+* `ping`: Heartbeat event emitted every 15 seconds to maintain open transport connections.
+
 ## Queues
 
 Wire `QueueOutput` maps to OpenAPI `#/components/schemas/Queue`:

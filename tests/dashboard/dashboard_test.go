@@ -627,6 +627,11 @@ func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
 			t.Errorf("found dead /restart template: %s", normalized)
 		}
 
+		// Allow Relay extension endpoints (e.g. SSE event streaming)
+		if strings.HasSuffix(normalized, "/events") {
+			continue
+		}
+
 		if _, exists := spec.Paths[normalized]; !exists {
 			t.Errorf("template %s (normalized: %s) does not exist in OpenAPI spec", m[1], normalized)
 		}

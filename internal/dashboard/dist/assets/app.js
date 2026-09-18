@@ -201,6 +201,14 @@
         { method: "DELETE" }
       );
     }
+    // Server-Sent Events (SSE) Stream URL
+    getEventsUrl(orgName, appName) {
+      const base = appName ? `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/events` : `/v2/orgs/${encodeURIComponent(orgName)}/events`;
+      if (this.apiKey) {
+        return `${this.baseUrl}${base}?token=${encodeURIComponent(this.apiKey)}`;
+      }
+      return `${this.baseUrl}${base}`;
+    }
   };
 
   // lib/components/StatusPill.js
@@ -634,6 +642,7 @@
       this.theme = localStorage.getItem("relay-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       this.pollInterval = 0;
       this.pollTimer = null;
+      this.sseSource = null;
       this.mobileNavOpen = false;
       this.pendingConfirmAction = null;
       this.parentWorkflowMap = /* @__PURE__ */ new Map();
@@ -819,19 +828,74 @@
       const input = document.getElementById("modal-auth-key-input");
       if (input) input.focus();
     }
-    setPollInterval(ms) {
-      this.pollInterval = parseInt(ms, 10) || 0;
+    setPollInterval(mode) {
       if (this.pollTimer) {
         clearInterval(this.pollTimer);
         this.pollTimer = null;
       }
+      if (this.sseSource) {
+        this.sseSource.close();
+        this.sseSource = null;
+      }
+      const dot = document.querySelector(".poll-dot");
+      if (mode === "stream") {
+        this.pollInterval = "stream";
+        this.startSSE();
+        return;
+      }
+      this.pollInterval = parseInt(mode, 10) || 0;
       if (this.pollInterval > 0) {
         this.pollTimer = setInterval(() => this.poll(), this.pollInterval);
       }
-      const dot = document.querySelector(".poll-dot");
       if (dot) {
-        if (this.pollInterval > 0) dot.classList.add("active");
-        else dot.classList.remove("active");
+        if (this.pollInterval > 0) {
+          dot.classList.add("active");
+          dot.classList.remove("error");
+          dot.title = `Live polling active (${this.pollInterval / 1e3}s)`;
+        } else {
+          dot.classList.remove("active");
+          dot.classList.remove("error");
+          dot.title = "Live telemetry refresh off";
+        }
+      }
+    }
+    startSSE() {
+      if (this.sseSource) {
+        this.sseSource.close();
+        this.sseSource = null;
+      }
+      const dot = document.querySelector(".poll-dot");
+      const url = this.client.getEventsUrl(this.orgName, this.appName);
+      try {
+        const sse = new EventSource(url);
+        this.sseSource = sse;
+        sse.onopen = () => {
+          if (dot) {
+            dot.classList.add("active");
+            dot.classList.remove("error");
+            dot.title = "Live streaming (SSE) connected";
+          }
+        };
+        let debounceTimer = null;
+        const scheduleRefresh = () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            this.poll();
+          }, 150);
+        };
+        sse.addEventListener("workflow_update", () => scheduleRefresh());
+        sse.addEventListener("executor_change", () => scheduleRefresh());
+        sse.addEventListener("ready", () => scheduleRefresh());
+        sse.onerror = () => {
+          if (dot) {
+            dot.classList.remove("active");
+            dot.classList.add("error");
+            dot.title = "Streaming disconnected, attempting reconnect...";
+          }
+        };
+      } catch (err) {
+        console.error("Failed to establish SSE connection, falling back to polling:", err);
+        this.setPollInterval("5000");
       }
     }
     async poll() {
@@ -983,11 +1047,12 @@
           </div>
           <div class="selector-group">
             <span class="poll-indicator" title="Live telemetry refresh">
-              <span class="poll-dot ${this.pollInterval > 0 ? "active" : ""}"></span>
-              <span>Poll:</span>
+              <span class="poll-dot ${this.pollInterval === "stream" || this.pollInterval > 0 ? "active" : ""}"></span>
+              <span>Live:</span>
             </span>
-            <select class="select-sm" data-change="pollInterval" aria-label="Live polling interval">
+            <select class="select-sm" data-change="pollInterval" aria-label="Live telemetry mode">
               <option value="0" ${this.pollInterval === 0 ? "selected" : ""}>Off</option>
+              <option value="stream" ${this.pollInterval === "stream" ? "selected" : ""}>Stream (SSE)</option>
               <option value="2000" ${this.pollInterval === 2e3 ? "selected" : ""}>2s</option>
               <option value="5000" ${this.pollInterval === 5e3 ? "selected" : ""}>5s</option>
               <option value="15000" ${this.pollInterval === 15e3 ? "selected" : ""}>15s</option>
@@ -1031,6 +1096,9 @@
       this.appName = newAppName;
       const select = document.getElementById("header-app-select");
       if (select) select.value = newAppName;
+      if (this.pollInterval === "stream") {
+        this.startSSE();
+      }
       this.renderContentView();
     }
     async renderContentView(silent = false) {

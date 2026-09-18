@@ -43,6 +43,9 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 			}
 
 			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" && r.URL.Query().Get("token") != "" {
+				authHeader = "Bearer " + r.URL.Query().Get("token")
+			}
 			if authHeader == "" {
 				problem.Write(w, &problem.Problem{
 					Type:   "about:blank",

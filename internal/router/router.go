@@ -118,6 +118,14 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 	}
 
 	org, err := r.store.GetOrganisationByName(ctx, orgName)
+	if err != nil && errors.Is(err, pgx.ErrNoRows) {
+		switch orgName {
+		case "local":
+			org, err = r.store.GetOrganisationByName(ctx, "default")
+		case "default":
+			org, err = r.store.GetOrganisationByName(ctx, "local")
+		}
+	}
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", ErrOrgNotFound, orgName)

@@ -70,7 +70,9 @@ This document provides the definitive manual acceptance test checklist for verif
   - Verify drawer displays step ID, name, status, start and completion timestamps, and JSON viewer for output/result or error stacks.
   - If a step spawned child workflows, verify child cards display quick-navigation action pills.
 - [ ] **Live Telemetry & Hotkeys**:
-  - Verify the polling selector allows switching between Off, 2s, 5s, and 15s intervals with an active status indicator dot.
+  - Verify the telemetry selector allows switching between Stream (SSE), 2s, 5s, 15s intervals, and Off.
+  - In Stream (SSE) mode, verify real-time Server-Sent Events push workflow and executor updates without polling overhead.
+  - In polling modes, verify status indicator pulses green during interval updates.
   - Verify keyboard navigation: press `?` to open the hotkey cheat sheet and `/` to focus search filters.
 - [ ] **Workflow Tabs (Inputs/Outputs, Events, Notifications)**:
   - **Inputs & Outputs Tab**: Verify JSON viewer renders workflow input payloads and output results (or error details).

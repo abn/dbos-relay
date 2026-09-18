@@ -1060,6 +1060,10 @@ table.data-table tr.clickable:focus-visible {
   background: var(--color-success);
 }
 
+.poll-dot.error {
+  background: var(--color-warning);
+}
+
 /* Modal */
 .modal-overlay {
   position: fixed;
