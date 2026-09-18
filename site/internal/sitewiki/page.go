@@ -132,6 +132,17 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
       e.stopPropagation();
     });
   });
+  document.querySelectorAll('details.side-sec').forEach(function(details) {
+    details.addEventListener('toggle', function() {
+      if (details.open) {
+        document.querySelectorAll('details.side-sec').forEach(function(other) {
+          if (other !== details && other.open) {
+            other.open = false;
+          }
+        });
+      }
+    });
+  });
 </script>
 <script type="module">
   var diagrams = document.querySelectorAll('.mermaid');
@@ -217,7 +228,14 @@ func (r *Renderer) sidebarHTML(activeSection, activeSlug string) string {
 			continue
 		}
 
-		b.WriteString(`<details class="side-sec" open>`)
+		isOpen := ""
+		if sec.ID != "" && sec.ID == activeSection {
+			isOpen = " open"
+		} else if sec.ID == "" && activeSection == "" && activeSlug != "index" && activeSlug != "" {
+			isOpen = " open"
+		}
+
+		b.WriteString(`<details class="side-sec" name="wiki-sections"` + isOpen + `>`)
 		b.WriteString(`<summary class="side-summary">`)
 		if secHref != "" {
 			fmt.Fprintf(&b, `<a href="%s" class="side-title-link%s">%s</a>`, secHref, secActive, template.HTMLEscapeString(sec.Title))
