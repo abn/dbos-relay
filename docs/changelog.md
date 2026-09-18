@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/abn/dbos-relay/compare/v0.2.0...v0.2.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **console:** resolve dag collision and duration tracking ([7d28fb6](https://github.com/abn/dbos-relay/commit/7d28fb68e58bc29fd1de5315f6b8fc3c6d444870))
+* **playground:** align bridge executor model and api tokens ([b495895](https://github.com/abn/dbos-relay/commit/b495895adbb8c01bab7f7e023287e046630f3b7e))
+* **test:** minimize connection pools for multi-sdk tests ([6dc7121](https://github.com/abn/dbos-relay/commit/6dc7121661e6208fe07c57b4e30ed31b8af02ccb))
+
 ## [0.2.0](https://github.com/abn/dbos-relay/compare/relay-v0.1.0...relay-v0.2.0) (2026-09-18)
 
 
