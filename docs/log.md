@@ -5,6 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-18
 
+* **Creation**: Added [ADR 0011](adr/0011-dual-engine-storage-architecture.md) establishing dual-engine storage architecture with PostgreSQL as flagship production engine, pure-Go SQLite for zero-dependency embedded mode, Turso MVCC for scale-out, and future adoption of Turso's PostgreSQL wire mode.
 * **Update**: Converted ASCII architecture and lifecycle diagrams across docs to Mermaid flowcharts and sequence diagrams with vendored offline runtime, added Chroma syntax highlighting to wiki rendering, made documentation sidebar sections collapsible, and unified section headings with section index routes.
 * **Update**: Documented multi-database fleet architecture and design rationale for omitting database credentials and topology management from the control plane UI in [Data plane access via SDK client](architecture/dataplane.md).
 * **Creation**: Added standalone Cloudflare-deployable project landing page and documentation site in `site/` with live dashboard screenshot showcase, feature comparison matrix, and static OKF wiki generator.
