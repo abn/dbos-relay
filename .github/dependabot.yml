@@ -1,0 +1,64 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "gomod"
+    directory: "/site"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "gomod"
+    directory: "/examples/golang"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "npm"
+    directory: "/console"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "npm"
+    directory: "/examples/typescript"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "maven"
+    directory: "/examples/java"
+    schedule:
+      interval: "cron"
+      cronjob: "0 4 1,15 * *"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"

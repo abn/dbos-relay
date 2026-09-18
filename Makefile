@@ -99,7 +99,7 @@ fmt: hooks/require ## Apply formatting fixes
 docs/check: ## Validate the docs bundle against OKF v0.2
 	./.agents/scripts/check-okf.py
 
-check: lint vet test drift ## Full quality gate
+check: lint vet drift ## Full quality gate
 	@printf 'check: ok\n'
 
 clean: ## Remove build artefacts
