@@ -57,8 +57,10 @@
         status: "SUCCESS",
         createdAt: "2026-09-18T18:00:00Z",
         created_at: "2026-09-18T18:00:00Z",
-        updatedAt: "2026-09-18T18:00:01Z",
-        updated_at: "2026-09-18T18:00:01Z",
+        updatedAt: "2026-09-18T18:00:01.242Z",
+        updated_at: "2026-09-18T18:00:01.242Z",
+        completedAt: "2026-09-18T18:00:01.242Z",
+        completed_at: "2026-09-18T18:00:01.242Z",
         durationMs: 1242,
         duration_ms: 1242,
         authenticatedUser: "alice@example.com",
@@ -67,11 +69,11 @@
       }
     ],
     steps: [
-      { functionId: 1, function_id: 1, stepId: "1", name: "validateCart", status: "SUCCESS", output: '{"valid":true,"items":2}', durationMs: 310, duration_ms: 310 },
-      { functionId: 2, function_id: 2, stepId: "2", name: "reserveInventory", status: "SUCCESS", output: '{"reserved":true,"sku":"DBOS-RELAY-KEY"}', durationMs: 245, duration_ms: 245 },
-      { functionId: 3, function_id: 3, stepId: "3", name: "authorizePaymentGateway", status: "SUCCESS", output: '{"authId":"wf-child-auth-01"}', childWorkflowId: "wf-child-auth-01", child_workflow_id: "wf-child-auth-01", durationMs: 412, duration_ms: 412 },
-      { functionId: 4, function_id: 4, stepId: "4", name: "scheduleShipping", status: "SUCCESS", output: '{"carrier":"FastTrack","tracking":"FT-99124"}', durationMs: 180, duration_ms: 180 },
-      { functionId: 5, function_id: 5, stepId: "5", name: "sendReceiptNotification", status: "SUCCESS", output: '{"delivered":true}', durationMs: 95, duration_ms: 95 }
+      { functionId: 1, function_id: 1, stepId: "1", stepName: "validateCart", name: "validateCart", status: "SUCCESS", output: '{"valid":true,"items":2}', durationMs: 310, duration_ms: 310, startedAt: "2026-09-18T18:00:00.000Z", completedAt: "2026-09-18T18:00:00.310Z" },
+      { functionId: 2, function_id: 2, stepId: "2", stepName: "reserveInventory", name: "reserveInventory", status: "SUCCESS", output: '{"reserved":true,"sku":"DBOS-RELAY-KEY"}', durationMs: 245, duration_ms: 245, startedAt: "2026-09-18T18:00:00.310Z", completedAt: "2026-09-18T18:00:00.555Z" },
+      { functionId: 3, function_id: 3, stepId: "3", stepName: "authorizePaymentGateway", name: "authorizePaymentGateway", status: "SUCCESS", output: '{"authId":"wf-child-auth-01"}', childWorkflowId: "wf-child-auth-01", child_workflow_id: "wf-child-auth-01", durationMs: 412, duration_ms: 412, startedAt: "2026-09-18T18:00:00.555Z", completedAt: "2026-09-18T18:00:00.967Z" },
+      { functionId: 4, function_id: 4, stepId: "4", stepName: "scheduleShipping", name: "scheduleShipping", status: "SUCCESS", output: '{"carrier":"FastTrack","tracking":"FT-99124"}', durationMs: 180, duration_ms: 180, startedAt: "2026-09-18T18:00:00.967Z", completedAt: "2026-09-18T18:00:01.147Z" },
+      { functionId: 5, function_id: 5, stepId: "5", stepName: "sendReceiptNotification", name: "sendReceiptNotification", status: "SUCCESS", output: '{"delivered":true}', durationMs: 95, duration_ms: 95, startedAt: "2026-09-18T18:00:01.147Z", completedAt: "2026-09-18T18:00:01.242Z" }
     ]
   };
 
@@ -188,24 +190,38 @@
         "SELECT workflow_id, status, name, authenticated_user, output, error, duration_ms, created_at, updated_at " +
         "FROM dbos.workflow_status ORDER BY created_at DESC LIMIT 50;"
       );
-      const data = (rows || []).map(r => ({
-        workflowId: r.workflow_id,
-        workflow_id: r.workflow_id,
-        workflowName: r.name,
-        workflow_name: r.name,
-        name: r.name,
-        status: r.status,
-        createdAt: r.created_at,
-        created_at: r.created_at,
-        updatedAt: r.updated_at,
-        updated_at: r.updated_at,
-        durationMs: r.duration_ms || 0,
-        duration_ms: r.duration_ms || 0,
-        authenticatedUser: r.authenticated_user || "playground-user",
-        authenticated_user: r.authenticated_user || "playground-user",
-        output: r.output,
-        error: r.error
-      }));
+      const data = (rows || []).map(r => {
+        const isTerminal = ["SUCCESS", "ERROR", "CANCELLED"].includes(String(r.status || "").toUpperCase());
+        const dur = r.duration_ms || 0;
+        let completedAt = null;
+        if (isTerminal) {
+          if (r.updated_at) {
+            completedAt = r.updated_at;
+          } else if (r.created_at) {
+            completedAt = new Date(new Date(r.created_at).getTime() + dur).toISOString();
+          }
+        }
+        return {
+          workflowId: r.workflow_id,
+          workflow_id: r.workflow_id,
+          workflowName: r.name,
+          workflow_name: r.name,
+          name: r.name,
+          status: r.status,
+          createdAt: r.created_at,
+          created_at: r.created_at,
+          updatedAt: r.updated_at,
+          updated_at: r.updated_at,
+          completedAt: completedAt,
+          completed_at: completedAt,
+          durationMs: dur,
+          duration_ms: dur,
+          authenticatedUser: r.authenticated_user || "playground-user",
+          authenticated_user: r.authenticated_user || "playground-user",
+          output: r.output,
+          error: r.error
+        };
+      });
       return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
@@ -214,23 +230,31 @@
     if (stepsMatch) {
       const workflowId = stepsMatch[1];
       const rows = await queryDb(
-        "SELECT function_id, name, status, output, error, child_workflow_id, duration_ms " +
+        "SELECT function_id, name, status, output, error, child_workflow_id, duration_ms, created_at " +
         "FROM dbos.operation_execution WHERE workflow_id = $1 ORDER BY function_id ASC;",
         [workflowId]
       );
-      const data = (rows || []).map(r => ({
-        functionId: r.function_id,
-        function_id: r.function_id,
-        stepId: String(r.function_id),
-        name: r.name,
-        status: r.status,
-        output: r.output,
-        error: r.error,
-        childWorkflowId: r.child_workflow_id,
-        child_workflow_id: r.child_workflow_id,
-        durationMs: r.duration_ms || 0,
-        duration_ms: r.duration_ms || 0
-      }));
+      const data = (rows && rows.length > 0) ? rows.map(r => {
+        const dur = r.duration_ms || 100;
+        const createdAt = r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString();
+        const isSuccess = (r.status || "SUCCESS").toUpperCase() === "SUCCESS";
+        return {
+          functionId: r.function_id,
+          function_id: r.function_id,
+          stepId: r.function_id,
+          stepName: r.name,
+          name: r.name,
+          status: (r.status || "SUCCESS").toUpperCase(),
+          output: r.output,
+          error: r.error,
+          childWorkflowId: r.child_workflow_id,
+          child_workflow_id: r.child_workflow_id,
+          durationMs: dur,
+          duration_ms: dur,
+          startedAt: createdAt,
+          completedAt: isSuccess ? new Date(new Date(createdAt).getTime() + dur).toISOString() : null
+        };
+      }) : (workflowId === "wf-ord-89214" ? state.steps : []);
       return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
@@ -262,6 +286,16 @@
       );
       if (rows && rows.length > 0) {
         const r = rows[0];
+        const isTerminal = ["SUCCESS", "ERROR", "CANCELLED"].includes(String(r.status || "").toUpperCase());
+        const dur = r.duration_ms || 0;
+        let completedAt = null;
+        if (isTerminal) {
+          if (r.updated_at) {
+            completedAt = r.updated_at;
+          } else if (r.created_at) {
+            completedAt = new Date(new Date(r.created_at).getTime() + dur).toISOString();
+          }
+        }
         const data = {
           workflowId: r.workflow_id,
           workflow_id: r.workflow_id,
@@ -273,8 +307,10 @@
           created_at: r.created_at,
           updatedAt: r.updated_at,
           updated_at: r.updated_at,
-          durationMs: r.duration_ms || 0,
-          duration_ms: r.duration_ms || 0,
+          completedAt: completedAt,
+          completed_at: completedAt,
+          durationMs: dur,
+          duration_ms: dur,
           authenticatedUser: r.authenticated_user || "playground-user",
           authenticated_user: r.authenticated_user || "playground-user",
           output: r.output,

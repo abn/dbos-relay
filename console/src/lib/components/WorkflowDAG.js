@@ -56,6 +56,7 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
 
     maxX = Math.max(maxX, x + nodeWidth);
     parentStepCoords.set(step.stepId, { x, y, step });
+    parentStepCoords.set(String(step.stepId), { x, y, step });
     if (step.childWorkflowId) {
       parentStepCoords.set(step.childWorkflowId, { x, y, step });
     }
@@ -112,12 +113,17 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
       childSteps.sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
 
       const childStepCount = childSteps.length;
-      const childCardWidth = Math.max(280, 48 + Math.max(1, childStepCount) * (nodeWidth + gapX) - gapX);
+      const titleText = `Child Workflow: ${childWf.workflowName || child.childWorkflowId || "unnamed"}`;
+      const headerNeededWidth = Math.ceil(titleText.length * 7.5 + 130);
+      const childCardWidth = Math.max(
+        Math.max(380, headerNeededWidth),
+        48 + Math.max(1, childStepCount) * (nodeWidth + gapX) - gapX
+      );
       const childCardHeight = childStepCount > 0 ? (nodeHeight + 84) : 96;
 
       // Find parent step coordinate to align near parent or link cleanly
       let targetX = currentChildX;
-      const parentCoord = parentStepCoords.get(child.stepId) || parentStepCoords.get(child.childWorkflowId);
+      const parentCoord = parentStepCoords.get(child.stepId) || parentStepCoords.get(String(child.stepId)) || parentStepCoords.get(child.childWorkflowId);
       if (parentCoord) {
         targetX = Math.max(currentChildX, parentCoord.x - 20);
       }
@@ -128,6 +134,9 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
       maxY = Math.max(maxY, childY + childCardHeight);
 
       const childStatusColor = getWorkflowStatusColor(childWf.status);
+      const availableTitleWidth = childCardWidth - 116;
+      const maxTitleChars = Math.max(16, Math.floor(availableTitleWidth / 7.5));
+      const displayTitle = truncate(titleText, maxTitleChars);
 
       // Child Workflow Card
       cardsSvg += `
@@ -136,7 +145,7 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
           <rect width="${childCardWidth}" height="36" rx="10" class="group-card-header-bg" />
           <rect y="26" width="${childCardWidth}" height="10" class="group-card-header-fill" />
           <circle cx="16" cy="18" r="4.5" fill="${childStatusColor}" />
-          <text x="28" y="22" class="group-card-title">Child Workflow: ${escapeHtml(childWf.workflowName || child.childWorkflowId)}</text>
+          <text x="28" y="22" class="group-card-title">${escapeHtml(displayTitle)}<title>${escapeHtml(titleText)}</title></text>
           <g class="child-card-action" data-action="viewChildWorkflow" data-child-wf-id="${escapeHtml(child.childWorkflowId)}" cursor="pointer" role="button" tabindex="0" aria-label="Inspect child workflow">
             <rect x="${childCardWidth - 84}" y="7" width="72" height="22" rx="4" class="action-pill-bg" />
             <text x="${childCardWidth - 48}" y="21" class="action-pill-text" text-anchor="middle">Inspect</text>
@@ -253,18 +262,20 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
 }
 
 function renderStepNodeSvg(step, x, y, width, height, statusClass, statusText, statusColor, durationText) {
-  const isChildCaller = Boolean(step.childWorkflowId);
+  const isChildCaller = Boolean(step.childWorkflowId || step.child_workflow_id);
+  const stepName = step.stepName || step.name || step.functionName || step.step_name || "step";
+  const stepId = step.stepId != null ? step.stepId : (step.functionId != null ? step.functionId : (step.function_id != null ? step.function_id : "0"));
   return `
     <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})"
        data-step-json="${escapeHtml(JSON.stringify(step))}"
        cursor="pointer" tabindex="0" role="button"
-       aria-label="Step ${step.stepId}: ${escapeHtml(step.stepName || "step")} (${statusText})">
+       aria-label="Step ${stepId}: ${escapeHtml(stepName)} (${statusText})">
       <rect width="${width}" height="${height}" rx="8" class="node-bg" />
       <circle cx="18" cy="20" r="4.5" fill="${statusColor}" />
 
-      <text x="28" y="24" class="node-step-id">#${step.stepId}</text>
+      <text x="28" y="24" class="node-step-id">#${stepId}</text>
       <text x="48" y="24" class="node-name" width="${width - 55}">
-        ${truncate(escapeHtml(step.stepName || "step"), 15)}
+        ${truncate(escapeHtml(stepName), 15)}
       </text>
 
       <text x="18" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
@@ -292,19 +303,26 @@ function renderEmptyDAG() {
 }
 
 function getStepStatusMeta(step) {
-  if (step.error) {
+  if (step.error || (step.status && String(step.status).toUpperCase() === "ERROR")) {
     return { statusClass: "step-error", statusText: "ERROR", statusColor: "var(--color-error)" };
   }
-  if (!step.completedAt && step.startedAt) {
-    return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--color-info)" };
-  }
-  if (step.completedAt) {
+  const statusStr = String(step.status || "").toUpperCase();
+  if (statusStr === "SUCCESS" || statusStr === "COMPLETED" || step.completedAt) {
     return { statusClass: "step-success", statusText: "COMPLETED", statusColor: "var(--color-success)" };
+  }
+  if (statusStr === "RUNNING" || (!step.completedAt && step.startedAt)) {
+    return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--color-info)" };
   }
   return { statusClass: "step-pending", statusText: "PENDING", statusColor: "var(--text-tertiary)" };
 }
 
 function getStepDurationText(step) {
+  if (step.durationMs != null || step.duration_ms != null) {
+    const ms = Number(step.durationMs != null ? step.durationMs : step.duration_ms);
+    if (!isNaN(ms) && ms > 0) {
+      return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
+    }
+  }
   if (step.startedAt && step.completedAt) {
     const start = new Date(step.startedAt).getTime();
     const end = new Date(step.completedAt).getTime();

@@ -1058,7 +1058,7 @@ class DashboardApp {
                         ${formatRelativeTime(w.createdAt)}
                       </span>
                     </td>
-                    <td>${calculateDuration(w.createdAt, w.completedAt)}</td>
+                    <td>${calculateDuration(w.createdAt, w.completedAt, w.status, w.durationMs || w.duration_ms)}</td>
                     <td>
                       <a href="#/workflow/${escapeHtml(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml(w.workflowId)}" data-wf-app="${escapeHtml(w.appName)}">Inspect ↗</a>
                     </td>
@@ -1190,7 +1190,7 @@ class DashboardApp {
                     <td>${escapeHtml(wf.queueName || "default")}</td>
                     <td>${escapeHtml(wf.appVersion || "-")}</td>
                     <td>${formatTimestamp(wf.createdAt)}</td>
-                    <td>${calculateDuration(wf.createdAt, wf.completedAt)}</td>
+                    <td>${calculateDuration(wf.createdAt, wf.completedAt, wf.status, wf.durationMs || wf.duration_ms)}</td>
                   </tr>
                 `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflows found.</td></tr>`}
               </tbody>
@@ -1372,7 +1372,7 @@ class DashboardApp {
               </div>
               <div>
                 <span class="stat-label">Duration</span>
-                <div>${calculateDuration(wf.createdAt || wf.created_at, wf.completedAt || wf.completed_at)}</div>
+                <div>${calculateDuration(wf.createdAt || wf.created_at, wf.completedAt || wf.completed_at, wf.status, wf.durationMs || wf.duration_ms)}</div>
               </div>
             </div>
           </div>
@@ -1528,11 +1528,17 @@ class DashboardApp {
     const root = document.getElementById("modal-root");
     if (!root) return;
 
+    const stepId = step.stepId != null ? step.stepId : (step.functionId != null ? step.functionId : (step.function_id != null ? step.function_id : "0"));
+    const stepName = step.stepName || step.name || step.functionName || step.step_name || "step";
+    const isError = Boolean(step.error || (step.status && String(step.status).toUpperCase() === "ERROR"));
+    const isSuccess = Boolean((step.status && (String(step.status).toUpperCase() === "SUCCESS" || String(step.status).toUpperCase() === "COMPLETED")) || step.completedAt);
+    const stepStatus = isError ? "ERROR" : (isSuccess ? "SUCCESS" : (step.status ? String(step.status).toUpperCase() : "PENDING"));
+
     root.innerHTML = `
       <div class="drawer-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="drawer-step-title">
         <aside class="drawer-panel" role="document">
           <div class="drawer-header">
-            <span id="drawer-step-title">Step #${step.stepId}: ${escapeHtml(step.stepName)}</span>
+            <span id="drawer-step-title">Step #${stepId}: ${escapeHtml(stepName)}</span>
             <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -1540,7 +1546,7 @@ class DashboardApp {
           <div class="drawer-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <span class="stat-label">Status</span>
-              ${renderStatusPill(step.error ? "ERROR" : step.completedAt ? "SUCCESS" : "PENDING")}
+              ${renderStatusPill(stepStatus)}
             </div>
             <div>
               <span class="stat-label">Execution Time</span>
@@ -2275,12 +2281,23 @@ function formatTimestamp(isoStr) {
   }
 }
 
-function calculateDuration(startStr, endStr) {
+function calculateDuration(startStr, endStr, status = "", durationMs = null) {
+  if (durationMs != null) {
+    const ms = Number(durationMs);
+    if (!isNaN(ms) && ms > 0) {
+      if (ms < 1000) return `${ms}ms`;
+      if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+      return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+    }
+  }
+
   if (!startStr) return "-";
   try {
     const start = new Date(startStr).getTime();
-    const isRunning = !endStr;
-    const end = endStr ? new Date(endStr).getTime() : Date.now();
+    const statusUpper = String(status || "").toUpperCase();
+    const isTerminal = statusUpper === "SUCCESS" || statusUpper === "ERROR" || statusUpper === "CANCELLED";
+    const isRunning = !isTerminal && !endStr;
+    const end = endStr ? new Date(endStr).getTime() : (isTerminal ? start : Date.now());
     const diffMs = Math.max(0, end - start);
     let str = "";
     if (diffMs < 1000) str = `${diffMs}ms`;

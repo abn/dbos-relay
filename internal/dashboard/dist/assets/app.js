@@ -359,6 +359,7 @@
       const y = startY;
       maxX = Math.max(maxX, x + nodeWidth);
       parentStepCoords.set(step.stepId, { x, y, step });
+      parentStepCoords.set(String(step.stepId), { x, y, step });
       if (step.childWorkflowId) {
         parentStepCoords.set(step.childWorkflowId, { x, y, step });
       }
@@ -403,10 +404,15 @@
         const childSteps = Array.isArray(child.steps) ? [...child.steps] : [];
         childSteps.sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
         const childStepCount = childSteps.length;
-        const childCardWidth = Math.max(280, 48 + Math.max(1, childStepCount) * (nodeWidth + gapX) - gapX);
+        const titleText = `Child Workflow: ${childWf.workflowName || child.childWorkflowId || "unnamed"}`;
+        const headerNeededWidth = Math.ceil(titleText.length * 7.5 + 130);
+        const childCardWidth = Math.max(
+          Math.max(380, headerNeededWidth),
+          48 + Math.max(1, childStepCount) * (nodeWidth + gapX) - gapX
+        );
         const childCardHeight = childStepCount > 0 ? nodeHeight + 84 : 96;
         let targetX = currentChildX;
-        const parentCoord = parentStepCoords.get(child.stepId) || parentStepCoords.get(child.childWorkflowId);
+        const parentCoord = parentStepCoords.get(child.stepId) || parentStepCoords.get(String(child.stepId)) || parentStepCoords.get(child.childWorkflowId);
         if (parentCoord) {
           targetX = Math.max(currentChildX, parentCoord.x - 20);
         }
@@ -415,13 +421,16 @@
         maxX = Math.max(maxX, childCardX + childCardWidth);
         maxY = Math.max(maxY, childY + childCardHeight);
         const childStatusColor = getWorkflowStatusColor(childWf.status);
+        const availableTitleWidth = childCardWidth - 116;
+        const maxTitleChars = Math.max(16, Math.floor(availableTitleWidth / 7.5));
+        const displayTitle = truncate(titleText, maxTitleChars);
         cardsSvg += `
         <g class="dag-group-card child-group" transform="translate(${childCardX}, ${childY})">
           <rect width="${childCardWidth}" height="${childCardHeight}" rx="10" class="group-card-bg child-card-border" />
           <rect width="${childCardWidth}" height="36" rx="10" class="group-card-header-bg" />
           <rect y="26" width="${childCardWidth}" height="10" class="group-card-header-fill" />
           <circle cx="16" cy="18" r="4.5" fill="${childStatusColor}" />
-          <text x="28" y="22" class="group-card-title">Child Workflow: ${escapeHtml3(childWf.workflowName || child.childWorkflowId)}</text>
+          <text x="28" y="22" class="group-card-title">${escapeHtml3(displayTitle)}<title>${escapeHtml3(titleText)}</title></text>
           <g class="child-card-action" data-action="viewChildWorkflow" data-child-wf-id="${escapeHtml3(child.childWorkflowId)}" cursor="pointer" role="button" tabindex="0" aria-label="Inspect child workflow">
             <rect x="${childCardWidth - 84}" y="7" width="72" height="22" rx="4" class="action-pill-bg" />
             <text x="${childCardWidth - 48}" y="21" class="action-pill-text" text-anchor="middle">Inspect</text>
@@ -526,18 +535,20 @@
   `;
   }
   function renderStepNodeSvg(step, x, y, width, height, statusClass, statusText, statusColor, durationText) {
-    const isChildCaller = Boolean(step.childWorkflowId);
+    const isChildCaller = Boolean(step.childWorkflowId || step.child_workflow_id);
+    const stepName = step.stepName || step.name || step.functionName || step.step_name || "step";
+    const stepId = step.stepId != null ? step.stepId : step.functionId != null ? step.functionId : step.function_id != null ? step.function_id : "0";
     return `
     <g class="dag-node ${statusClass}" transform="translate(${x}, ${y})"
        data-step-json="${escapeHtml3(JSON.stringify(step))}"
        cursor="pointer" tabindex="0" role="button"
-       aria-label="Step ${step.stepId}: ${escapeHtml3(step.stepName || "step")} (${statusText})">
+       aria-label="Step ${stepId}: ${escapeHtml3(stepName)} (${statusText})">
       <rect width="${width}" height="${height}" rx="8" class="node-bg" />
       <circle cx="18" cy="20" r="4.5" fill="${statusColor}" />
 
-      <text x="28" y="24" class="node-step-id">#${step.stepId}</text>
+      <text x="28" y="24" class="node-step-id">#${stepId}</text>
       <text x="48" y="24" class="node-name" width="${width - 55}">
-        ${truncate(escapeHtml3(step.stepName || "step"), 15)}
+        ${truncate(escapeHtml3(stepName), 15)}
       </text>
 
       <text x="18" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
@@ -563,18 +574,25 @@
   `;
   }
   function getStepStatusMeta(step) {
-    if (step.error) {
+    if (step.error || step.status && String(step.status).toUpperCase() === "ERROR") {
       return { statusClass: "step-error", statusText: "ERROR", statusColor: "var(--color-error)" };
     }
-    if (!step.completedAt && step.startedAt) {
-      return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--color-info)" };
-    }
-    if (step.completedAt) {
+    const statusStr = String(step.status || "").toUpperCase();
+    if (statusStr === "SUCCESS" || statusStr === "COMPLETED" || step.completedAt) {
       return { statusClass: "step-success", statusText: "COMPLETED", statusColor: "var(--color-success)" };
+    }
+    if (statusStr === "RUNNING" || !step.completedAt && step.startedAt) {
+      return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--color-info)" };
     }
     return { statusClass: "step-pending", statusText: "PENDING", statusColor: "var(--text-tertiary)" };
   }
   function getStepDurationText(step) {
+    if (step.durationMs != null || step.duration_ms != null) {
+      const ms = Number(step.durationMs != null ? step.durationMs : step.duration_ms);
+      if (!isNaN(ms) && ms > 0) {
+        return ms < 1e3 ? `${ms}ms` : `${(ms / 1e3).toFixed(2)}s`;
+      }
+    }
     if (step.startedAt && step.completedAt) {
       const start = new Date(step.startedAt).getTime();
       const end = new Date(step.completedAt).getTime();
@@ -1613,7 +1631,7 @@
                         ${formatRelativeTime(w.createdAt)}
                       </span>
                     </td>
-                    <td>${calculateDuration(w.createdAt, w.completedAt)}</td>
+                    <td>${calculateDuration(w.createdAt, w.completedAt, w.status, w.durationMs || w.duration_ms)}</td>
                     <td>
                       <a href="#/workflow/${escapeHtml4(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">Inspect \u2197</a>
                     </td>
@@ -1740,7 +1758,7 @@
                     <td>${escapeHtml4(wf.queueName || "default")}</td>
                     <td>${escapeHtml4(wf.appVersion || "-")}</td>
                     <td>${formatTimestamp(wf.createdAt)}</td>
-                    <td>${calculateDuration(wf.createdAt, wf.completedAt)}</td>
+                    <td>${calculateDuration(wf.createdAt, wf.completedAt, wf.status, wf.durationMs || wf.duration_ms)}</td>
                   </tr>
                 `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflows found.</td></tr>`}
               </tbody>
@@ -1908,7 +1926,7 @@
               </div>
               <div>
                 <span class="stat-label">Duration</span>
-                <div>${calculateDuration(wf.createdAt || wf.created_at, wf.completedAt || wf.completed_at)}</div>
+                <div>${calculateDuration(wf.createdAt || wf.created_at, wf.completedAt || wf.completed_at, wf.status, wf.durationMs || wf.duration_ms)}</div>
               </div>
             </div>
           </div>
@@ -2054,11 +2072,16 @@
     renderStepDrawer(step) {
       const root = document.getElementById("modal-root");
       if (!root) return;
+      const stepId = step.stepId != null ? step.stepId : step.functionId != null ? step.functionId : step.function_id != null ? step.function_id : "0";
+      const stepName = step.stepName || step.name || step.functionName || step.step_name || "step";
+      const isError = Boolean(step.error || step.status && String(step.status).toUpperCase() === "ERROR");
+      const isSuccess = Boolean(step.status && (String(step.status).toUpperCase() === "SUCCESS" || String(step.status).toUpperCase() === "COMPLETED") || step.completedAt);
+      const stepStatus = isError ? "ERROR" : isSuccess ? "SUCCESS" : step.status ? String(step.status).toUpperCase() : "PENDING";
       root.innerHTML = `
       <div class="drawer-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="drawer-step-title">
         <aside class="drawer-panel" role="document">
           <div class="drawer-header">
-            <span id="drawer-step-title">Step #${step.stepId}: ${escapeHtml4(step.stepName)}</span>
+            <span id="drawer-step-title">Step #${stepId}: ${escapeHtml4(stepName)}</span>
             <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -2066,7 +2089,7 @@
           <div class="drawer-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <span class="stat-label">Status</span>
-              ${renderStatusPill(step.error ? "ERROR" : step.completedAt ? "SUCCESS" : "PENDING")}
+              ${renderStatusPill(stepStatus)}
             </div>
             <div>
               <span class="stat-label">Execution Time</span>
@@ -2747,12 +2770,22 @@
       return isoStr;
     }
   }
-  function calculateDuration(startStr, endStr) {
+  function calculateDuration(startStr, endStr, status = "", durationMs = null) {
+    if (durationMs != null) {
+      const ms = Number(durationMs);
+      if (!isNaN(ms) && ms > 0) {
+        if (ms < 1e3) return `${ms}ms`;
+        if (ms < 6e4) return `${(ms / 1e3).toFixed(1)}s`;
+        return `${Math.floor(ms / 6e4)}m ${Math.floor(ms % 6e4 / 1e3)}s`;
+      }
+    }
     if (!startStr) return "-";
     try {
       const start = new Date(startStr).getTime();
-      const isRunning = !endStr;
-      const end = endStr ? new Date(endStr).getTime() : Date.now();
+      const statusUpper = String(status || "").toUpperCase();
+      const isTerminal = statusUpper === "SUCCESS" || statusUpper === "ERROR" || statusUpper === "CANCELLED";
+      const isRunning = !isTerminal && !endStr;
+      const end = endStr ? new Date(endStr).getTime() : isTerminal ? start : Date.now();
       const diffMs = Math.max(0, end - start);
       let str = "";
       if (diffMs < 1e3) str = `${diffMs}ms`;

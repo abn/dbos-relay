@@ -629,6 +629,22 @@ class PlaygroundController {
         Date.now(),
         childAuthId
       ]);
+
+      await this.db.query(`
+        INSERT INTO dbos.operation_execution (
+          workflow_id, function_id, name, type, status,
+          input, output, error, duration_ms, created_at
+        ) VALUES
+          ($1, 0, 'checkFraudVelocity', 'step', 'SUCCESS', $2, $3, NULL, 180, $4),
+          ($1, 1, 'chargeCard', 'step', 'SUCCESS', $5, $6, NULL, 470, $4)
+      `, [
+        childAuthId,
+        JSON.stringify({ score: 5 }),
+        JSON.stringify({ cleared: true }),
+        Date.now(),
+        JSON.stringify({ card: "*4242", amount: 299 }),
+        JSON.stringify({ captured: true, authCode: "AUTH-89214-OK" })
+      ]);
       this.log(`✓ Step 3: Child Workflow AuthorizePaymentGateway (${childAuthId}) completed in 650ms`, "success");
       await this.executeSql();
       await this.sleep(400);
