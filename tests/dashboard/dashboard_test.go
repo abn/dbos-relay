@@ -855,3 +855,21 @@ func TestDashboard_ChildWorkflowXSSSanitization(t *testing.T) {
 		t.Errorf("bundle should use data-child-wf-id")
 	}
 }
+
+func TestDashboard_NoConnectedExecutorsState(t *testing.T) {
+	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+
+	if !strings.Contains(bundle, "isNoExecutorError") {
+		t.Errorf("bundle should include isNoExecutorError helper")
+	}
+	if !strings.Contains(bundle, "renderNoExecutorState") {
+		t.Errorf("bundle should include renderNoExecutorState")
+	}
+	if !strings.Contains(bundle, "No Connected Executors") {
+		t.Errorf("bundle should include 'No Connected Executors' friendly notice")
+	}
+}

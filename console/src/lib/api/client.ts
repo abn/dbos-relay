@@ -60,7 +60,9 @@ export class ApiClient {
       } catch {
         // Non-json response
       }
-      throw new Error(errorDetail);
+      const err = new Error(errorDetail);
+      (err as unknown as { status: number }).status = response.status;
+      throw err;
     }
 
     if (response.status === 204) {

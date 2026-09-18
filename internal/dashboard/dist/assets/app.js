@@ -34,7 +34,9 @@
           }
         } catch {
         }
-        throw new Error(errorDetail);
+        const err = new Error(errorDetail);
+        err.status = response.status;
+        throw err;
       }
       if (response.status === 204) {
         return void 0;
@@ -683,6 +685,15 @@
       const msg = err.message || String(err);
       return msg.includes("401") || msg.includes("Unauthorized") || msg.includes("Authorization header required");
     }
+    isNoExecutorError(err) {
+      if (!err) return false;
+      if (err.status === 503) {
+        const msg2 = (err.message || "").toLowerCase();
+        if (msg2.includes("executor") || msg2.includes("unavailable")) return true;
+      }
+      const msg = (err.message || String(err)).toLowerCase();
+      return msg.includes("no live executor") || msg.includes("no executors available");
+    }
     submitSignIn(token) {
       this.setApiKey(token || null);
       this.closeModal();
@@ -792,6 +803,72 @@
           <div style="margin-top: 16px; display: flex; gap: 8px;">
             <button class="btn btn-sm btn-primary" data-action="submitSignIn">Save & Retry</button>
             ${this.apiKey ? `<button class="btn btn-sm btn-secondary" data-action="signOut">Clear Credential</button>` : ""}
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    renderNoExecutorState(el, entityName = "queues") {
+      const isQueue = entityName === "queues";
+      const title = isQueue ? "Queues" : "Scheduled Jobs";
+      const desc = isQueue ? `Queue configurations and worker concurrency limits are reported dynamically by active application executors. Once an executor for <strong>${escapeHtml4(this.appName || "this application")}</strong> connects to Relay, its active queues will appear here.` : `Scheduled workflow jobs and cron triggers are discovered dynamically from connected application executors. Start an executor for <strong>${escapeHtml4(this.appName || "this application")}</strong> to view and trigger scheduled workflows.`;
+      el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">${title} (${escapeHtml4(this.appName || "No app")})</span>
+          <button class="btn btn-xs btn-secondary" data-action="refresh">Check Again</button>
+        </div>
+        <div class="card-body">
+          <div class="empty-state">
+            <div class="empty-state-icon icon-offline">
+              ${isQueue ? `
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+              ` : `
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+              `}
+            </div>
+            <h4 class="empty-state-title">No Connected Executors</h4>
+            <p class="empty-state-desc">${desc}</p>
+            <div class="empty-state-hint">
+              <div style="color:var(--text-tertiary); margin-bottom:4px;">Connect your application by configuring its Conductor URL:</div>
+              <code>conductor_url: "ws://&lt;relay-host&gt;:8080"</code>
+            </div>
+            <div class="empty-state-actions">
+              <button class="btn btn-sm btn-secondary" data-action="refresh">Check Again</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    renderErrorState(el, title, message) {
+      el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">${escapeHtml4(title)}</span>
+        </div>
+        <div class="card-body">
+          <div class="empty-state">
+            <div class="empty-state-icon icon-error">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h4 class="empty-state-title">Unable to Load Data</h4>
+            <p class="empty-state-desc">${escapeHtml4(message)}</p>
+            <div class="empty-state-actions">
+              <button class="btn btn-sm btn-secondary" data-action="refresh">Retry</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1378,7 +1455,7 @@
         </div>
       `;
       } catch (err) {
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load workflows: ${escapeHtml4(err.message)}</div></div>`;
+        this.renderErrorState(el, `Workflows (${escapeHtml4(this.appName || "No app")})`, err.message);
       }
     }
     filterWorkflowsTable(query) {
@@ -1538,7 +1615,7 @@
       `;
         this.initDagViewport();
       } catch (err) {
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load workflow: ${escapeHtml4(err.message)}</div></div>`;
+        this.renderErrorState(el, `Workflow Details (${escapeHtml4(this.selectedWorkflowId || "Unknown")})`, err.message);
       }
     }
     async switchWfTab(tab) {
@@ -1792,7 +1869,8 @@
         el.innerHTML = `
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Queues (${this.appName || "No app"})</span>
+            <span class="card-title">Queues (${escapeHtml4(this.appName || "No app")})</span>
+            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -1816,14 +1894,18 @@
                     <td>${q.priorityEnabled ? "Yes" : "No"}</td>
                     <td>${q.partitionQueue ? "Yes" : "No"}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No queues configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">No queues configured.</td></tr>`}
               </tbody>
             </table>
           </div>
         </div>
       `;
       } catch (err) {
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load queues: ${escapeHtml4(err.message)}</div></div>`;
+        if (this.isNoExecutorError(err)) {
+          this.renderNoExecutorState(el, "queues");
+          return;
+        }
+        this.renderErrorState(el, `Queues (${escapeHtml4(this.appName || "No app")})`, err.message);
       }
     }
     // --- SCREEN 5: SCHEDULES ---
@@ -1836,7 +1918,8 @@
         el.innerHTML = `
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Scheduled Jobs (${this.appName || "No app"})</span>
+            <span class="card-title">Scheduled Jobs (${escapeHtml4(this.appName || "No app")})</span>
+            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -1869,14 +1952,18 @@
                       </div>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No schedules configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">No schedules configured.</td></tr>`}
               </tbody>
             </table>
           </div>
         </div>
       `;
       } catch (err) {
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load schedules: ${escapeHtml4(err.message)}</div></div>`;
+        if (this.isNoExecutorError(err)) {
+          this.renderNoExecutorState(el, "schedules");
+          return;
+        }
+        this.renderErrorState(el, `Scheduled Jobs (${escapeHtml4(this.appName || "No app")})`, err.message);
       }
     }
     async pauseSchedule(name) {
@@ -1955,7 +2042,11 @@
         </div>
       `;
       } catch (err) {
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load alert rules: ${escapeHtml4(err.message)}</div></div>`;
+        if (this.isAuthError(err)) {
+          this.renderAuthRequired(el, "load alert rules");
+          return;
+        }
+        this.renderErrorState(el, `Alert Rules (${escapeHtml4(this.appName || "No app")})`, err.message);
       }
     }
     openCreateAlertModal() {
@@ -2095,7 +2186,7 @@
           this.renderAuthRequired(el, "load API keys");
           return;
         }
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load API keys: ${escapeHtml4(err.message)}</div></div>`;
+        this.renderErrorState(el, "API Keys", err.message);
       }
     }
     openCreateKeyModal() {
