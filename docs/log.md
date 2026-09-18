@@ -9,6 +9,7 @@ page additions, deprecations, and structural refactors.
 * **Update**: Enhanced dashboard workflow visualization with multi-level workflow family grouping, cubic bezier execution curves between parent steps and child workflows, and interactive canvas viewport with pan, zoom, and dot-grid background.
 * **Update**: Updated [Dashboard manual acceptance checklist](manual/dashboard-acceptance.md) to cover canvas viewport controls, workflow family hierarchies, live telemetry polling options, and shortcut cheat sheets.
 * **Update**: Overhauled dashboard design tokens to an industrial zinc and technical cobalt palette, achieving WCAG AA/AAA contrast ratios, tabular lining numerals, authored inline SVGs, and intentional alternatives under `prefers-reduced-motion`.
+* **Creation**: Designed bespoke brandmark and favicon ("Circuit Handoff R") representing durable state control, orchestration consensus, and dynamic executor dispatch, replacing generic clipart.
 
 ## 2026-09-17
 

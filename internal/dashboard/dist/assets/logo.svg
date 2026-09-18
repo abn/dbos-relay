@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <!-- Relay Circuit Handoff Brandmark -->
+  <!-- Vertical Control Plane Spine -->
+  <path d="M9 6.5V25.5" stroke="#0969da" stroke-width="2.75" stroke-linecap="round"/>
+  <!-- Consensus Orchestration Loop -->
+  <path d="M9 7.5H17C20.5899 7.5 23.5 10.4101 23.5 14C23.5 17.5899 20.5899 20.5 17 20.5H9" stroke="#0969da" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Executor Dispatch Vector & Terminal Node -->
+  <path d="M15.5 19.5L22.5 25.5" stroke="#0891b2" stroke-width="2.75" stroke-linecap="round"/>
+  <circle cx="23" cy="25" r="1.75" fill="#0891b2"/>
+</svg>

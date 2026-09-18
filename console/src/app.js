@@ -346,8 +346,11 @@ class DashboardApp {
       <aside class="sidebar ${this.mobileNavOpen ? 'mobile-open' : ''}">
         <div class="sidebar-header">
           <a href="#/fleet" class="brand-logo" aria-label="Relay Home">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--color-primary)" stroke="none"/>
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <path d="M9 6.5V25.5" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round"/>
+              <path d="M9 7.5H17C20.5899 7.5 23.5 10.4101 23.5 14C23.5 17.5899 20.5899 20.5 17 20.5H9" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M15.5 19.5L22.5 25.5" stroke="var(--color-purple)" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="23" cy="25" r="2" fill="var(--color-purple)"/>
             </svg>
             <span>Relay</span>
           </a>

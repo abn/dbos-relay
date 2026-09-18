@@ -32,12 +32,12 @@ fs.writeFileSync(path.join(DIST_DIR, "index.html"), indexHtml.trim() + "\n");
 const appCss = fs.readFileSync(path.join(SRC_DIR, "app.css"), "utf-8");
 fs.writeFileSync(path.join(ASSETS_DIST, "app.css"), appCss.trim() + "\n");
 
-// 3. Copy Assets (favicon, etc.)
-if (fs.existsSync(path.join(SRC_DIR, "assets", "favicon.svg"))) {
-  fs.copyFileSync(
-    path.join(SRC_DIR, "assets", "favicon.svg"),
-    path.join(ASSETS_DIST, "favicon.svg")
-  );
+// 3. Copy Assets (favicon, logo, etc.)
+const srcAssetsDir = path.join(SRC_DIR, "assets");
+if (fs.existsSync(srcAssetsDir)) {
+  for (const file of fs.readdirSync(srcAssetsDir)) {
+    fs.copyFileSync(path.join(srcAssetsDir, file), path.join(ASSETS_DIST, file));
+  }
 }
 
 // 4. Bundle JS files into a single standalone app.js using esbuild
