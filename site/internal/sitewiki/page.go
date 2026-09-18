@@ -73,19 +73,24 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
         </svg>
         <span>Relay</span>
       </a>
-      <span class="badge">DOCS</span>
+      <span class="badge">Docs</span>
     </div>
     <ul>
       <li><a href="/">Overview</a></li>
-      <li><a href="/wiki/">Docs Wiki</a></li>
-      <li><a href="https://github.com/abn/relay" target="_blank" rel="noopener">GitHub ↗</a></li>
+      <li><a href="/wiki/" class="active">Docs</a></li>
+      <li><a href="https://github.com/abn/relay" class="nav-cta" target="_blank" rel="noopener">GitHub ↗</a></li>
     </ul>
   </nav>
-  <div class="subbar wrap">
-    <button class="menu-btn" id="menuBtn" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sideDrawer">☰</button>
-    <nav class="breadcrumb">%s</nav>
-  </div>
 </header>
+<div class="breadcrumb-bar">
+  <div class="wrap breadcrumb-inner">
+    <button class="menu-btn" id="menuBtn" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sideDrawer">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      <span>Menu</span>
+    </button>
+    <nav class="breadcrumb" aria-label="Breadcrumb">%s</nav>
+  </div>
+</div>
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <div class="layout wrap">
   <aside class="sidebar" id="sideDrawer">%s</aside>
