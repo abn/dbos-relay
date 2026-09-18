@@ -73,8 +73,10 @@ in the wiki under `docs/`.
   regenerates the shims; it is idempotent and safe to re-run.
 - **Makefile** is the single automation entrypoint. Bare `make` shows the
   targets. `make check` is the gate that hooks and CI both reuse.
-- **Commits** follow Conventional Commits, summary first, no trailers (no
-  Co-Authored-By, no Signed-off-by). Stage explicit paths, never `git add -A`.
+- **Commits** follow Conventional Commits and the 50/72 convention:
+  summary line under 50 characters where practical (72 max), body lines
+  wrapped at 72 characters, and summary-only messages preferred when
+  self-contained. Stage explicit paths, never `git add -A`.
 - **Changes** happen in a dedicated worktree with a conventional branch name
   (`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`), rebased on latest `main`.
 - **Clean history.** Fix up or amend into the owning commit on active
