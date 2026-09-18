@@ -3,8 +3,8 @@ module github.com/abn/relay/examples/golang
 go 1.25.0
 
 require (
-	github.com/dbos-inc/dbos-transact-golang v1.3.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/dbos-inc/dbos-transact-golang v1.4.0
+	github.com/jackc/pgx/v5 v5.11.0
 )
 
 require (
