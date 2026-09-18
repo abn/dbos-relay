@@ -298,7 +298,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					}
 				}
 			} else {
-				if r.URL.Path != "/v2/users/me" && !identity.IsAdmin {
+				if r.URL.Path != "/v2/users/me" && r.URL.Path != "/v1/metrics" && !identity.IsAdmin {
 					problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Global endpoints require admin privileges"})
 					return
 				}
