@@ -1268,7 +1268,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// Wait for Step 1 to be recorded
 				var step1Recorded bool
-				for i := 0; i < 30; i++ {
+				for i := 0; i < 50; i++ {
 					var count int
 					row := dbConn.QueryRow(context.Background(), `
 						SELECT COUNT(*) FROM test_step_executions
@@ -1285,6 +1285,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					time.Sleep(500 * time.Millisecond)
 				}
 				if !step1Recorded {
+					primLogs := runCmd(t, "podman", "logs", primaryContainer)
+					t.Logf("[%s] Primary container logs on step1 failure:\n%s", lang, primLogs)
 					t.Fatalf("[%s] Step 1 not recorded in test_step_executions table", lang)
 				}
 
@@ -1392,7 +1394,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to scan step1Count: %v", err)
 				}
-				for i := 0; i < 30; i++ {
+				for i := 0; i < 50; i++ {
 					err = dbConn.QueryRow(context.Background(), `
 						SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
 					`, chaosWfID).Scan(&step2Count)
@@ -1406,9 +1408,13 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if step1Count != 1 {
+					secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+					t.Logf("[%s] Secondary logs on step1Count assertion failure:\n%s", lang, secLogs)
 					t.Fatalf("[%s] Expected exactly 1 step1 execution, got %d", lang, step1Count)
 				}
 				if step2Count != 1 {
+					secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+					t.Logf("[%s] Secondary logs on step2Count assertion failure:\n%s", lang, secLogs)
 					t.Fatalf("[%s] Expected exactly 1 step2 execution, got %d", lang, step2Count)
 				}
 

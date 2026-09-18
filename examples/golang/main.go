@@ -17,25 +17,35 @@ func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string
 	if dbURL == "" {
 		return nil
 	}
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := pgx.Connect(timeoutCtx, dbURL)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "recordStepExecution pgx.Connect failed for %s: %v\n", stepName, err)
-		return err
+	var lastErr error
+	for attempt := 1; attempt <= 10; attempt++ {
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		conn, err := pgx.Connect(timeoutCtx, dbURL)
+		if err != nil {
+			cancel()
+			lastErr = err
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		_, err = conn.Exec(timeoutCtx, `
+			CREATE TABLE IF NOT EXISTS test_step_executions (
+				workflow_id TEXT NOT NULL,
+				step_name TEXT NOT NULL,
+				executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+			INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+			VALUES ($1, $2, NOW());
+		`, workflowID, stepName)
+		_ = conn.Close(context.Background())
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(500 * time.Millisecond)
 	}
-	defer func() { _ = conn.Close(context.Background()) }()
-
-	_, err = conn.Exec(timeoutCtx, `
-		INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
-		VALUES ($1, $2, NOW());
-	`, workflowID, stepName)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "recordStepExecution INSERT failed for %s: %v\n", stepName, err)
-		return err
-	}
-	return nil
+	fmt.Fprintf(os.Stderr, "recordStepExecution failed after retries for %s: %v\n", stepName, lastErr)
+	return lastErr
 }
 
 func helloWorkflow(ctx dbos.Context, name string) (string, error) {
@@ -53,7 +63,7 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 	_, err = dbos.RunAsStep(ctx, func(stepCtx context.Context) (string, error) {
 		_ = recordStepExecution(stepCtx, dbURL, wfID, "step1")
 		return "step1-completed", nil
-	})
+	}, dbos.WithStepName("step1"))
 	if err != nil {
 		return "", err
 	}
@@ -67,7 +77,7 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 	_, err = dbos.RunAsStep(ctx, func(stepCtx context.Context) (string, error) {
 		_ = recordStepExecution(stepCtx, dbURL, wfID, "step2")
 		return "step2-completed", nil
-	})
+	}, dbos.WithStepName("step2"))
 	if err != nil {
 		return "", err
 	}
