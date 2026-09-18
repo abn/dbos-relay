@@ -331,10 +331,23 @@ class DashboardApp {
   }
 
   async init() {
+    const params = new URLSearchParams(window.location.search);
+    const themeParam = params.get("theme");
+    if (themeParam === "light" || themeParam === "dark") {
+      this.theme = themeParam;
+    }
+    const appParam = params.get("app");
+    if (appParam) {
+      this.appName = appParam;
+      localStorage.setItem("relay_selected_app", appParam);
+    }
     this.applyTheme(this.theme);
     window.addEventListener("hashchange", () => this.handleRouting());
 
     await this.loadApplications();
+    if (appParam && this.apps.some(a => a.name === appParam)) {
+      this.appName = appParam;
+    }
     this.handleRouting();
   }
 
@@ -351,7 +364,10 @@ class DashboardApp {
   async loadApplications() {
     try {
       this.apps = await this.client.listApplications(this.orgName);
-      if (this.apps && this.apps.length > 0 && !this.appName) {
+      const savedApp = localStorage.getItem("relay_selected_app");
+      if (savedApp && this.apps.some(a => a.name === savedApp)) {
+        this.appName = savedApp;
+      } else if (this.apps && this.apps.length > 0 && !this.appName) {
         this.appName = this.apps[0].name;
       }
     } catch (err) {
@@ -513,6 +529,7 @@ class DashboardApp {
 
   onAppChange(newAppName) {
     this.appName = newAppName;
+    localStorage.setItem("relay_selected_app", newAppName);
     const select = document.getElementById("header-app-select");
     if (select) select.value = newAppName;
     if (this.pollInterval === "stream") {

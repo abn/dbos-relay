@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check test test/conformance vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk
+.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk
 
 ##@ Bootstrap
 
@@ -41,6 +41,12 @@ dashboard/build: ## Build the web dashboard assets
 dashboard/check: ## Validate dashboard production bundle syntax
 	@command -v node >/dev/null 2>&1 || { echo "ERROR: node is required for dashboard/check" >&2; exit 1; }
 	node --check internal/dashboard/dist/assets/app.js
+
+site: ## Build static landing page and documentation site
+	$(MAKE) -C site site
+
+site/clean: ## Clean generated site documentation
+	$(MAKE) -C site clean
 
 test: ## Run the test suite
 	go test -p 1 ./...

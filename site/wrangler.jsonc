@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dbos-relay",
+  "compatibility_date": "2026-08-28",
+
+  // The site is pure static assets: a hand-written index.html landing page plus the
+  // generated wiki/ documentation tree (produced by `make site` from ../docs).
+  // Cloudflare Workers serves everything under ./ as static assets.
+  //
+  // Cloudflare Workers Builds runs `make site` before deploy, ensuring wiki/
+  // is generated from the docs bundle before upload.
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "404-page"
+  }
+}

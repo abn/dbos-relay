@@ -16,6 +16,8 @@
 /bin/
 /dist/
 /out/
+/site/wiki/
+/site/bin/
 examples/*/bin/
 examples/java/bin/
 examples/*/target/
