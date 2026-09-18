@@ -28,11 +28,6 @@ func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string
 			continue
 		}
 		_, err = conn.Exec(timeoutCtx, `
-			CREATE TABLE IF NOT EXISTS test_step_executions (
-				workflow_id TEXT NOT NULL,
-				step_name TEXT NOT NULL,
-				executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-			);
 			INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
 			VALUES ($1, $2, NOW());
 		`, workflowID, stepName)

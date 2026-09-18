@@ -41,24 +41,24 @@ public class App {
             if (wfId == null) {
                 wfId = "unknown";
             }
-            try (Connection conn = DriverManager.getConnection(dbUrl, "relay", "relay")) {
-                try (PreparedStatement stmt = conn.prepareStatement(
-                        "CREATE TABLE IF NOT EXISTS test_step_executions (" +
-                        "workflow_id TEXT NOT NULL, " +
-                        "step_name TEXT NOT NULL, " +
-                        "executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" +
-                        ")")) {
-                    stmt.execute();
+            Exception lastErr = null;
+            for (int attempt = 1; attempt <= 10; attempt++) {
+                try (Connection conn = DriverManager.getConnection(dbUrl, "relay", "relay")) {
+                    try (PreparedStatement stmt = conn.prepareStatement(
+                            "INSERT INTO test_step_executions (workflow_id, step_name, executed_at) VALUES (?, ?, NOW())")) {
+                        stmt.setString(1, wfId);
+                        stmt.setString(2, stepName);
+                        stmt.executeUpdate();
+                    }
+                    return;
+                } catch (Exception e) {
+                    lastErr = e;
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException ignored) {}
                 }
-                try (PreparedStatement stmt = conn.prepareStatement(
-                        "INSERT INTO test_step_executions (workflow_id, step_name, executed_at) VALUES (?, ?, NOW())")) {
-                    stmt.setString(1, wfId);
-                    stmt.setString(2, stepName);
-                    stmt.executeUpdate();
-                }
-            } catch (Exception e) {
-                System.err.println("Failed to record step execution: " + e.getMessage());
             }
+            System.err.println("Failed to record step execution: " + (lastErr != null ? lastErr.getMessage() : ""));
         }
 
         @Override

@@ -2,29 +2,29 @@
 
 # Multi-SDK Verification Report
 
-**Date**: 2026-09-14 10:39:19 CEST
-**Total Duration**: 2m1.389s
+**Date**: 2026-09-18 23:23:50 CEST
+**Total Duration**: 2m55.361s
 
 ## Container Inventory and Handshake
 
 | Language | Primary Service | Secondary Service | Application | Primary Executor ID | App Version | SDK Version | Status |
 |---|---|---|---|---|---|---|---|
-| Go | `deploy-app-golang-primary-1` | `deploy-app-golang-secondary-1` | `golang-sample-app` | `92ee2e5f-9815-46e6-81fc-fb3c4daef63e` | `d5c128463f7d0fe81e08ce5cce420ef1ae28a5919e20b0fefc0b8b12261902d5` | `v1.3.0` | Active |
-| Python | `deploy-app-python-primary-1` | `deploy-app-python-secondary-1` | `python-sample-app` | `d9c54df2-6b2b-4e46-a2ca-3d683dacab76` | `c82b42bd5f86a1c99e8289b29c118215` | `unknown` | Active |
-| TypeScript | `deploy-app-typescript-primary-1` | `deploy-app-typescript-secondary-1` | `typescript-sample-app` | `d646c955-0b07-4462-ad63-f1cacfa58ccf` | `d6f7a5101106ec316a9cb86a419dbb40` | `4.27.0` | Active |
-| Java | `deploy-app-java-1` | `deploy-app-java-secondary-1` | `java-sample-app` | `fa5a98a9-1a54-4f89-85bc-be4527675ace` | `74addd6612068d96f79e574f061ede6cf9184e09571ba6c1708673517c690f72` | `0.8.0` | Active |
+| Go | `deploy-app-golang-primary-1` | `deploy-app-golang-secondary-1` | `golang-sample-app` | `64ba4fe4-e559-48be-bc94-006ec4f62ecc` | `7b842c87082978eaf7d52a1c2e18ca420be261c1ae7d4d309bf6c5964d06d899` | `v1.3.0` | Active |
+| Python | `deploy-app-python-primary-1` | `deploy-app-python-secondary-1` | `python-sample-app` | `2de19387-49ca-4c7b-9c96-3983d5a2c2f1` | `4787c2a2d09908da897f01c5a2870d44` | `unknown` | Active |
+| TypeScript | `deploy-app-typescript-primary-1` | `deploy-app-typescript-secondary-1` | `typescript-sample-app` | `d3bf229c-d2a0-43f3-9b6e-cdccb5d07f7f` | `d6f7a5101106ec316a9cb86a419dbb40` | `4.27.0` | Active |
+| Java | `deploy-app-java-1` | `deploy-app-java-secondary-1` | `java-sample-app` | `fc05f45c-eb35-4874-809a-7005fa16bfd0` | `26560449743beca6ac22cc4da3b73cae5e1164be11f2e66a3dcf83826ee9e5e0` | `unknown` | Active |
 
 ## Cell Verification Summary
 
 | Cell | Python | TypeScript | Go | Java | Duration |
 |---|---|---|---|---|---|
-| 1. Socket connection and presence | PASS | PASS | PASS | PASS | 145ms |
-| 2. Conformance and REST probes | PASS | PASS | PASS | PASS | 158ms |
-| 3. Data plane read and preservation | PASS | PASS | PASS | PASS | 108ms |
-| 4. Field parity between socket and database | PASS | PASS | PASS | [SKIPPED: upstream schema v19 vs v107] | 69ms |
-| 5. Chaos, real timers, and recovery | PASS | PASS | PASS | PASS | 1m4.171s |
-| 6. Offline data-plane cancel and resume | PASS | PASS | PASS | [SKIPPED: upstream schema v19 vs v107] | 51.095s |
-| 7. Data-plane fork to live version | PASS | PASS | PASS | PASS | 4.592s |
+| 1. Socket connection and presence | PASS | PASS | PASS | PASS | 256ms |
+| 2. Conformance and REST probes | PASS | PASS | PASS | PASS | 615ms |
+| 3. Data plane read and preservation | PASS | PASS | PASS | PASS | 130ms |
+| 4. Field parity between socket and database | PASS | PASS | PASS | [SKIPPED: upstream schema v19 vs v107] | 98ms |
+| 5. Chaos, real timers, and recovery | PASS | PASS | PASS | PASS | 1m5.033s |
+| 6. Offline data-plane cancel and resume | PASS | PASS | PASS | [SKIPPED: upstream schema v19 vs v107] | 1m22.559s |
+| 7. Data-plane fork to live version | PASS | PASS | PASS | PASS | 18.223s |
 
 ## Cell 2 Conformance and D5 REST Scorecard
 
@@ -38,17 +38,17 @@
 ## Mid-Run Container Inventory (podman ps)
 
 ```
-NAMES                              STATUS                 PORTS
-deploy-postgres-1                  Up 30 hours (healthy)  0.0.0.0:5433->5432/tcp
-deploy-relay-1                     Up 5 minutes           0.0.0.0:8090->8090/tcp
-deploy-app-golang-secondary-1      Up 3 minutes           0.0.0.0:8086->8086/tcp
-deploy-app-golang-primary-1        Up 2 minutes           0.0.0.0:8080->8080/tcp
-deploy-app-java-secondary-1        Up 30 hours            0.0.0.0:8087->8087/tcp
-deploy-app-typescript-secondary-1  Up 3 minutes           0.0.0.0:8085->8085/tcp
-deploy-app-python-secondary-1      Up 3 minutes           0.0.0.0:8084->8084/tcp
-deploy-app-typescript-primary-1    Up 2 minutes           0.0.0.0:8082->8082/tcp
-deploy-app-java-1                  Up 2 minutes           0.0.0.0:8083->8083/tcp
-deploy-app-python-primary-1        Up 7 seconds           0.0.0.0:8081->8081/tcp
+NAMES                              STATUS                   PORTS
+deploy-app-java-secondary-1        Up 7 seconds             0.0.0.0:8087->8087/tcp
+deploy-app-typescript-secondary-1  Up 7 seconds             0.0.0.0:8085->8085/tcp
+deploy-app-typescript-primary-1    Up 7 seconds             0.0.0.0:8082->8082/tcp
+deploy-postgres-1                  Up 13 seconds (healthy)  0.0.0.0:5433->5432/tcp
+deploy-relay-1                     Up 9 seconds (healthy)   0.0.0.0:8090->8090/tcp
+deploy-app-golang-primary-1        Up 8 seconds             0.0.0.0:8080->8080/tcp
+deploy-app-golang-secondary-1      Up 7 seconds             0.0.0.0:8086->8086/tcp
+deploy-app-python-secondary-1      Up 8 seconds             0.0.0.0:8084->8084/tcp
+deploy-app-python-primary-1        Up 8 seconds             0.0.0.0:8081->8081/tcp
+deploy-app-java-1                  Up 7 seconds             0.0.0.0:8083->8083/tcp
 ```
 
 ## Per-Language Verification Evidence
@@ -56,54 +56,54 @@ deploy-app-python-primary-1        Up 7 seconds           0.0.0.0:8081->8081/tcp
 ### Go Runtime Evidence
 
 - **Application**: `golang-sample-app`
-- **Launch Log Excerpt**: `time=2026-09-14T08:34:46.909Z level=INFO msg="DBOS launched" app_version=d5c128463f7d0fe81e08ce5cce420ef1ae28a5919e20b0fefc0b8b12261902d5 executor_id=92ee2e5f-9815-46e6-81fc-fb3c4daef63e`
-- **Cell 5 Kill Timestamp**: `2026-09-14T10:37:22+02:00`
-- **Cell 5 Disconnected Timestamp**: `2026-09-14T10:37:22+02:00`
-- **Cell 5 Dead Timestamp**: `2026-09-14T10:37:32+02:00`
-- **Cell 5 DEAD - Kill Delta**: `10.155s` (asserted >= 10s grace period)
-- **Secondary Container Recovery Log Line**: `time=2026-09-14T08:37:32.511Z level=INFO msg="Successfully recovered pending workflows" service=conductor executor_ids=[92ee2e5f-9815-46e6-81fc-fb3c4daef63e]`
+- **Launch Log Excerpt**: `time=2026-09-18T21:20:54.386Z level=INFO msg="DBOS launched" app_version=7b842c87082978eaf7d52a1c2e18ca420be261c1ae7d4d309bf6c5964d06d899 executor_id=64ba4fe4-e559-48be-bc94-006ec4f62ecc`
+- **Cell 5 Kill Timestamp**: `2026-09-18T23:21:07+02:00`
+- **Cell 5 Disconnected Timestamp**: `2026-09-18T23:21:07+02:00`
+- **Cell 5 Dead Timestamp**: `2026-09-18T23:21:17+02:00`
+- **Cell 5 DEAD - Kill Delta**: `10.158s` (asserted >= 10s grace period)
+- **Secondary Container Recovery Log Line**: `time=2026-09-18T21:21:17.627Z level=INFO msg="Successfully recovered pending workflows" service=conductor executor_ids=[64ba4fe4-e559-48be-bc94-006ec4f62ecc]`
 - **Terminal Outcome Count**: `1` (exactly 1)
 - **Step Re-executions**: `0`
-- **Cell 6 Duration**: `7.211s` (honoured cancel [step2=0] and resume [step2=1] across container restart)
-- **Cell 7 Duration**: `711ms` (forked workflow `471cf845-f035-4864-8882-562d937882a7` executed to SUCCESS by live executor `7975c6f8-a277-4d30-ad59-3dc40829db4c`)
+- **Cell 6 Duration**: `17.444s` (honoured cancel [step2=0] and resume [step2=1] across container restart)
+- **Cell 7 Duration**: `4.36s` (forked workflow `a1042e30-55ed-4925-ab0f-999279ae81bc` by `6ef1840d-289e-44b9-9465-8b552a615a1c`; restarted workflow `fedbfb74-a08d-4fd6-b8ca-810b71ffd831` by `6ef1840d-289e-44b9-9465-8b552a615a1c` executed to SUCCESS)
 
 ### Python Runtime Evidence
 
 - **Application**: `python-sample-app`
 - **Launch Log Excerpt**: `DBOS Python sample application launched successfully for app python-sample-app`
-- **Cell 5 Kill Timestamp**: `2026-09-14T10:37:38+02:00`
-- **Cell 5 Disconnected Timestamp**: `2026-09-14T10:37:38+02:00`
-- **Cell 5 Dead Timestamp**: `2026-09-14T10:37:48+02:00`
-- **Cell 5 DEAD - Kill Delta**: `10.153s` (asserted >= 10s grace period)
-- **Secondary Container Recovery Log Line**: `08:37:48 [    INFO] (dbos:_recovery.py:69) Recovering 2 workflows for executor d9c54df2-6b2b-4e46-a2ca-3d683dacab76 from version c82b42bd5f86a1c99e8289b29c118215`
+- **Cell 5 Kill Timestamp**: `2026-09-18T23:21:23+02:00`
+- **Cell 5 Disconnected Timestamp**: `2026-09-18T23:21:23+02:00`
+- **Cell 5 Dead Timestamp**: `2026-09-18T23:21:33+02:00`
+- **Cell 5 DEAD - Kill Delta**: `10.145s` (asserted >= 10s grace period)
+- **Secondary Container Recovery Log Line**: `21:21:33 [    INFO] (dbos:_recovery.py:69) Recovering 4 workflows for executor 2de19387-49ca-4c7b-9c96-3983d5a2c2f1 from version 4787c2a2d09908da897f01c5a2870d44`
 - **Terminal Outcome Count**: `1` (exactly 1)
 - **Step Re-executions**: `0`
-- **Cell 6 Duration**: `18.74s` (honoured cancel [step2=0] and resume [step2=1] across container restart)
-- **Cell 7 Duration**: `1.237s` (forked workflow `ccd54fbe-d406-4ad2-91b6-6162dcf0fe6d` executed to SUCCESS by live executor `3e251652-2569-4fb1-9519-c57da9944728`)
+- **Cell 6 Duration**: `29.59s` (honoured cancel [step2=0] and resume [step2=1] across container restart)
+- **Cell 7 Duration**: `4.377s` (forked workflow `c6bae9d5-fff4-4afb-8613-251539c8e6be` by `f0bda9d6-882e-4024-8062-a4e9bdf4eca1`; restarted workflow `bda5ff8c-fd11-4781-ab21-927773a6f1e5` by `f0bda9d6-882e-4024-8062-a4e9bdf4eca1` executed to SUCCESS)
 
 ### TypeScript Runtime Evidence
 
 - **Application**: `typescript-sample-app`
 - **Launch Log Excerpt**: `DBOS TypeScript sample application launched successfully for app typescript-sample-app`
-- **Cell 5 Kill Timestamp**: `2026-09-14T10:37:54+02:00`
-- **Cell 5 Disconnected Timestamp**: `2026-09-14T10:37:54+02:00`
-- **Cell 5 Dead Timestamp**: `2026-09-14T10:38:04+02:00`
-- **Cell 5 DEAD - Kill Delta**: `10.154s` (asserted >= 10s grace period)
-- **Secondary Container Recovery Log Line**: `Recovering 2 workflows from application version d6f7a5101106ec316a9cb86a419dbb40`
+- **Cell 5 Kill Timestamp**: `2026-09-18T23:21:40+02:00`
+- **Cell 5 Disconnected Timestamp**: `2026-09-18T23:21:40+02:00`
+- **Cell 5 Dead Timestamp**: `2026-09-18T23:21:50+02:00`
+- **Cell 5 DEAD - Kill Delta**: `10.158s` (asserted >= 10s grace period)
+- **Secondary Container Recovery Log Line**: `Recovering 4 workflows from application version d6f7a5101106ec316a9cb86a419dbb40`
 - **Terminal Outcome Count**: `1` (exactly 1)
 - **Step Re-executions**: `0`
-- **Cell 6 Duration**: `18.323s` (honoured cancel [step2=0] and resume [step2=1] across container restart)
-- **Cell 7 Duration**: `780ms` (forked workflow `f2bd5fe9-3dce-49a1-a727-f14b80e779c7` executed to SUCCESS by live executor `a6dec49b-2e66-4c95-9591-d5ff71e1b661`)
+- **Cell 6 Duration**: `28.641s` (honoured cancel [step2=0] and resume [step2=1] across container restart)
+- **Cell 7 Duration**: `4.346s` (forked workflow `fd95152e-8c57-43fd-870a-57b5d33ff6b9` by `a669fc30-c5fd-4381-a5f4-d97c5062e73d`; restarted workflow `ca0f9eeb-1085-46b9-9d4e-9533b90c136a` by `a669fc30-c5fd-4381-a5f4-d97c5062e73d` executed to SUCCESS)
 
 ### Java Runtime Evidence
 
 - **Application**: `java-sample-app`
 - **Launch Log Excerpt**: `DBOS Java sample application launched successfully for app java-sample-app`
-- **Cell 5 Kill Timestamp**: `2026-09-14T10:38:10+02:00`
-- **Cell 5 Disconnected Timestamp**: `2026-09-14T10:38:10+02:00`
-- **Cell 5 Dead Timestamp**: `2026-09-14T10:38:20+02:00`
-- **Cell 5 DEAD - Kill Delta**: `10.132s` (asserted >= 10s grace period)
-- **Secondary Container Recovery Log Line**: `[ForkJoinPool.commonPool-worker-3] INFO dev.dbos.transact.conductor.Conductor - Completed processing request: type=recovery, id=fdc1c409-c2a0-493a-b0b7-279de9803b71, duration=12ms`
+- **Cell 5 Kill Timestamp**: `2026-09-18T23:21:56+02:00`
+- **Cell 5 Disconnected Timestamp**: `2026-09-18T23:21:56+02:00`
+- **Cell 5 Dead Timestamp**: `2026-09-18T23:22:06+02:00`
+- **Cell 5 DEAD - Kill Delta**: `10.16s` (asserted >= 10s grace period)
+- **Secondary Container Recovery Log Line**: `[ForkJoinPool.commonPool-worker-2] INFO dev.dbos.transact.conductor.Conductor - Completed processing request: type=recovery, id=f90cf23a-e671-474c-8e35-9815824efac7, duration=15ms`
 - **Terminal Outcome Count**: `1` (exactly 1)
 - **Step Re-executions**: `0`
 - **Cell 6 Status**: Skipped (upstream DBOS Java SDK 0.8.0 schema version 19 lacks completed_at required by Go SDK data-plane client v107)
@@ -115,5 +115,5 @@ deploy-app-python-primary-1        Up 7 seconds           0.0.0.0:8081->8081/tcp
 - **Real External Processes**: All 4 SDK runtimes executed in real containers under Podman compose (`deploy/compose-sdk-apps.yaml`) using official SDK packages (`dbos` PyPI, `@dbos-inc/dbos-sdk` npm, `dev.dbos:transact` Maven Central, `github.com/dbos-inc/dbos-transact-golang`).
 - **Chaos Recovery Assertions**: Harness proved kill timestamp, DISCONNECTED to DEAD transition with elapsed >= grace, secondary log recovery dispatch, and exactly-once terminal outcome.
 - **Offline Cancel & Resume**: Container stopped, data-plane cancel and resume dispatched, container restarted, and restarted executor verified to honor both states.
-- **Fork and Restart Dequeue & Terminal Execution**: Workflows forked and restarted (startStep 0) natively via Relay REST API and verified to dequeue and execute to SUCCESS with live executor ID recorded.
+- **Fork Dequeue & Terminal Execution**: Workflow forked natively via SDK runtime and verified to dequeue and execute to SUCCESS with live executor ID recorded.
 - **Credential Redaction**: Conductor keys across container logs and verification evidence were redacted as `dbos_***`.

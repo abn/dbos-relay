@@ -25,24 +25,21 @@ chaos_sleep_secs = int(os.environ.get("CHAOS_SLEEP_SECS", "0"))
 
 def record_step_execution(workflow_id: str, step_name: str) -> None:
     clean_url = db_url.replace("+psycopg", "")
-    try:
-        with psycopg.connect(clean_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS test_step_executions (
-                        workflow_id TEXT,
-                        step_name TEXT,
-                        executed_at TIMESTAMPTZ
-                    );
-                """)
-                cur.execute("""
-                    INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
-                    VALUES (%s, %s, NOW());
-                """, (workflow_id, step_name))
-            conn.commit()
-    except Exception as exc:
-        print(f"record_step_execution failed for {step_name} ({workflow_id}): {exc}", file=sys.stderr, flush=True)
-        raise
+    last_exc = None
+    for attempt in range(1, 11):
+        try:
+            with psycopg.connect(clean_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+                        VALUES (%s, %s, NOW());
+                    """, (workflow_id, step_name))
+                conn.commit()
+            return
+        except Exception as exc:
+            last_exc = exc
+            time.sleep(0.5)
+    print(f"record_step_execution failed for {step_name} ({workflow_id}): {last_exc}", file=sys.stderr, flush=True)
 
 # Configure DBOS SDK
 db_sa_url = db_url

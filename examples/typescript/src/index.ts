@@ -10,16 +10,26 @@ const role = process.env.ROLE || "";
 const httpPort = parseInt(process.env.HTTP_PORT || "8082", 10);
 
 async function recordStepExecution(workflowID: string, stepName: string): Promise<void> {
-  const client = new Client({ connectionString: dbURL });
-  await client.connect();
-  try {
-    await client.query(`
-      INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
-      VALUES ($1, $2, NOW());
-    `, [workflowID, stepName]);
-  } finally {
-    await client.end();
+  let lastErr: Error | unknown;
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    const client = new Client({ connectionString: dbURL });
+    try {
+      await client.connect();
+      try {
+        await client.query(`
+          INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+          VALUES ($1, $2, NOW());
+        `, [workflowID, stepName]);
+      } finally {
+        await client.end();
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
+  console.error(`Failed to record step execution for ${stepName}:`, lastErr);
 }
 
 export class SampleApp {
