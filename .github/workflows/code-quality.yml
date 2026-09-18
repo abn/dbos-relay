@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,6 +29,11 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install dependencies
         run: |
           pip install pre-commit
@@ -38,3 +44,6 @@ jobs:
 
       - name: Validate dashboard bundle syntax
         run: make dashboard/check
+
+      - name: Validate docs bundle against OKF v0.2
+        run: make docs/check

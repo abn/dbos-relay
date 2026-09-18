@@ -1,19 +1,44 @@
-name: Release
+name: release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
+  pull-requests: write
+  packages: write
+  issues: write
 
 jobs:
-  preflight:
-    name: Release Gate & Verification
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-release:
+    name: Publish Release Artifacts
+    needs: [release-please]
+    if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Check out code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -24,32 +49,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run Quality and Conformance Checks
+      - name: Check out release tag
+        run: |
+          git fetch --tags
+          git checkout ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Run Quality and Provenance Checks
         run: |
           make check
-
-      - name: Verify Legal and Clean-Room Provenance
-        run: |
           python3 .agents/scripts/check-okf.py
           test -f NOTICE
           grep -q "DBOS, Inc." NOTICE
-
-  goreleaser:
-    name: Publish Release Artifacts
-    needs: [preflight]
-    environment: release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -59,3 +69,32 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-container:
+    name: Publish Container Image (Buildah)
+    needs: [release-please]
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build container image with Buildah
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: relay
+          tags: latest ${{ needs.release-please.outputs.tag_name }} ${{ needs.release-please.outputs.version }}
+          containerfiles: |
+            ./Containerfile
+          build-args: |
+            VERSION=${{ needs.release-please.outputs.tag_name }}
+
+      - name: Push to GHCR
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: ghcr.io/${{ github.repository_owner }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}

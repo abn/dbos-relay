@@ -5,34 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: Test and Build
+    name: Test Suite (PostgreSQL & SQLite)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: relay
-          POSTGRES_DB: relay
-          POSTGRES_PASSWORD: relay
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      RELAY_TEST_DATABASE_URL: postgres://relay:relay@localhost:5433/relay?sslmode=disable
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -40,11 +24,36 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Start PostgreSQL with Podman
+        run: |
+          podman run -d \
+            --name test-postgres \
+            -p 5433:5432 \
+            -e POSTGRES_USER=relay \
+            -e POSTGRES_DB=relay \
+            -e POSTGRES_PASSWORD=relay \
+            docker.io/library/postgres:16-alpine
+          timeout 30s bash -c 'until podman exec test-postgres pg_isready -U relay -d relay; do sleep 1; done'
+
       - name: Run test suite
+        env:
+          RELAY_TEST_DATABASE_URL: postgres://relay:relay@localhost:5433/relay?sslmode=disable
         run: make test
 
       - name: Build binary
         run: make build
+
+      - name: Verify embedded standalone mode
+        run: |
+          ./bin/relay serve --embedded &
+          RELAY_PID=$!
+          timeout 15s bash -c 'until curl -sf http://localhost:8090/healthz; do sleep 1; done'
+          kill $RELAY_PID || true
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: |
+          podman rm -f test-postgres || true
 
   cross-compile:
     name: Cross Compile (${{ matrix.os }}/${{ matrix.arch }})
@@ -67,4 +76,27 @@ jobs:
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
-        run: make build
+          CGO_ENABLED: "0"
+        run: go build -o /dev/null ./cmd/relay
+
+  container-build:
+    name: Container Build (Buildah)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build image with Buildah
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: relay
+          tags: test
+          containerfiles: |
+            ./Containerfile
+          build-args: |
+            VERSION=test
+
+      - name: Verify container execution with Podman
+        run: |
+          podman run --rm ${{ steps.build-image.outputs.image }}:test version

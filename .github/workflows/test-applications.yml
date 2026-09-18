@@ -1,4 +1,4 @@
-name: verify-matrix
+name: test-applications
 
 on:
   push:
@@ -84,7 +84,7 @@ jobs:
           make lint/examples-isolation
 
   identity-oidc-matrix:
-    name: Identity & OIDC Device Flow
+    name: Identity and OIDC Device Flow
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -96,16 +96,29 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Python for Podman Compose
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Podman Compose
+        run: |
+          pip install podman-compose
+
       - name: Run Identity and Device Flow Tests
         run: |
           go test -v -race ./tests/identity/...
 
-      - name: Verify OIDC Test Stack Startup
+      - name: Verify OIDC Test Stack Startup with Podman Compose
         run: |
-          docker compose -f deploy/compose/oidc/docker-compose.yaml up -d
+          podman compose -f deploy/compose/oidc/docker-compose.yaml up -d
           timeout 30s bash -c 'until curl -sf http://localhost:5556/dex/.well-known/openid-configuration > /dev/null; do sleep 1; done'
           curl -sf http://localhost:5556/dex/healthz
-          docker compose -f deploy/compose/oidc/docker-compose.yaml down
+
+      - name: Tear Down OIDC Test Stack
+        if: always()
+        run: |
+          podman compose -f deploy/compose/oidc/docker-compose.yaml down -v || true
 
   integration-matrix:
     name: Multi-SDK Conformance Matrix
@@ -144,3 +157,8 @@ jobs:
       - name: Run Multi-SDK Conformance Suite
         run: |
           make verify-sdk
+
+      - name: Tear Down SDK Apps Stack
+        if: always()
+        run: |
+          podman compose --env-file deploy/.env -f deploy/compose-sdk-apps.yaml down -v || true
