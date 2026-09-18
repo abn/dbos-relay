@@ -173,7 +173,7 @@ table.data-table,
 .brand-badge {
   background: var(--color-primary);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: var(--radius-sm);
@@ -374,7 +374,7 @@ table.data-table,
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 1px 4px;
   border-radius: var(--radius-sm);
@@ -658,7 +658,7 @@ table.data-table tr.clickable:hover td {
 }
 
 .child-card-action .action-pill-text {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   fill: var(--color-primary);
 }
@@ -695,7 +695,7 @@ table.data-table tr.clickable:hover td {
 }
 
 .dag-node .node-status {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
 }
@@ -1171,7 +1171,7 @@ table.data-table tr.clickable:focus-visible {
 /* Confirmation Dialog & Consequence Box */
 .confirm-consequence {
   background: var(--color-error-bg);
-  border-left: 4px solid var(--color-error);
+  border: 1px solid var(--color-error);
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   font-size: 13px;
@@ -1181,7 +1181,7 @@ table.data-table tr.clickable:focus-visible {
 
 .confirm-warning {
   background: var(--color-warning-bg);
-  border-left: 4px solid var(--color-warning);
+  border: 1px solid var(--color-warning);
   padding: 12px 14px;
   border-radius: var(--radius-sm);
   font-size: 13px;
@@ -1243,16 +1243,16 @@ table.data-table tr.clickable:focus-visible {
 }
 
 .toast-success {
-  border-left: 4px solid var(--color-success);
+  border-color: var(--color-success);
 }
 
 .toast-error {
-  border-left: 4px solid var(--color-error);
+  border-color: var(--color-error);
   color: var(--color-error-text);
 }
 
 .toast-info {
-  border-left: 4px solid var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 @keyframes toastIn {
