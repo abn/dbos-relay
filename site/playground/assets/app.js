@@ -1178,7 +1178,7 @@
               <path d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           </button>
-          <h1 class="header-title">${this.getRouteTitle()}</h1>
+          <h1 class="header-title" title="${escapeHtml4(this.getRouteTitle())}">${escapeHtml4(this.getRouteTitle())}</h1>
         </div>
         <div class="header-right">
           <div class="selector-group">
@@ -1777,27 +1777,34 @@
         this.selectedWorkflowApp = targetApp;
         const wf = await this.client.getWorkflow(this.orgName, targetApp, this.selectedWorkflowId);
         const steps = await this.client.listSteps(this.orgName, targetApp, this.selectedWorkflowId);
-        this.currentWorkflowName = wf.workflowName || wf.workflowId;
+        const workflowId = wf.workflowId || wf.workflow_id || this.selectedWorkflowId;
+        const workflowName = wf.workflowName || wf.workflow_name || wf.name || workflowId;
+        this.currentWorkflowName = workflowName;
         this.currentWorkflowStatus = wf.status;
-        const childStepEntries = steps.filter((s) => Boolean(s.childWorkflowId));
+        const childStepEntries = steps.filter((s) => Boolean(s.childWorkflowId || s.child_workflow_id));
         let childWorkflows = [];
         if (childStepEntries.length > 0) {
           const childResults = await Promise.allSettled(
             childStepEntries.map(async (step) => {
+              const childId = step.childWorkflowId || step.child_workflow_id;
               try {
-                const childWf = await this.client.getWorkflow(this.orgName, targetApp, step.childWorkflowId);
-                const childSteps = await this.client.listSteps(this.orgName, targetApp, step.childWorkflowId);
+                const childWf = await this.client.getWorkflow(this.orgName, targetApp, childId);
+                const childSteps = await this.client.listSteps(this.orgName, targetApp, childId);
                 return {
-                  stepId: step.stepId,
-                  childWorkflowId: step.childWorkflowId,
-                  workflow: childWf,
+                  stepId: step.stepId || String(step.function_id || step.functionId),
+                  childWorkflowId: childId,
+                  workflow: {
+                    ...childWf,
+                    workflowId: childWf.workflowId || childWf.workflow_id || childId,
+                    workflowName: childWf.workflowName || childWf.workflow_name || childWf.name || childId
+                  },
                   steps: childSteps || []
                 };
               } catch {
                 return {
-                  stepId: step.stepId,
-                  childWorkflowId: step.childWorkflowId,
-                  workflow: { workflowId: step.childWorkflowId, status: "UNKNOWN", workflowName: "Child Workflow" },
+                  stepId: step.stepId || String(step.function_id || step.functionId),
+                  childWorkflowId: childId,
+                  workflow: { workflowId: childId, status: "UNKNOWN", workflowName: "Child Workflow" },
                   steps: []
                 };
               }
@@ -1806,7 +1813,15 @@
           childWorkflows = childResults.filter((r) => r.status === "fulfilled").map((r) => r.value);
         }
         const familyData = {
-          root: { workflow: wf, steps },
+          root: {
+            workflow: {
+              ...wf,
+              workflowId,
+              workflowName,
+              status: wf.status
+            },
+            steps
+          },
           children: childWorkflows
         };
         const parentInfo = this.parentWorkflowMap.get(this.selectedWorkflowId);
@@ -1830,7 +1845,7 @@
           ` : ""}
           <span class="wf-breadcrumb-current" aria-current="page">
             <span class="status-dot ${statusDotClass}"></span>
-            <span class="wf-breadcrumb-name">${escapeHtml4(wf.workflowName || wf.workflowId)}</span>
+            <span class="wf-breadcrumb-name">${escapeHtml4(workflowName)}</span>
           </span>
         </nav>
       `;
@@ -1839,19 +1854,19 @@
 
         <div class="card">
           <div class="card-header">
-            <div style="display:flex; align-items:center; gap:12px;">
-              <span class="card-title">Workflow: <code>${escapeHtml4(wf.workflowId)}</code></span>
+            <div style="display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden;">
+              <span class="card-title" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0;">Workflow: <code>${escapeHtml4(workflowId)}</code></span>
               ${renderStatusPill(wf.status)}
             </div>
-            <div style="display:flex; gap:8px;">
+            <div style="display:flex; gap:8px; flex-shrink:0;">
               ${wf.status === "PENDING" || wf.status === "ENQUEUED" ? `
-                <button class="btn btn-sm btn-danger" data-cancel-wf='${escapeHtml4(wf.workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Cancel</button>
+                <button class="btn btn-sm btn-danger" data-cancel-wf='${escapeHtml4(workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Cancel</button>
               ` : ""}
               ${wf.status === "CANCELLED" ? `
-                <button class="btn btn-sm btn-primary" data-resume-wf='${escapeHtml4(wf.workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Resume</button>
+                <button class="btn btn-sm btn-primary" data-resume-wf='${escapeHtml4(workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Resume</button>
               ` : ""}
               ${wf.status === "ERROR" ? `
-                <button class="btn btn-sm btn-primary" data-restart-wf='${escapeHtml4(wf.workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Restart</button>
+                <button class="btn btn-sm btn-primary" data-restart-wf='${escapeHtml4(workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Restart</button>
               ` : ""}
             </div>
           </div>
@@ -1863,19 +1878,19 @@
               </div>
               <div>
                 <span class="stat-label">Workflow Name</span>
-                <div><strong>${escapeHtml4(wf.workflowName || "unnamed")}</strong></div>
+                <div style="word-break:break-all;"><strong>${escapeHtml4(workflowName)}</strong></div>
               </div>
               <div>
                 <span class="stat-label">Queue</span>
-                <div>${escapeHtml4(wf.queueName || "default")}</div>
+                <div>${escapeHtml4(wf.queueName || wf.queue_name || "default")}</div>
               </div>
               <div>
                 <span class="stat-label">Created At</span>
-                <div>${formatTimestamp(wf.createdAt)}</div>
+                <div>${formatTimestamp(wf.createdAt || wf.created_at)}</div>
               </div>
               <div>
                 <span class="stat-label">Duration</span>
-                <div>${calculateDuration(wf.createdAt, wf.completedAt)}</div>
+                <div>${calculateDuration(wf.createdAt || wf.created_at, wf.completedAt || wf.completed_at)}</div>
               </div>
             </div>
           </div>

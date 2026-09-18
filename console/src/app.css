@@ -375,24 +375,41 @@ table.data-table,
 /* Top Header */
 .top-header {
   height: var(--header-height);
+  min-height: var(--header-height);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
 }
 
-.header-left, .header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .header-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .selector-group {
@@ -1527,6 +1544,18 @@ table.data-table tr.clickable:focus-visible {
 
 .mobile-overlay {
   display: none;
+}
+
+@media (max-width: 900px) {
+  .header-right .selector-group label {
+    display: none;
+  }
+  .header-right .poll-indicator span:last-child {
+    display: none;
+  }
+  .header-right .hotkey-badge {
+    display: none;
+  }
 }
 
 @media (max-width: 768px) {

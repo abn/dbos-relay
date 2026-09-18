@@ -40,14 +40,41 @@
     ],
     keys: [
       { id: "key-1", name: "dev-local-key", prefix: "dbos_sec_dev", createdAt: "2026-09-18T18:00:00Z", permissions: ["*"], appNames: ["*"] }
+    ],
+    workflows: [
+      {
+        workflowId: "wf-ord-89214",
+        workflow_id: "wf-ord-89214",
+        workflowName: "ProcessCheckoutWorkflow",
+        workflow_name: "ProcessCheckoutWorkflow",
+        name: "ProcessCheckoutWorkflow",
+        status: "SUCCESS",
+        createdAt: "2026-09-18T18:00:00Z",
+        created_at: "2026-09-18T18:00:00Z",
+        updatedAt: "2026-09-18T18:00:01Z",
+        updated_at: "2026-09-18T18:00:01Z",
+        durationMs: 1242,
+        duration_ms: 1242,
+        authenticatedUser: "alice@example.com",
+        authenticated_user: "alice@example.com",
+        output: '{"orderId":"wf-ord-89214","status":"FULFILLED"}'
+      }
+    ],
+    steps: [
+      { functionId: 1, function_id: 1, stepId: "1", name: "validateCart", status: "SUCCESS", output: '{"valid":true,"items":2}', durationMs: 310, duration_ms: 310 },
+      { functionId: 2, function_id: 2, stepId: "2", name: "reserveInventory", status: "SUCCESS", output: '{"reserved":true,"sku":"DBOS-RELAY-KEY"}', durationMs: 245, duration_ms: 245 },
+      { functionId: 3, function_id: 3, stepId: "3", name: "authorizePaymentGateway", status: "SUCCESS", output: '{"authId":"wf-child-auth-01"}', childWorkflowId: "wf-child-auth-01", child_workflow_id: "wf-child-auth-01", durationMs: 412, duration_ms: 412 },
+      { functionId: 4, function_id: 4, stepId: "4", name: "scheduleShipping", status: "SUCCESS", output: '{"carrier":"FastTrack","tracking":"FT-99124"}', durationMs: 180, duration_ms: 180 },
+      { functionId: 5, function_id: 5, stepId: "5", name: "sendReceiptNotification", status: "SUCCESS", output: '{"delivered":true}', durationMs: 95, duration_ms: 95 }
     ]
   };
 
   // Helper to query parent PGlite instance if available
   async function queryDb(sql, params = []) {
-    if (window.parent && window.parent.pgliteDb) {
+    const db = (window.parent && window.parent.pgliteDb) || window.pgliteDb;
+    if (db) {
       try {
-        const res = await window.parent.pgliteDb.query(sql, params);
+        const res = await db.query(sql, params);
         return res.rows;
       } catch (err) {
         console.warn("[RelayBridge] SQL query error, falling back:", err);
@@ -149,12 +176,19 @@
         "FROM dbos.workflow_status ORDER BY created_at DESC LIMIT 50;"
       );
       const data = (rows || []).map(r => ({
+        workflowId: r.workflow_id,
         workflow_id: r.workflow_id,
+        workflowName: r.name,
         workflow_name: r.name,
+        name: r.name,
         status: r.status,
+        createdAt: r.created_at,
         created_at: r.created_at,
+        updatedAt: r.updated_at,
         updated_at: r.updated_at,
+        durationMs: r.duration_ms || 0,
         duration_ms: r.duration_ms || 0,
+        authenticatedUser: r.authenticated_user || "playground-user",
         authenticated_user: r.authenticated_user || "playground-user",
         output: r.output,
         error: r.error
@@ -172,13 +206,17 @@
         [workflowId]
       );
       const data = (rows || []).map(r => ({
+        functionId: r.function_id,
         function_id: r.function_id,
+        stepId: String(r.function_id),
         name: r.name,
         status: r.status,
         output: r.output,
         error: r.error,
         childWorkflowId: r.child_workflow_id,
-        durationMs: r.duration_ms || 0
+        child_workflow_id: r.child_workflow_id,
+        durationMs: r.duration_ms || 0,
+        duration_ms: r.duration_ms || 0
       }));
       return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
@@ -212,17 +250,28 @@
       if (rows && rows.length > 0) {
         const r = rows[0];
         const data = {
+          workflowId: r.workflow_id,
           workflow_id: r.workflow_id,
+          workflowName: r.name,
           workflow_name: r.name,
+          name: r.name,
           status: r.status,
+          createdAt: r.created_at,
           created_at: r.created_at,
+          updatedAt: r.updated_at,
           updated_at: r.updated_at,
+          durationMs: r.duration_ms || 0,
           duration_ms: r.duration_ms || 0,
+          authenticatedUser: r.authenticated_user || "playground-user",
           authenticated_user: r.authenticated_user || "playground-user",
           output: r.output,
           error: r.error
         };
         return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
+      }
+      const fallbackWf = (state.workflows || []).find(w => (w.workflowId || w.workflow_id) === workflowId);
+      if (fallbackWf) {
+        return new Response(JSON.stringify(fallbackWf), { status: 200, headers: jsonHeaders });
       }
       return new Response(JSON.stringify({ title: "Workflow not found", status: 404 }), { status: 404, headers: jsonHeaders });
     }
