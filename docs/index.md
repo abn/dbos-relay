@@ -86,4 +86,5 @@ it.
 
 ## Knowledge base
 
+* [Changelog](changelog.md) - software release notes managed by Release Please
 * [Documentation log](log.md) - how this wiki has evolved

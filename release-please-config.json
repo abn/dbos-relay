@@ -4,7 +4,8 @@
     ".": {
       "release-type": "go",
       "package-name": "relay",
-      "initial-version": "0.1.0"
+      "initial-version": "0.1.0",
+      "changelog-path": "docs/changelog.md"
     }
   }
 }

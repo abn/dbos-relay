@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 DOCS = Path("docs")
-RESERVED = {"index.md", "log.md"}
+RESERVED = {"index.md", "log.md", "changelog.md"}
 INLINE_LINK = re.compile(r"\[[^\]]*\]\(\s*<?([^)>\s]+)")
 REF_USE = re.compile(r"\[[^\]]*\]\[([^\]]+)\]")
 REF_DEF = re.compile(r"^\[([^\]]+)\]:\s*<?([^>\s]+)", re.M)
