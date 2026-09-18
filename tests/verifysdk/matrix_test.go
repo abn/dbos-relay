@@ -1253,7 +1253,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// Wait for Step 1 to be recorded
 				var step1Recorded bool
-				for i := 0; i < 15; i++ {
+				for i := 0; i < 30; i++ {
 					var count int
 					row := dbConn.QueryRow(context.Background(), `
 						SELECT COUNT(*) FROM test_step_executions
@@ -1375,9 +1375,15 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to scan step1Count: %v", err)
 				}
-				err = dbConn.QueryRow(context.Background(), `
-					SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
-				`, chaosWfID).Scan(&step2Count)
+				for i := 0; i < 30; i++ {
+					err = dbConn.QueryRow(context.Background(), `
+						SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
+					`, chaosWfID).Scan(&step2Count)
+					if err == nil && step2Count >= 1 {
+						break
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
 				if err != nil {
 					t.Fatalf("failed to scan step2Count: %v", err)
 				}

@@ -22,6 +22,7 @@ func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string
 
 	conn, err := pgx.Connect(timeoutCtx, dbURL)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "recordStepExecution pgx.Connect failed for %s: %v\n", stepName, err)
 		return err
 	}
 	defer func() { _ = conn.Close(timeoutCtx) }()
@@ -30,7 +31,11 @@ func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string
 		INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
 		VALUES ($1, $2, NOW());
 	`, workflowID, stepName)
-	return err
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "recordStepExecution INSERT failed for %s: %v\n", stepName, err)
+		return err
+	}
+	return nil
 }
 
 func helloWorkflow(ctx dbos.Context, name string) (string, error) {
@@ -46,7 +51,9 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 
 	// Step 1: record step 1 execution
 	_, err = dbos.RunAsStep(ctx, func(stepCtx context.Context) (string, error) {
-		_ = recordStepExecution(stepCtx, dbURL, wfID, "step1")
+		if err := recordStepExecution(stepCtx, dbURL, wfID, "step1"); err != nil {
+			return "", err
+		}
 		return "step1-completed", nil
 	})
 	if err != nil {
@@ -60,7 +67,9 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 
 	// Step 2: record step 2 execution
 	_, err = dbos.RunAsStep(ctx, func(stepCtx context.Context) (string, error) {
-		_ = recordStepExecution(stepCtx, dbURL, wfID, "step2")
+		if err := recordStepExecution(stepCtx, dbURL, wfID, "step2"); err != nil {
+			return "", err
+		}
 		return "step2-completed", nil
 	})
 	if err != nil {
@@ -130,8 +139,18 @@ func main() {
 		_ = http.ListenAndServe(":"+port, nil)
 	}()
 
-	if err := dbos.Launch(dbosCtx); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to launch DBOS: %v\n", err)
+	var launched bool
+	for attempt := 1; attempt <= 15; attempt++ {
+		if err := dbos.Launch(dbosCtx); err == nil {
+			launched = true
+			break
+		} else {
+			fmt.Fprintf(os.Stderr, "attempt %d/15 to launch DBOS failed: %v. Retrying in 1s...\n", attempt, err)
+			time.Sleep(1 * time.Second)
+		}
+	}
+	if !launched {
+		fmt.Fprintf(os.Stderr, "failed to launch DBOS after 15 attempts\n")
 		os.Exit(1)
 	}
 

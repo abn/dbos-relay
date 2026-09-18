@@ -95,10 +95,23 @@ async function main(): Promise<void> {
 
   startHttpServer();
 
-  await DBOS.launch({
-    conductorKey: apiKey,
-    conductorURL: relayURL,
-  });
+  let launched = false;
+  for (let attempt = 1; attempt <= 15; attempt++) {
+    try {
+      await DBOS.launch({
+        conductorKey: apiKey,
+        conductorURL: relayURL,
+      });
+      launched = true;
+      break;
+    } catch (err) {
+      console.warn(`Attempt ${attempt}/15 to launch DBOS failed: ${err}. Retrying in 1s...`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+  if (!launched) {
+    throw new Error("Failed to launch DBOS after 15 attempts");
+  }
 
   console.log(`DBOS TypeScript sample application launched successfully for app ${appName}`);
 }

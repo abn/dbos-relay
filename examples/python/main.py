@@ -40,8 +40,9 @@ def record_step_execution(workflow_id: str, step_name: str) -> None:
                     VALUES (%s, %s, NOW());
                 """, (workflow_id, step_name))
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"record_step_execution failed for {step_name} ({workflow_id}): {exc}", file=sys.stderr, flush=True)
+        raise
 
 # Configure DBOS SDK
 db_sa_url = db_url
@@ -128,7 +129,18 @@ if __name__ == "__main__":
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
 
-    DBOS.launch()
+    launched = False
+    for attempt in range(1, 16):
+        try:
+            DBOS.launch()
+            launched = True
+            break
+        except Exception as exc:
+            print(f"Attempt {attempt}/15 to launch DBOS failed: {exc}. Retrying in 1s...", file=sys.stderr, flush=True)
+            time.sleep(1)
+    if not launched:
+        sys.exit("Failed to launch DBOS after 15 attempts")
+
     print(f"DBOS Python sample application launched successfully for app {app_name}", flush=True)
 
     while True:
