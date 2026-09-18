@@ -1,17 +1,11 @@
-# DBOS Relay Python Sample
+# Relay Python Sample
 
-This is a minimal DBOS Transact Python workflow application that connects to a DBOS Relay instance.
+This is a minimal DBOS Transact Python workflow application that connects to a Relay instance.
+Dependencies are declared directly inside `main.py` via inline script metadata (PEP 723).
 
 ## Running the Sample
 
-1. Create a virtual environment and install the requirements:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. Export the required environment variables:
+1. Export the required environment variables:
    ```bash
    export DBOS_APP_NAME="sample-app"
    export DBOS_SYSTEM_DATABASE_URL="postgres://relay:relay@localhost:5432/relay?sslmode=disable"
@@ -19,8 +13,14 @@ This is a minimal DBOS Transact Python workflow application that connects to a D
    export RELAY_API_KEY="your-api-key"
    ```
 
-3. Launch the application:
+2. Launch the application with `uv`:
    ```bash
+   uv run main.py
+   ```
+
+   Alternatively, with standard `pip`:
+   ```bash
+   pip install "dbos>=2.31.0" "psycopg-binary>=3.3.0"
    python main.py
    ```
 

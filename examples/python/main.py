@@ -1,3 +1,11 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "dbos>=2.31.0",
+#     "psycopg-binary>=3.3.0",
+# ]
+# ///
+
 import json
 import os
 import sys

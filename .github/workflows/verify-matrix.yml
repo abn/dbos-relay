@@ -52,9 +52,8 @@ jobs:
         if: matrix.language == 'python'
         run: |
           cd examples/python
-          python3 -m pip install --upgrade pip
-          pip install -r requirements.txt
-          python3 -m py_compile main.py
+          python3 -m pip install --upgrade pip uv
+          uv run python3 -m py_compile main.py
 
       - name: Set up Node.js
         if: matrix.language == 'typescript'

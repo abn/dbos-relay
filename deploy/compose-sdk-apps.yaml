@@ -103,7 +103,7 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-    command: ["sh", "-c", "pip install -q -r requirements.txt && python main.py"]
+    command: ["sh", "-c", "pip install -q uv && uv run main.py"]
     restart: "no"
 
   app-python-secondary:
@@ -125,7 +125,7 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-    command: ["sh", "-c", "pip install -q -r requirements.txt && python main.py"]
+    command: ["sh", "-c", "pip install -q uv && uv run main.py"]
     restart: "no"
 
   app-typescript-primary:
