@@ -81,7 +81,7 @@ jobs:
 
       - name: Build container image with Buildah
         id: build-image
-        uses: redhat-actions/buildah-build@v2
+        uses: redhat-actions/buildah-build@v3
         with:
           image: relay
           tags: latest ${{ needs.release-please.outputs.tag_name }} ${{ needs.release-please.outputs.version }}
