@@ -45,6 +45,8 @@ func (m *mockStoreQueries) DisconnectExecutor(ctx context.Context, arg gen.Disco
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.executors[arg.ExecutorID]
+	e.ExecutorID = arg.ExecutorID
+	e.ApplicationID = arg.ApplicationID
 	e.Status = "disconnected"
 	m.executors[arg.ExecutorID] = e
 	return e, nil
@@ -55,6 +57,8 @@ func (m *mockStoreQueries) SetExecutorDead(ctx context.Context, arg gen.SetExecu
 	defer m.mu.Unlock()
 	m.deadCalls = append(m.deadCalls, arg.ExecutorID)
 	e := m.executors[arg.ExecutorID]
+	e.ExecutorID = arg.ExecutorID
+	e.ApplicationID = arg.ApplicationID
 	e.Status = "dead"
 	m.executors[arg.ExecutorID] = e
 	return e, nil

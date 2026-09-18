@@ -55,10 +55,15 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 	u.RawQuery = q.Encode()
 	dbURL := u.String()
 
+	startupTimeout := 30 * time.Second
+	if timeout > startupTimeout {
+		startupTimeout = timeout
+	}
+
 	client, err := dbos.NewClient(ctx, dbos.ClientConfig{
 		DatabaseURL:            dbURL,
 		AppName:                appName,
-		SystemDBStartupTimeout: timeout,
+		SystemDBStartupTimeout: startupTimeout,
 	})
 	if err != nil {
 		cancel()

@@ -426,6 +426,9 @@ func (m *Manager) SweepDeadExecutors(ctx context.Context, appID pgtype.UUID) {
 	}
 
 	for _, exec := range deadExecs {
+		if exec.ExecutorID == "" {
+			continue
+		}
 		if err := m.recovery.RecoverDeadExecutor(sweepCtx, appID, exec.ExecutorID, exec.ApplicationVersion); err != nil {
 			m.logger.Debug("sweep recovery dispatch not completed",
 				"executorID", exec.ExecutorID,
