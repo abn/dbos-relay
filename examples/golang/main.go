@@ -6,32 +6,55 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dbos-inc/dbos-transact-golang/dbos"
 )
+
+var (
+	stepPool     *pgxpool.Pool
+	stepPoolOnce sync.Once
+)
+
+func getStepPool(ctx context.Context, dbURL string) (*pgxpool.Pool, error) {
+	var initErr error
+	stepPoolOnce.Do(func() {
+		cfg, err := pgxpool.ParseConfig(dbURL)
+		if err != nil {
+			initErr = err
+			return
+		}
+		cfg.MaxConns = 1
+		cfg.MinConns = 1
+		cfg.MaxConnLifetime = 30 * time.Minute
+		p, err := pgxpool.NewWithConfig(ctx, cfg)
+		if err != nil {
+			initErr = err
+			return
+		}
+		stepPool = p
+	})
+	return stepPool, initErr
+}
 
 func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string) error {
 	if dbURL == "" {
 		return nil
 	}
+	pool, err := getStepPool(ctx, dbURL)
+	if err != nil {
+		return err
+	}
 	var lastErr error
 	for attempt := 1; attempt <= 10; attempt++ {
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		conn, err := pgx.Connect(timeoutCtx, dbURL)
-		if err != nil {
-			cancel()
-			lastErr = err
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		_, err = conn.Exec(timeoutCtx, `
+		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err := pool.Exec(timeoutCtx, `
 			INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
 			VALUES ($1, $2, NOW());
 		`, workflowID, stepName)
-		_ = conn.Close(context.Background())
 		cancel()
 		if err == nil {
 			return nil

@@ -1,6 +1,18 @@
 services:
   postgres:
     image: postgres:17-alpine
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=120"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "tcp_keepalives_idle=10"
+      - "-c"
+      - "tcp_keepalives_interval=2"
+      - "-c"
+      - "tcp_keepalives_count=3"
     environment:
       POSTGRES_USER: relay
       POSTGRES_DB: relay
@@ -51,7 +63,7 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: golang-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_golang?sslmode=disable
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_golang?sslmode=disable&pool_max_conns=2
       ROLE: primary
       HTTP_PORT: 8080
     ports:
@@ -75,7 +87,7 @@ services:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
       DBOS_APP_NAME: golang-sample-app
-      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_golang?sslmode=disable
+      DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_golang?sslmode=disable&pool_max_conns=2
       ROLE: secondary
       HTTP_PORT: 8086
     ports:

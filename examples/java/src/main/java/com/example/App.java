@@ -27,6 +27,7 @@ public class App {
     public static class OrderServiceImpl implements OrderService {
         private final String dbUrl;
         private OrderService proxy;
+        private Connection stepConn;
 
         public OrderServiceImpl(String dbUrl) {
             this.dbUrl = dbUrl;
@@ -36,6 +37,13 @@ public class App {
             this.proxy = proxy;
         }
 
+        private synchronized Connection getStepConn() throws Exception {
+            if (stepConn == null || stepConn.isClosed()) {
+                stepConn = DriverManager.getConnection(dbUrl, "relay", "relay");
+            }
+            return stepConn;
+        }
+
         private void recordStep(String stepName) {
             String wfId = DBOS.workflowId();
             if (wfId == null) {
@@ -43,7 +51,8 @@ public class App {
             }
             Exception lastErr = null;
             for (int attempt = 1; attempt <= 10; attempt++) {
-                try (Connection conn = DriverManager.getConnection(dbUrl, "relay", "relay")) {
+                try {
+                    Connection conn = getStepConn();
                     try (PreparedStatement stmt = conn.prepareStatement(
                             "INSERT INTO test_step_executions (workflow_id, step_name, executed_at) VALUES (?, ?, NOW())")) {
                         stmt.setString(1, wfId);
@@ -53,6 +62,14 @@ public class App {
                     return;
                 } catch (Exception e) {
                     lastErr = e;
+                    synchronized (this) {
+                        if (stepConn != null) {
+                            try {
+                                stepConn.close();
+                            } catch (Exception ignored) {}
+                        }
+                        stepConn = null;
+                    }
                     try {
                         Thread.sleep(500);
                     } catch (InterruptedException ignored) {}
@@ -82,11 +99,8 @@ public class App {
             String role = System.getenv("ROLE");
             if ("primary".equalsIgnoreCase(role)) {
                 try {
-                    // Sleep for 30 minutes to stay in-flight during chaos kill and offline mutation tests
                     Thread.sleep(1800000);
-                } catch (InterruptedException ignored) {
-                    Thread.currentThread().interrupt();
-                }
+                } catch (InterruptedException ignored) {}
             }
             proxy.step2(orderId);
             return "order-" + orderId + "-completed";

@@ -23,21 +23,37 @@ db_url = os.environ.get("DBOS_SYSTEM_DATABASE_URL", "postgres://relay:relay@post
 role = os.environ.get("ROLE", "")
 chaos_sleep_secs = int(os.environ.get("CHAOS_SLEEP_SECS", "0"))
 
+_step_conn = None
+_step_conn_lock = threading.Lock()
+
+def get_step_conn(clean_url: str):
+    global _step_conn
+    with _step_conn_lock:
+        if _step_conn is None or _step_conn.closed:
+            _step_conn = psycopg.connect(clean_url, connect_timeout=5, autocommit=True)
+        return _step_conn
+
 def record_step_execution(workflow_id: str, step_name: str) -> None:
     clean_url = db_url.replace("+psycopg", "")
     last_exc = None
     for attempt in range(1, 11):
         try:
-            with psycopg.connect(clean_url) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
-                        VALUES (%s, %s, NOW());
-                    """, (workflow_id, step_name))
-                conn.commit()
+            conn = get_step_conn(clean_url)
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+                    VALUES (%s, %s, NOW());
+                """, (workflow_id, step_name))
             return
         except Exception as exc:
             last_exc = exc
+            with _step_conn_lock:
+                if _step_conn is not None:
+                    try:
+                        _step_conn.close()
+                    except Exception:
+                        pass
+                _step_conn = None
             time.sleep(0.5)
     print(f"record_step_execution failed for {step_name} ({workflow_id}): {last_exc}", file=sys.stderr, flush=True)
 
@@ -47,6 +63,7 @@ if db_sa_url.startswith("postgres://"):
     db_sa_url = db_sa_url.replace("postgres://", "postgresql+psycopg://", 1)
 elif db_sa_url.startswith("postgresql://") and not db_sa_url.startswith("postgresql+"):
     db_sa_url = db_sa_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
 
 cfg: DBOSConfig = {
     "name": app_name,

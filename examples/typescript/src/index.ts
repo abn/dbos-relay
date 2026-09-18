@@ -1,5 +1,5 @@
 import { DBOS } from "@dbos-inc/dbos-sdk";
-import { Client } from "pg";
+import { Pool } from "pg";
 import * as http from "node:http";
 
 const dbURL = process.env.DBOS_SYSTEM_DATABASE_URL || "postgres://relay:relay@postgres:5432/relay?sslmode=disable";
@@ -9,20 +9,20 @@ const apiKey = process.env.RELAY_API_KEY || "";
 const role = process.env.ROLE || "";
 const httpPort = parseInt(process.env.HTTP_PORT || "8082", 10);
 
+const stepPool = new Pool({
+  connectionString: dbURL,
+  max: 1,
+  connectionTimeoutMillis: 5000,
+});
+
 async function recordStepExecution(workflowID: string, stepName: string): Promise<void> {
   let lastErr: Error | unknown;
   for (let attempt = 1; attempt <= 10; attempt++) {
-    const client = new Client({ connectionString: dbURL });
     try {
-      await client.connect();
-      try {
-        await client.query(`
-          INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
-          VALUES ($1, $2, NOW());
-        `, [workflowID, stepName]);
-      } finally {
-        await client.end();
-      }
+      await stepPool.query(`
+        INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
+        VALUES ($1, $2, NOW());
+      `, [workflowID, stepName]);
       return;
     } catch (err) {
       lastErr = err;

@@ -27,7 +27,19 @@ type postgresBackend struct {
 var _ backend = (*postgresBackend)(nil)
 
 func openPostgres(ctx context.Context, url string) (*postgresBackend, error) {
-	pool, err := pgxpool.New(ctx, url)
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse database url: %w", err)
+	}
+
+	if cfg.MaxConns <= 0 || cfg.MaxConns > 10 {
+		cfg.MaxConns = 10
+	}
+	if cfg.MinConns < 1 {
+		cfg.MinConns = 1
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
