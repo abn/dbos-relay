@@ -27,6 +27,7 @@ func newAPIKeyCreateCommand() *cobra.Command {
 		orgName     string
 		keyName     string
 		databaseURL string
+		embedded    bool
 	)
 
 	cmd := &cobra.Command{
@@ -37,8 +38,11 @@ func newAPIKeyCreateCommand() *cobra.Command {
 			if url == "" {
 				url = os.Getenv("RELAY_DATABASE_URL")
 			}
+			if url == "" && (embedded || os.Getenv("RELAY_EMBEDDED") == "true" || os.Getenv("RELAY_EMBEDDED") == "1") {
+				url = "sqlite://./data/relay.db"
+			}
 			if url == "" {
-				return errors.New("database URL is required (set --database-url or RELAY_DATABASE_URL)")
+				return errors.New("database URL is required (set --database-url, --embedded, or RELAY_DATABASE_URL)")
 			}
 
 			s, err := store.Open(cmd.Context(), url)
@@ -84,7 +88,8 @@ func newAPIKeyCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&orgName, "org", "", "Organisation name (required)")
 	cmd.Flags().StringVar(&keyName, "name", "", "API key name (required)")
-	cmd.Flags().StringVar(&databaseURL, "database-url", "", "PostgreSQL database URL (defaults to RELAY_DATABASE_URL env)")
+	cmd.Flags().StringVar(&databaseURL, "database-url", "", "Database URL (defaults to RELAY_DATABASE_URL env)")
+	cmd.Flags().BoolVarP(&embedded, "embedded", "e", false, "Use embedded SQLite database (defaults to ./data/relay.db)")
 
 	_ = cmd.MarkFlagRequired("org")
 	_ = cmd.MarkFlagRequired("name")

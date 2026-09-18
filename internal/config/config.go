@@ -11,9 +11,12 @@ import (
 
 // Config is the fully validated server configuration.
 type Config struct {
-	// DatabaseURL points at Relay's own Postgres database. It is never an
-	// application's system database.
+	// DatabaseURL points at Relay's database (PostgreSQL or SQLite). It is never
+	// an application's system database.
 	DatabaseURL string
+
+	// Embedded indicates that Relay is running with an embedded SQLite engine.
+	Embedded bool
 
 	ListenAddr       string
 	AdvertiseAddress string
@@ -41,6 +44,20 @@ func (c *Config) AuthEnabled() bool {
 	return c.OIDCIssuer != ""
 }
 
+// IsEmbedded reports whether Relay is configured to run with an embedded SQLite engine.
+func (c *Config) IsEmbedded() bool {
+	if c.Embedded {
+		return true
+	}
+	url := c.DatabaseURL
+	return strings.HasPrefix(url, "sqlite://") ||
+		strings.HasPrefix(url, "sqlite:") ||
+		url == ":memory:" ||
+		strings.HasSuffix(url, ".db") ||
+		strings.HasSuffix(url, ".sqlite") ||
+		strings.HasSuffix(url, ".sqlite3")
+}
+
 const (
 	defaultListenAddr       = ":8090"
 	defaultExecutorDeadline = 30 * time.Second
@@ -49,8 +66,16 @@ const (
 // Load reads configuration through getenv, applies defaults, and validates
 // the result. It reports every problem it finds, not just the first.
 func Load(getenv func(string) string) (*Config, error) {
+	embeddedVal := strings.ToLower(getenv("RELAY_EMBEDDED"))
+	isEmbedded := embeddedVal == "true" || embeddedVal == "1"
+	dbURL := getenv("RELAY_DATABASE_URL")
+	if dbURL == "" && isEmbedded {
+		dbURL = "sqlite://./data/relay.db"
+	}
+
 	cfg := &Config{
-		DatabaseURL:      getenv("RELAY_DATABASE_URL"),
+		DatabaseURL:      dbURL,
+		Embedded:         isEmbedded,
 		ListenAddr:       or(getenv("RELAY_LISTEN_ADDR"), defaultListenAddr),
 		// Provenance: https://docs.dbos.dev/production/hosting-conductor (confirmed 2026-09-08)
 		AdvertiseAddress: or(or(getenv("RELAY_ADVERTISE_ADDRESS"), getenv("DBOS__ADVERTISE_ADDRESS")), "127.0.0.1"),

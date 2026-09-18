@@ -102,7 +102,7 @@ func TestStore_InTx(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("commit", func(t *testing.T) {
-		err := s.InTx(ctx, func(q *gen.Queries) error {
+		err := s.InTx(ctx, func(q gen.Querier) error {
 			_, createErr := q.CreateOrganisation(ctx, "tx_org_commit")
 			return createErr
 		})
@@ -121,7 +121,7 @@ func TestStore_InTx(t *testing.T) {
 
 	t.Run("rollback", func(t *testing.T) {
 		expectedErr := errors.New("simulated transaction failure")
-		err := s.InTx(ctx, func(q *gen.Queries) error {
+		err := s.InTx(ctx, func(q gen.Querier) error {
 			_, createErr := q.CreateOrganisation(ctx, "tx_org_rollback")
 			if createErr != nil {
 				return createErr

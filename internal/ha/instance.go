@@ -41,6 +41,7 @@ type ManagerOptions struct {
 	StaleThreshold    time.Duration
 	Logger            *slog.Logger
 	Liveness          LivenessAdopter
+	Standalone        bool
 }
 
 // Manager manages the registration, heartbeat, and executor adoption for a Relay node.
@@ -132,6 +133,15 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// Reconcile pre-existing expired executor leases
 	m.reconcileStartup(runCtx)
+
+	if m.opts.Standalone {
+		m.logger.Info("running in standalone mode; multi-instance HA loops suppressed",
+			"id", m.id,
+			"advertise_address", m.addr,
+			"port", m.port,
+		)
+		return nil
+	}
 
 	m.wg.Add(2)
 	safego.Go(m.logger, "ha-heartbeat-loop", func() {

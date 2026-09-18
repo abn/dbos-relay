@@ -12,14 +12,18 @@ import (
 
 func newMigrateCommand() *cobra.Command {
 	var databaseURL string
+	var embedded bool
 
 	resolveURL := func() (string, error) {
 		url := databaseURL
 		if url == "" {
 			url = os.Getenv("RELAY_DATABASE_URL")
 		}
+		if url == "" && (embedded || os.Getenv("RELAY_EMBEDDED") == "true" || os.Getenv("RELAY_EMBEDDED") == "1") {
+			url = "sqlite://./data/relay.db"
+		}
 		if url == "" {
-			return "", errors.New("database URL is required (set --database-url or RELAY_DATABASE_URL)")
+			return "", errors.New("database URL is required (set --database-url, --embedded, or RELAY_DATABASE_URL)")
 		}
 		return url, nil
 	}
@@ -48,7 +52,8 @@ func newMigrateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVar(&databaseURL, "database-url", "", "PostgreSQL database URL (defaults to RELAY_DATABASE_URL env)")
+	cmd.PersistentFlags().StringVar(&databaseURL, "database-url", "", "Database URL (defaults to RELAY_DATABASE_URL env)")
+	cmd.PersistentFlags().BoolVarP(&embedded, "embedded", "e", false, "Use embedded SQLite database (defaults to ./data/relay.db)")
 
 	statusCmd := &cobra.Command{
 		Use:   "status",

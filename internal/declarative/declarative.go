@@ -400,7 +400,7 @@ func Apply(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 	var items []DiffItem
 	generatedKeys := make(map[string]string)
 
-	err := s.InTx(ctx, func(tx *gen.Queries) error {
+	err := s.InTx(ctx, func(tx gen.Querier) error {
 		orgName := cfg.Organisation
 		org, err := tx.GetOrganisationByName(ctx, orgName)
 		if err != nil {

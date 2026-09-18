@@ -4,17 +4,40 @@ type: HowTo
 
 # Quickstart
 
-This guide walks through starting a local PostgreSQL database, migrating
-the Relay schema, minting an API key, running the Relay server, and querying
-its unauthenticated endpoints.
+This guide walks through running Relay in either zero-dependency embedded mode (using pure-Go SQLite) or clustered production mode (backed by PostgreSQL), minting an API key, running the server, and querying its endpoints.
 
 ## Prerequisites
 
 - Go 1.26.7 or later (as required by `go.mod`)
-- Docker or Podman (for running the local database container)
 - `curl`
+- Optional: Docker or Podman (only if running the local PostgreSQL container)
 
-## 1. Start the database
+## Option A: Embedded mode (Zero external dependencies)
+
+For local evaluation, CI runners, edge nodes, or lightweight single-process setups, Relay runs out of the box with embedded SQLite. No database container or installation is required:
+
+### 1. Start Relay in embedded mode
+
+```bash
+make build
+./bin/relay serve --embedded
+```
+
+Relay automatically initializes `./data/relay.db`, applies embedded migrations, and starts the server on `:8090`.
+
+### 2. Mint an API key for embedded Relay
+
+In a separate terminal, create an API key pointing to the embedded database:
+
+```bash
+./bin/relay apikey create --embedded --org local --name test-key
+```
+
+## Option B: Clustered mode (Flagship PostgreSQL)
+
+For high-availability production clusters, multi-node deployments, or data sovereignty requirements, Relay uses PostgreSQL as its flagship storage engine.
+
+### 1. Start PostgreSQL
 
 Build the Relay binary and start the local PostgreSQL container:
 
@@ -24,7 +47,7 @@ make db/up
 export RELAY_DATABASE_URL="$(make -s db/url)"
 ```
 
-## 2. Apply migrations
+### 2. Apply migrations
 
 Migrate Relay's control plane schema:
 
@@ -34,7 +57,7 @@ Migrate Relay's control plane schema:
 
 Relay's `serve` command also applies migrations automatically at startup, making explicit migration optional for single-instance setups. Older server binaries refuse to start against a schema newer than their embedded migration version (`no migration found for version`).
 
-## 3. Mint an API key
+### 3. Mint an API key
 
 Create an initial API key:
 
@@ -47,7 +70,7 @@ securely; Relay only persists its SHA-256 hash. In default self-hosted mode
 without an external identity provider, Relay resolves requests to the implicit
 `local` organization.
 
-## 4. Run the server
+### 4. Run the server
 
 Start the Relay server:
 

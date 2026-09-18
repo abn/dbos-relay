@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,6 +39,8 @@ import (
 func newServeCommand() *cobra.Command {
 	var skipMigrations bool
 	var noAuth bool
+	var embedded bool
+	var databaseURL string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -47,6 +50,13 @@ func newServeCommand() *cobra.Command {
 				if envVal := os.Getenv("RELAY_SKIP_MIGRATIONS"); envVal == "true" || envVal == "1" {
 					skipMigrations = true
 				}
+			}
+
+			if embedded {
+				_ = os.Setenv("RELAY_EMBEDDED", "true")
+			}
+			if databaseURL != "" {
+				_ = os.Setenv("RELAY_DATABASE_URL", databaseURL)
 			}
 
 			cfg, err := config.Load(os.Getenv)
@@ -61,6 +71,26 @@ func newServeCommand() *cobra.Command {
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+
+			if cfg.IsEmbedded() {
+				dbPath := cfg.DatabaseURL
+				if strings.HasPrefix(dbPath, "sqlite://") {
+					dbPath = strings.TrimPrefix(dbPath, "sqlite://")
+				} else if strings.HasPrefix(dbPath, "sqlite:") {
+					dbPath = strings.TrimPrefix(dbPath, "sqlite:")
+				}
+				if idx := strings.Index(dbPath, "?"); idx != -1 {
+					dbPath = dbPath[:idx]
+				}
+				if dbPath != ":memory:" && !strings.Contains(dbPath, "mode=memory") {
+					dir := filepath.Dir(dbPath)
+					if dir != "." && dir != "" {
+						if err := os.MkdirAll(dir, 0755); err != nil {
+							return fmt.Errorf("creating embedded database directory %q: %w", dir, err)
+						}
+					}
+				}
+			}
 
 			s, err := store.Open(ctx, cfg.DatabaseURL)
 			if err != nil {
@@ -105,6 +135,7 @@ func newServeCommand() *cobra.Command {
 				Port:             port,
 				Logger:           logger,
 				Liveness:         livenessMgr,
+				Standalone:       cfg.IsEmbedded(),
 			})
 			if err := haMgr.Start(ctx); err != nil {
 				return fmt.Errorf("starting ha manager: %w", err)
@@ -206,6 +237,8 @@ func newServeCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&skipMigrations, "skip-migrations", false, "Skip automatic database schema migrations on startup (defaults to RELAY_SKIP_MIGRATIONS env)")
 	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "Disable authentication (overrides RELAY_AUTH_ENABLED)")
+	cmd.Flags().BoolVarP(&embedded, "embedded", "e", false, "Run in embedded SQLite mode (defaults to ./data/relay.db)")
+	cmd.Flags().StringVar(&databaseURL, "database-url", "", "Database connection URL (PostgreSQL or SQLite)")
 	return cmd
 }
 

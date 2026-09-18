@@ -67,12 +67,16 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 	var hs HubStore
 	if s, ok := store.(HubStore); ok {
 		hs = s
+	} else if sp, ok := store.(interface{ Queries() gen.Querier }); ok && sp != nil {
+		hs = sp.Queries()
 	} else if sp, ok := store.(interface{ Queries() *gen.Queries }); ok && sp != nil {
 		hs = sp.Queries()
 	}
 	var ls LeaseStore
 	if s, ok := store.(LeaseStore); ok {
 		ls = s
+	} else if sp, ok := store.(interface{ Queries() gen.Querier }); ok && sp != nil {
+		ls = sp.Queries()
 	} else if sp, ok := store.(interface{ Queries() *gen.Queries }); ok && sp != nil {
 		ls = sp.Queries()
 	}

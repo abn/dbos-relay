@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS executors;
+DROP TABLE IF EXISTS instances;
+DROP TABLE IF EXISTS applications;
+DROP TABLE IF EXISTS organisations;

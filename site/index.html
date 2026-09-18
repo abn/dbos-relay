@@ -597,7 +597,7 @@ footer {
     </h1>
     <p class="lede">
       Relay is a self-hostable control plane for DBOS Transact applications.
-      Deploy a single binary backed by PostgreSQL, connect unmodified SDK apps in seconds,
+      Deploy a single binary with zero-dependency embedded storage or clustered PostgreSQL, connect unmodified SDK apps in seconds,
       and run distributed workflows with automatic retries, step memoization, and recovery on your own infrastructure.
     </p>
     <div class="cta-group">
@@ -730,10 +730,10 @@ footer {
           <span class="card-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
           </span>
-          <h3 class="card-title">Single-Binary Deployment</h3>
+          <h3 class="card-title">Dual-Engine Storage</h3>
         </div>
         <p class="card-text">
-          Runs as one statically compiled binary or minimal container. Stores state in your existing PostgreSQL instance, with no Kafka, Redis, or multi-service daemon sprawl.
+          Runs as one statically compiled binary or minimal container. Supports pure-Go embedded SQLite for instant zero-dependency local evaluation, and PostgreSQL for multi-node high-availability production clusters.
         </p>
       </div>
 
@@ -777,8 +777,8 @@ footer {
             <td><span class="no">Closed cloud SaaS only</span></td>
           </tr>
           <tr>
-            <td class="feature-cell">Data Sovereignty</td>
-            <td><span class="yes">✓ Your PostgreSQL (On-premises, VPC, or air-gapped)</span></td>
+            <td class="feature-cell">Storage Options</td>
+            <td><span class="yes">✓ Embedded SQLite (instant eval) or PostgreSQL (HA clusters, air-gapped)</span></td>
             <td><span class="no">Proprietary multi-tenant cloud storage</span></td>
           </tr>
           <tr>
@@ -828,24 +828,37 @@ footer {
 
     <div class="quickstart-section">
       <div class="code-tabs">
-        <button class="code-tab-btn active" onclick="switchCode('docker', this)">Docker Run</button>
-        <button class="code-tab-btn" onclick="switchCode('binary', this)">Single Binary</button>
+        <button class="code-tab-btn active" onclick="switchCode('embedded', this)">Embedded (Zero Setup)</button>
+        <button class="code-tab-btn" onclick="switchCode('docker', this)">Docker & Postgres</button>
+        <button class="code-tab-btn" onclick="switchCode('binary', this)">Postgres Binary</button>
         <button class="code-tab-btn" onclick="switchCode('python', this)">Python App Config</button>
         <button class="code-tab-btn" onclick="switchCode('typescript', this)">TypeScript App Config</button>
       </div>
 
       <div class="code-panes">
-        <div id="code-docker" class="code-pane active">
+        <div id="code-embedded" class="code-pane active">
+          <pre><code><span class="comment"># 1. Download and run the standalone binary with embedded SQLite</span>
+curl -fsSL https://github.com/abn/relay/releases/latest/download/relay-linux-amd64 -o relay
+chmod +x relay
+
+<span class="comment"># 2. Start Relay with pure-Go embedded storage (no PostgreSQL required)</span>
+./relay serve --embedded
+
+<span class="comment"># 3. Open the embedded web dashboard</span>
+open http://localhost:8090</code></pre>
+        </div>
+
+        <div id="code-docker" class="code-pane">
           <pre><code><span class="comment"># 1. Start Relay with Docker pointing to your PostgreSQL instance</span>
 docker run -d \
   --name relay \
-  -p 8080:8080 \
+  -p 8090:8090 \
   -e RELAY_DATABASE_URL=<span class="string">"postgres://relay:password@postgres:5432/relay?sslmode=disable"</span> \
-  -e RELAY_LISTEN_ADDR=<span class="string">"0.0.0.0:8080"</span> \
+  -e RELAY_LISTEN_ADDR=<span class="string">"0.0.0.0:8090"</span> \
   ghcr.io/abn/relay:latest serve
 
 <span class="comment"># 2. Open the embedded web dashboard</span>
-open http://localhost:8080</code></pre>
+open http://localhost:8090</code></pre>
         </div>
 
         <div id="code-binary" class="code-pane">
@@ -853,7 +866,7 @@ open http://localhost:8080</code></pre>
 curl -fsSL https://github.com/abn/relay/releases/latest/download/relay-linux-amd64 -o relay
 chmod +x relay
 
-<span class="comment"># 2. Run migrations and start the control plane</span>
+<span class="comment"># 2. Run migrations and start the control plane backed by PostgreSQL</span>
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay migrate up
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay serve</code></pre>
         </div>

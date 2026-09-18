@@ -92,3 +92,35 @@ migration failed: Dirty database version <N>. Fix and force version.
 
 Operators must manually inspect the database state, resolve the underlying schema error, and
 reset the dirty flag using `./bin/relay migrate force <version>` before restarting Relay.
+
+## Storage engine architecture
+
+Relay features a dual-engine storage architecture defined in ADR 0011, supporting both enterprise clustered deployments and zero-dependency embedded workflows.
+
+### Flagship PostgreSQL
+
+PostgreSQL remains Relay's flagship, tier-1 storage engine for production deployments:
+
+- **Multi-node HA**: Full clustering with coordinator instance heartbeats, active lease tracking, and automatic orphan executor adoption.
+- **Concurrency control**: Native row-level locking (`FOR UPDATE SKIP LOCKED`) and transactional guarantees.
+- **Production scale**: Tested against PostgreSQL 15, 16, and 17.
+
+To use PostgreSQL, supply a `postgres://` or `postgresql://` connection URL via `--database-url` or the `RELAY_DATABASE_URL` environment variable.
+
+### Embedded SQLite
+
+For single-process deployments, edge nodes, local development, and CI pipelines, Relay provides an embedded pure-Go SQLite engine:
+
+- **Zero CGO**: Statically compiled with `modernc.org/sqlite`. The binary requires no external dynamic C libraries or GCC toolchains.
+- **Zero configuration**: Run `relay serve --embedded` to initialize and migrate `./data/relay.db` automatically.
+- **Standalone mode**: In embedded mode, the HA manager operates in standalone mode. Multi-instance heartbeat loops and lease contention cycles are suppressed, while orphan executors are reconciled immediately at startup.
+- **WAL mode**: Embedded databases are opened with Write-Ahead Logging (`PRAGMA journal_mode = WAL`) and busy timeouts for concurrent readers.
+- **Protocol conformance**: Embedded SQLite implements the complete `gen.Querier` contract and passes all eight DBOS Conductor conformance batteries.
+
+### Scale-out path: Turso Database
+
+For operators who start with SQLite and later require distributed replication or multi-writer concurrency without migrating schemas to PostgreSQL:
+
+- **Turso Database**: Operates on SQLite-compatible storage with concurrent multi-writer MVCC architecture.
+- **Replication**: Turso provides distributed multi-region edge replication.
+- **Conformance**: Relay's SQLite migrations and queries avoid engine-specific extensions, keeping the dialect compatible with standard SQLite and Turso deployments.
