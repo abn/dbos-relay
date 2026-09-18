@@ -16,6 +16,19 @@ class DashboardApp {
     this.selectedWorkflowId = null;
     this.selectedStep = null;
     this.theme = localStorage.getItem("relay-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    this.pollInterval = 0;
+    this.pollTimer = null;
+    this.mobileNavOpen = false;
+    this.pendingConfirmAction = null;
+    this.parentWorkflowMap = new Map();
+    this.currentWorkflowName = "";
+    this.currentWorkflowStatus = "";
+    this.dagZoom = 1;
+    this.dagPanX = 0;
+    this.dagPanY = 0;
+    this.isPanningDag = false;
+    this.panStartX = 0;
+    this.panStartY = 0;
 
     // Expose global callback for SVG DAG node clicks
     window.selectStep = (encodedStepJson) => {
@@ -27,7 +40,7 @@ class DashboardApp {
           step = JSON.parse(decodeURIComponent(encodedStepJson));
         }
         this.selectedStep = step;
-        this.renderStepModal(step);
+        this.renderStepDrawer(step);
       } catch (err) {
         console.error("Failed to parse step:", err);
       }
@@ -50,6 +63,104 @@ class DashboardApp {
     return msg.includes("401") || msg.includes("Unauthorized") || msg.includes("Authorization header required");
   }
 
+  submitSignIn(token) {
+    this.setApiKey(token || null);
+    this.closeModal();
+    if (token) {
+      this.showToast("Saved credential successfully", "success");
+    } else {
+      this.showToast("Cleared saved credential", "info");
+    }
+    this.render();
+  }
+
+  signOut() {
+    this.setApiKey(null);
+    this.closeModal();
+    this.showToast("Signed out. Using unauthenticated public access", "info");
+    this.render();
+  }
+
+  showToast(message, type = "info") {
+    let container = document.getElementById("toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "toast-container";
+      container.setAttribute("role", "status");
+      container.setAttribute("aria-live", "polite");
+      document.body.appendChild(container);
+    }
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    const icon = type === "success" ? "✓" : type === "error" ? "⚠" : "ℹ";
+    toast.innerHTML = `<span aria-hidden="true">${icon}</span><span>${escapeHtml(message)}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(10px)";
+      toast.style.transition = "all 0.2s ease";
+      setTimeout(() => toast.remove(), 250);
+    }, 3500);
+  }
+
+  showConfirm({ title, message, consequence, details = [], confirmText = "Confirm", confirmClass = "btn-danger", onConfirm }) {
+    const root = document.getElementById("modal-root");
+    if (!root) return;
+
+    this.pendingConfirmAction = onConfirm;
+
+    root.innerHTML = `
+      <div class="modal-overlay" data-action="closeModalOverlay" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-desc">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span id="confirm-dialog-title">${escapeHtml(title)}</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Cancel">✕</button>
+          </div>
+          <div class="modal-body">
+            <p id="confirm-dialog-desc" style="font-size: 13px; color: var(--text-primary);">
+              ${escapeHtml(message)}
+            </p>
+
+            ${details.length > 0 ? `
+              <table class="confirm-meta-table">
+                <tbody>
+                  ${details.map(d => `
+                    <tr>
+                      <td>${escapeHtml(d.label)}</td>
+                      <td><code>${escapeHtml(d.value)}</code></td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            ` : ""}
+
+            ${consequence ? `
+              <div class="confirm-consequence" role="alert">
+                <strong>Warning:</strong> ${escapeHtml(consequence)}
+              </div>
+            ` : ""}
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-sm btn-secondary" id="confirm-cancel-btn" data-action="closeModal">Cancel</button>
+            <button class="btn btn-sm ${confirmClass}" id="confirm-action-btn" data-action="executePendingConfirm">${escapeHtml(confirmText)}</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const cancelBtn = document.getElementById("confirm-cancel-btn");
+    if (cancelBtn) cancelBtn.focus();
+  }
+
+  async executePendingConfirm() {
+    const action = this.pendingConfirmAction;
+    this.pendingConfirmAction = null;
+    this.closeModal();
+    if (typeof action === "function") {
+      await action();
+    }
+  }
+
   renderAuthRequired(el, actionName = "load data") {
     el.innerHTML = `
       <div class="card">
@@ -61,7 +172,7 @@ class DashboardApp {
             This Relay instance requires an API key or bearer token to ${escapeHtml(actionName)}.
           </p>
           <div class="form-field" style="max-width: 480px;">
-            <label class="form-label">API Key / Bearer Token</label>
+            <label class="form-label" for="auth-key-input">API Key / Bearer Token</label>
             <input type="password" id="auth-key-input" class="input-text" placeholder="dbos_sec_... or JWT token" value="${escapeHtml(this.apiKey || "")}">
           </div>
           <div style="margin-top: 16px; display: flex; gap: 8px;">
@@ -78,18 +189,18 @@ class DashboardApp {
     if (!root) return;
 
     root.innerHTML = `
-      <div class="modal-overlay" data-action="closeModalOverlay">
+      <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="signin-modal-title">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span>Relay Authentication</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal">✕</button>
+            <span id="signin-modal-title">Relay Authentication</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
           </div>
           <div class="modal-body">
             <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
               Provide an API key or OIDC bearer token to authenticate with the Relay control plane.
             </p>
             <div class="form-field">
-              <label class="form-label">API Key / Bearer Token</label>
+              <label class="form-label" for="modal-auth-key-input">API Key / Bearer Token</label>
               <input type="password" id="modal-auth-key-input" class="input-text" placeholder="dbos_sec_... or JWT token" value="${escapeHtml(this.apiKey || "")}">
             </div>
           </div>
@@ -100,6 +211,49 @@ class DashboardApp {
         </div>
       </div>
     `;
+    const input = document.getElementById("modal-auth-key-input");
+    if (input) input.focus();
+  }
+
+  setPollInterval(ms) {
+    this.pollInterval = parseInt(ms, 10) || 0;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    if (this.pollInterval > 0) {
+      this.pollTimer = setInterval(() => this.poll(), this.pollInterval);
+    }
+    const dot = document.querySelector(".poll-dot");
+    if (dot) {
+      if (this.pollInterval > 0) dot.classList.add("active");
+      else dot.classList.remove("active");
+    }
+  }
+
+  async poll() {
+    const modal = document.getElementById("modal-root");
+    if (modal && modal.children.length > 0) return;
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) return;
+
+    await this.renderContentView(true);
+  }
+
+  toggleMobileNav() {
+    this.mobileNavOpen = !this.mobileNavOpen;
+    const sidebar = document.querySelector(".sidebar");
+    const overlay = document.querySelector(".mobile-overlay");
+    if (sidebar) sidebar.classList.toggle("mobile-open", this.mobileNavOpen);
+    if (overlay) overlay.classList.toggle("active", this.mobileNavOpen);
+  }
+
+  closeMobileNav() {
+    this.mobileNavOpen = false;
+    const sidebar = document.querySelector(".sidebar");
+    const overlay = document.querySelector(".mobile-overlay");
+    if (sidebar) sidebar.classList.remove("mobile-open");
+    if (overlay) overlay.classList.remove("active");
   }
 
   async init() {
@@ -139,7 +293,7 @@ class DashboardApp {
 
     if (route === "workflow" && parts[1]) {
       this.currentRoute = "workflow-detail";
-      this.selectedWorkflowId = parts[1];
+      this.selectedWorkflowId = decodeURIComponent(parts[1]);
     } else {
       this.currentRoute = route;
     }
@@ -156,6 +310,7 @@ class DashboardApp {
     if (!appEl) return;
 
     appEl.innerHTML = `
+      <div class="mobile-overlay ${this.mobileNavOpen ? 'active' : ''}" data-action="closeMobileNav"></div>
       ${this.renderSidebar()}
       <div class="main-wrapper">
         ${this.renderTopHeader()}
@@ -180,9 +335,9 @@ class DashboardApp {
     ];
 
     return `
-      <aside class="sidebar">
+      <aside class="sidebar ${this.mobileNavOpen ? 'mobile-open' : ''}">
         <div class="sidebar-header">
-          <a href="#/fleet" class="brand-logo">
+          <a href="#/fleet" class="brand-logo" aria-label="Relay Home">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="var(--color-primary)" stroke="none"/>
             </svg>
@@ -190,11 +345,12 @@ class DashboardApp {
           </a>
           <span class="brand-badge">Dashboard</span>
         </div>
-        <nav class="sidebar-nav">
+        <nav class="sidebar-nav" aria-label="Main Navigation">
           ${navItems.map(item => `
-            <a class="nav-item ${this.currentRoute === item.id || (this.currentRoute === 'workflow-detail' && item.id === 'workflows') ? 'active' : ''}"
-               data-navigate='${item.id}'>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <a href="#/${item.id}"
+               class="nav-item ${this.currentRoute === item.id || (this.currentRoute === 'workflow-detail' && item.id === 'workflows') ? 'active' : ''}"
+               data-navigate="${item.id}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 ${item.icon}
               </svg>
               <span>${item.label}</span>
@@ -203,7 +359,7 @@ class DashboardApp {
         </nav>
         <div class="sidebar-footer">
           <span>Relay Control Plane</span>
-          <button class="btn btn-xs btn-secondary" data-action="toggleTheme">
+          <button class="btn btn-xs btn-secondary" data-action="toggleTheme" aria-label="Toggle dark and light theme">
             ${this.theme === "dark" ? "☀️ Light" : "🌙 Dark"}
           </button>
         </div>
@@ -216,17 +372,34 @@ class DashboardApp {
     return `
       <header class="top-header">
         <div class="header-left">
+          <button class="mobile-nav-toggle" data-action="toggleMobileNav" aria-label="Toggle navigation menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
           <h1 class="header-title">${this.getRouteTitle()}</h1>
         </div>
         <div class="header-right">
           <div class="selector-group">
-            <label class="form-label" style="margin:0;">App:</label>
-            <select class="select-sm" data-change="app">
+            <label class="form-label" for="header-app-select" style="margin:0;">App:</label>
+            <select id="header-app-select" class="select-sm" data-change="app" aria-label="Active application">
               ${this.apps.map(a => `<option value="${escapeHtml(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("")}
               ${this.apps.length === 0 ? `<option value="">No applications</option>` : ""}
             </select>
           </div>
-          <button class="btn btn-xs btn-secondary" data-action="refresh">↻ Refresh</button>
+          <div class="selector-group">
+            <span class="poll-indicator" title="Live telemetry refresh">
+              <span class="poll-dot ${this.pollInterval > 0 ? 'active' : ''}"></span>
+              <span>Poll:</span>
+            </span>
+            <select class="select-sm" data-change="pollInterval" aria-label="Live polling interval">
+              <option value="0" ${this.pollInterval === 0 ? "selected" : ""}>Off</option>
+              <option value="2000" ${this.pollInterval === 2000 ? "selected" : ""}>2s</option>
+              <option value="5000" ${this.pollInterval === 5000 ? "selected" : ""}>5s</option>
+              <option value="15000" ${this.pollInterval === 15000 ? "selected" : ""}>15s</option>
+            </select>
+          </div>
+          <button class="btn btn-xs btn-secondary" data-action="refresh" aria-label="Refresh view">↻ Refresh</button>
           ${hasKey ? `
             <button class="btn btn-xs btn-secondary" data-action="signOut" title="Clear saved credential">Sign Out</button>
           ` : `
@@ -252,34 +425,40 @@ class DashboardApp {
 
   onAppChange(newAppName) {
     this.appName = newAppName;
+    const select = document.getElementById("header-app-select");
+    if (select) select.value = newAppName;
     this.renderContentView();
   }
 
-  async renderContentView() {
+  async renderContentView(silent = false) {
     const el = document.getElementById("content-view");
     if (!el) return;
 
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading...</div>`;
+    }
+
     switch (this.currentRoute) {
       case "fleet":
-        await this.renderFleetScreen(el);
+        await this.renderFleetScreen(el, silent);
         break;
       case "workflows":
-        await this.renderWorkflowsScreen(el);
+        await this.renderWorkflowsScreen(el, silent);
         break;
       case "workflow-detail":
-        await this.renderWorkflowDetailScreen(el);
+        await this.renderWorkflowDetailScreen(el, silent);
         break;
       case "queues":
-        await this.renderQueuesScreen(el);
+        await this.renderQueuesScreen(el, silent);
         break;
       case "schedules":
-        await this.renderSchedulesScreen(el);
+        await this.renderSchedulesScreen(el, silent);
         break;
       case "alerting":
-        await this.renderAlertingScreen(el);
+        await this.renderAlertingScreen(el, silent);
         break;
       case "keys":
-        await this.renderKeysScreen(el);
+        await this.renderKeysScreen(el, silent);
         break;
       default:
         el.innerHTML = `<div class="card"><div class="card-body">Select a view from the sidebar.</div></div>`;
@@ -287,38 +466,124 @@ class DashboardApp {
   }
 
   // --- SCREEN 1: FLEET & APPLICATIONS ---
-  async renderFleetScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading fleet information...</div>`;
+  async renderFleetScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading fleet overview...</div>`;
+    }
 
     try {
       await this.loadApplications();
       let executors = [];
+      let workflows = [];
+      let queues = [];
+      let schedules = [];
+
       if (this.appName) {
-        executors = await this.client.listExecutors(this.orgName, this.appName);
+        const [execRes, wfRes, qRes, schRes] = await Promise.allSettled([
+          this.client.listExecutors(this.orgName, this.appName),
+          this.client.listWorkflows(this.orgName, this.appName, { limit: 100 }),
+          this.client.listQueues ? this.client.listQueues(this.orgName, this.appName) : Promise.resolve([]),
+          this.client.listSchedules ? this.client.listSchedules(this.orgName, this.appName) : Promise.resolve([])
+        ]);
+
+        if (execRes.status === "fulfilled") executors = execRes.value || [];
+        if (wfRes.status === "fulfilled") workflows = wfRes.value || [];
+        if (qRes.status === "fulfilled") queues = qRes.value || [];
+        if (schRes.status === "fulfilled") schedules = schRes.value || [];
       }
 
       const activeExecutors = executors.filter(e => e.status === "HEALTHY").length;
       const disconnectedExecutors = executors.filter(e => e.status === "DISCONNECTED").length;
 
+      const inFlightWfs = workflows.filter(w => w.status === "PENDING" || w.status === "ENQUEUED").length;
+      const failedWfs = workflows.filter(w => w.status === "ERROR").length;
+
+      const recentWorkflows = [...workflows]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 8);
+
       el.innerHTML = `
         <div class="stat-grid">
           <div class="stat-card">
-            <span class="stat-label">Applications</span>
-            <span class="stat-value">${this.apps.length}</span>
+            <span class="stat-label">Workflows</span>
+            <span class="stat-value">${workflows.length}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill kpi-info">${inFlightWfs} in flight</span>
+              <span class="kpi-sub-pill ${failedWfs > 0 ? 'kpi-error' : 'kpi-success'}">${failedWfs} errors</span>
+            </div>
           </div>
           <div class="stat-card">
             <span class="stat-label">Connected Executors</span>
-            <span class="stat-value" style="color: var(--color-success);">${activeExecutors}</span>
+            <span class="stat-value" style="color: var(--color-success-text);">${activeExecutors}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill kpi-success">${activeExecutors} healthy</span>
+              ${disconnectedExecutors > 0 ? `<span class="kpi-sub-pill kpi-error">${disconnectedExecutors} disconnected</span>` : `<span class="kpi-sub-pill">0 disconnected</span>`}
+            </div>
           </div>
           <div class="stat-card">
-            <span class="stat-label">Disconnected Executors</span>
-            <span class="stat-value" style="color: var(--color-warning);">${disconnectedExecutors}</span>
+            <span class="stat-label">Active Queues & Schedules</span>
+            <span class="stat-value">${queues.length + schedules.length}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill">${queues.length} queues</span>
+              <span class="kpi-sub-pill">${schedules.length} schedules</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Applications</span>
+            <span class="stat-value">${this.apps.length}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill">${escapeHtml(this.appName || "None")}</span>
+            </div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Connected Executors (${this.appName || 'No app'})</span>
+            <div>
+              <span class="card-title">Recent Workflow Executions</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live operational telemetry</span>
+            </div>
+            <a href="#/workflows" class="btn btn-xs btn-secondary" data-navigate="workflows">View All Workflows →</a>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Workflow ID</th>
+                  <th>Name</th>
+                  <th>Queue</th>
+                  <th>Started</th>
+                  <th>Duration</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${recentWorkflows.length > 0 ? recentWorkflows.map(w => `
+                  <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml(w.workflowId)}" data-navigate="workflow/${escapeHtml(w.workflowId)}">
+                    <td>${renderStatusPill(w.status)}</td>
+                    <td><code>${escapeHtml(truncate(w.workflowId, 22))}</code></td>
+                    <td><strong>${escapeHtml(w.workflowName || "unnamed")}</strong></td>
+                    <td>${escapeHtml(w.queueName || "default")}</td>
+                    <td>
+                      <span class="relative-time" title="${formatTimestamp(w.createdAt)}">
+                        ${formatRelativeTime(w.createdAt)}
+                      </span>
+                    </td>
+                    <td>${calculateDuration(w.createdAt, w.completedAt)}</td>
+                    <td>
+                      <a href="#/workflow/${escapeHtml(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml(w.workflowId)}">Inspect ↗</a>
+                    </td>
+                  </tr>
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflow executions recorded for this application.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Connected Executors (${escapeHtml(this.appName || 'No app')})</span>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -364,7 +629,7 @@ class DashboardApp {
               </thead>
               <tbody>
                 ${this.apps.map(a => `
-                  <tr class="clickable" data-app-change='${escapeHtml(a.name)}'>
+                  <tr class="clickable" tabindex="0" role="button" aria-label="Select application ${escapeHtml(a.name)}" data-app-change='${escapeHtml(a.name)}'>
                     <td><strong>${escapeHtml(a.name)}</strong></td>
                     <td>${renderStatusPill(a.status)}</td>
                     <td>${a.executorTimeoutSecs || 60}s</td>
@@ -377,13 +642,15 @@ class DashboardApp {
         </div>
       `;
     } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load fleet: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load fleet: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
   // --- SCREEN 2: WORKFLOW SEARCH & LIST ---
-  async renderWorkflowsScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading workflows...</div>`;
+  async renderWorkflowsScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading workflows...</div>`;
+    }
 
     try {
       const workflows = await this.client.listWorkflows(this.orgName, this.appName, { limit: 50 });
@@ -391,8 +658,8 @@ class DashboardApp {
       el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." data-input="wfTable">
-            <select id="filter-status" class="select-sm" data-change="wfStatus">
+            <input type="text" id="filter-id" class="input-text" placeholder="Search workflow ID..." data-input="wfTable" aria-label="Search workflow ID">
+            <select id="filter-status" class="select-sm" data-change="wfStatus" aria-label="Filter workflows by status">
               <option value="">All Statuses</option>
               <option value="SUCCESS">SUCCESS</option>
               <option value="PENDING">PENDING</option>
@@ -422,7 +689,7 @@ class DashboardApp {
               </thead>
               <tbody>
                 ${workflows.length > 0 ? workflows.map(wf => `
-                  <tr class="clickable" data-navigate='workflow/${encodeURIComponent(wf.workflowId)}'>
+                  <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml(wf.workflowId)}" data-navigate='workflow/${encodeURIComponent(wf.workflowId)}'>
                     <td><code>${escapeHtml(wf.workflowId)}</code></td>
                     <td>${renderStatusPill(wf.status)}</td>
                     <td><strong>${escapeHtml(wf.workflowName || "unnamed")}</strong></td>
@@ -438,7 +705,7 @@ class DashboardApp {
         </div>
       `;
     } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load workflows: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load workflows: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
@@ -464,17 +731,79 @@ class DashboardApp {
   }
 
   // --- SCREEN 3: WORKFLOW DETAIL & STEP DAG ---
-  async renderWorkflowDetailScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading workflow details...</div>`;
+  async renderWorkflowDetailScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading workflow details...</div>`;
+    }
 
     try {
       const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
       const steps = await this.client.listSteps(this.orgName, this.appName, this.selectedWorkflowId);
 
+      this.currentWorkflowName = wf.workflowName || wf.workflowId;
+      this.currentWorkflowStatus = wf.status;
+
+      // Check for child workflows spawned by any step
+      const childStepEntries = steps.filter(s => Boolean(s.childWorkflowId));
+      let childWorkflows = [];
+
+      if (childStepEntries.length > 0) {
+        const childResults = await Promise.allSettled(
+          childStepEntries.map(async (step) => {
+            try {
+              const childWf = await this.client.getWorkflow(this.orgName, this.appName, step.childWorkflowId);
+              const childSteps = await this.client.listSteps(this.orgName, this.appName, step.childWorkflowId);
+              return {
+                stepId: step.stepId,
+                childWorkflowId: step.childWorkflowId,
+                workflow: childWf,
+                steps: childSteps || []
+              };
+            } catch {
+              return {
+                stepId: step.stepId,
+                childWorkflowId: step.childWorkflowId,
+                workflow: { workflowId: step.childWorkflowId, status: "UNKNOWN", workflowName: "Child Workflow" },
+                steps: []
+              };
+            }
+          })
+        );
+        childWorkflows = childResults.filter(r => r.status === "fulfilled").map(r => r.value);
+      }
+
+      const familyData = {
+        root: { workflow: wf, steps },
+        children: childWorkflows
+      };
+
+      const parentInfo = this.parentWorkflowMap.get(this.selectedWorkflowId);
+      const statusDotClass = wf.status === "SUCCESS" ? "dot-success" : (wf.status === "ERROR" ? "dot-error" : (wf.status === "PENDING" || wf.status === "ENQUEUED" ? "dot-running" : "dot-pending"));
+      const parentStatusDotClass = parentInfo ? (parentInfo.parentStatus === "SUCCESS" ? "dot-success" : (parentInfo.parentStatus === "ERROR" ? "dot-error" : "dot-running")) : "dot-pending";
+
+      const breadcrumbsHtml = `
+        <nav class="wf-breadcrumbs" aria-label="Workflow Navigation Breadcrumbs">
+          <a href="#/workflows" class="wf-breadcrumb-link" data-navigate="workflows" aria-label="All workflows">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+            <span>Workflows</span>
+          </a>
+          <span class="wf-breadcrumb-separator" aria-hidden="true">/</span>
+          ${parentInfo ? `
+            <a href="#/workflow/${encodeURIComponent(parentInfo.parentId)}" class="wf-breadcrumb-link" data-navigate="workflow/${encodeURIComponent(parentInfo.parentId)}" aria-label="Parent workflow ${escapeHtml(parentInfo.parentName)}">
+              <span class="status-dot ${parentStatusDotClass}"></span>
+              <span>${escapeHtml(truncate(parentInfo.parentName || parentInfo.parentId, 20))}</span>
+            </a>
+            <span class="wf-breadcrumb-separator" aria-hidden="true">/</span>
+          ` : ""}
+          <span class="wf-breadcrumb-current" aria-current="page">
+            <span class="status-dot ${statusDotClass}"></span>
+            <span class="wf-breadcrumb-name">${escapeHtml(wf.workflowName || wf.workflowId)}</span>
+          </span>
+        </nav>
+      `;
+
       el.innerHTML = `
-        <div style="margin-bottom: 16px;">
-          <a class="btn btn-xs btn-secondary" data-navigate='workflows'>← Back to workflows</a>
-        </div>
+        ${breadcrumbsHtml}
 
         <div class="card">
           <div class="card-header">
@@ -495,7 +824,7 @@ class DashboardApp {
             </div>
           </div>
           <div class="card-body">
-            <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0;">
+            <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;">
               <div>
                 <span class="stat-label">Workflow Name</span>
                 <div><strong>${escapeHtml(wf.workflowName || "unnamed")}</strong></div>
@@ -518,11 +847,11 @@ class DashboardApp {
 
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Execution Steps (${steps.length})</span>
-            <span style="font-size:12px; color:var(--text-secondary);">Click any step to view parameters & output</span>
+            <span class="card-title">Execution Steps (${steps.length}${childWorkflows.length > 0 ? ` + ${childWorkflows.length} child workflows` : ""})</span>
+            <span style="font-size:12px; color:var(--text-secondary);">Click any step to inspect parameters, output, or child executions</span>
           </div>
           <div class="card-body" style="padding:0;">
-            ${renderWorkflowDAG(steps, "window.selectStep")}
+            ${renderWorkflowDAG(familyData, "window.selectStep")}
           </div>
         </div>
 
@@ -533,7 +862,7 @@ class DashboardApp {
             <button class="tab-btn" id="tab-btn-notifications" data-wf-tab='notifications'>Notifications</button>
           </div>
           <div class="card-body" id="wf-tab-content">
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
               <div>
                 <h4 style="margin-bottom:8px; font-size:13px;">Workflow Input</h4>
                 ${renderJsonViewer(wf.input, "Input")}
@@ -546,8 +875,10 @@ class DashboardApp {
           </div>
         </div>
       `;
+
+      this.initDagViewport();
     } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load workflow: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load workflow: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
@@ -562,7 +893,7 @@ class DashboardApp {
     if (tab === "io") {
       const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
       content.innerHTML = `
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
           <div>
             <h4 style="margin-bottom:8px; font-size:13px;">Workflow Input</h4>
             ${renderJsonViewer(wf.input, "Input")}
@@ -608,46 +939,61 @@ class DashboardApp {
   }
 
   async cancelWorkflow(id) {
-    if (!confirm("Are you sure you want to cancel this workflow?")) return;
-    try {
-      await this.client.cancelWorkflow(this.orgName, this.appName, id);
-      this.renderWorkflowDetailScreen(document.getElementById("content-view"));
-    } catch (err) {
-      alert("Failed to cancel: " + err.message);
-    }
+    this.showConfirm({
+      title: "Cancel Workflow Execution",
+      message: `Are you sure you want to cancel workflow ${id}?`,
+      consequence: "Execution will halt immediately. In-flight and pending steps will be cancelled and cannot be resumed without explicit operator intervention.",
+      details: [
+        { label: "Workflow ID", value: id },
+        { label: "Application", value: this.appName || "default" },
+        { label: "Transition", value: "-> CANCELLED" }
+      ],
+      confirmText: "Cancel Workflow",
+      confirmClass: "btn-danger",
+      onConfirm: async () => {
+        try {
+          await this.client.cancelWorkflow(this.orgName, this.appName, id);
+          this.showToast(`Workflow ${id} cancelled`, "success");
+          this.renderWorkflowDetailScreen(document.getElementById("content-view"));
+        } catch (err) {
+          this.showToast(`Failed to cancel: ${err.message}`, "error");
+        }
+      }
+    });
   }
 
   async resumeWorkflow(id) {
     try {
       await this.client.resumeWorkflow(this.orgName, this.appName, id);
+      this.showToast(`Resumed workflow ${id}`, "success");
       this.renderWorkflowDetailScreen(document.getElementById("content-view"));
     } catch (err) {
-      alert("Failed to resume: " + err.message);
+      this.showToast(`Failed to resume: ${err.message}`, "error");
     }
   }
 
   async restartWorkflow(id) {
     try {
       const res = await this.client.forkWorkflow(this.orgName, this.appName, id, 0);
-      alert(`Restarted workflow! New ID: ${res.workflowId}`);
+      this.showToast(`Restarted workflow! New ID: ${res.workflowId}`, "success");
       this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
     } catch (err) {
-      alert("Failed to restart: " + err.message);
+      this.showToast(`Failed to restart: ${err.message}`, "error");
     }
   }
 
-  renderStepModal(step) {
+  renderStepDrawer(step) {
     const root = document.getElementById("modal-root");
     if (!root) return;
 
     root.innerHTML = `
-      <div class="modal-overlay" data-action="closeModalOverlay">
-        <div class="modal-dialog">
-          <div class="modal-header">
-            <span>Step #${step.stepId}: ${escapeHtml(step.stepName)}</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal">✕</button>
+      <div class="drawer-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="drawer-step-title">
+        <aside class="drawer-panel" role="document">
+          <div class="drawer-header">
+            <span id="drawer-step-title">Step #${step.stepId}: ${escapeHtml(step.stepName)}</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close inspector">✕</button>
           </div>
-          <div class="modal-body">
+          <div class="drawer-body">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <span class="stat-label">Status</span>
               ${renderStatusPill(step.error ? "ERROR" : step.completedAt ? "SUCCESS" : "PENDING")}
@@ -662,7 +1008,7 @@ class DashboardApp {
             ${step.childWorkflowId ? `
               <div>
                 <span class="stat-label">Child Workflow</span>
-                <div>
+                <div style="margin-top:4px;">
                   <a class="btn btn-xs btn-primary" data-action="viewChildWorkflow" data-child-wf-id="${escapeHtml(step.childWorkflowId)}">
                     View Child Workflow: ${escapeHtml(step.childWorkflowId)}
                   </a>
@@ -675,17 +1021,24 @@ class DashboardApp {
             </div>
             ${step.error ? `
               <div>
-                <span class="stat-label" style="color:var(--color-error);">Error Stack</span>
+                <span class="stat-label" style="color:var(--color-error-text);">Error Stack</span>
                 ${renderJsonViewer(step.error, "Error Details")}
               </div>
             ` : ""}
           </div>
-          <div class="modal-footer">
+          <div class="drawer-footer">
             <button class="btn btn-sm btn-secondary" data-action="closeModal">Close</button>
           </div>
-        </div>
+        </aside>
       </div>
     `;
+
+    const closeBtn = root.querySelector(".drawer-header button");
+    if (closeBtn) closeBtn.focus();
+  }
+
+  renderStepModal(step) {
+    this.renderStepDrawer(step);
   }
 
   closeModal() {
@@ -693,9 +1046,109 @@ class DashboardApp {
     if (root) root.innerHTML = "";
   }
 
+  openExpandPayloadModal(title, raw) {
+    const root = document.getElementById("modal-root");
+    if (!root) return;
+
+    let parsed = null;
+    let isJson = false;
+    try {
+      parsed = JSON.parse(raw);
+      isJson = true;
+    } catch {
+      isJson = false;
+    }
+
+    const formatted = isJson ? JSON.stringify(parsed, null, 2) : raw;
+
+    root.innerHTML = `
+      <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="payload-modal-title">
+        <div class="modal-dialog modal-dialog-large" role="document">
+          <div class="modal-header">
+            <h3 class="modal-title" id="payload-modal-title">${escapeHtml(title || "Payload Details")}</h3>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="json-viewer" id="modal-expanded-viewer">
+              <div class="json-header">
+                <span class="json-title">${escapeHtml(title)}</span>
+                <button class="btn btn-xs btn-secondary copy-btn" data-copy="${escapeHtml(raw)}">Copy Payload</button>
+              </div>
+              <pre class="json-content" style="max-height: 55vh;"><code>${escapeHtml(formatted)}</code></pre>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closeBtn = root.querySelector(".modal-header button");
+    if (closeBtn) closeBtn.focus();
+  }
+
+  initDagViewport() {
+    this.dagZoom = 1;
+    this.dagPanX = 0;
+    this.dagPanY = 0;
+    this.isPanningDag = false;
+    this.panStartX = 0;
+    this.panStartY = 0;
+
+    const viewport = document.getElementById("dag-viewport");
+    if (!viewport) return;
+
+    viewport.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".dag-node") || e.target.closest("button") || e.target.closest("a") || e.target.closest(".child-card-action")) return;
+      this.isPanningDag = true;
+      this.panStartX = e.clientX - this.dagPanX;
+      this.panStartY = e.clientY - this.dagPanY;
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!this.isPanningDag) return;
+      this.dagPanX = e.clientX - this.panStartX;
+      this.dagPanY = e.clientY - this.panStartY;
+      this.updateDagTransform();
+    });
+
+    window.addEventListener("mouseup", () => {
+      this.isPanningDag = false;
+    });
+
+    viewport.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      this.dagZoom = Math.min(2.5, Math.max(0.3, this.dagZoom + delta));
+      this.updateDagTransform();
+    }, { passive: false });
+  }
+
+  updateDagTransform() {
+    const layer = document.getElementById("dag-zoom-layer");
+    if (layer) {
+      layer.setAttribute("transform", `translate(${this.dagPanX}, ${this.dagPanY}) scale(${this.dagZoom})`);
+    }
+  }
+
+  zoomDag(delta) {
+    this.dagZoom = Math.min(2.5, Math.max(0.3, this.dagZoom + delta));
+    this.updateDagTransform();
+  }
+
+  resetDagZoom() {
+    this.dagZoom = 1;
+    this.dagPanX = 0;
+    this.dagPanY = 0;
+    this.updateDagTransform();
+  }
+
   // --- SCREEN 4: QUEUES ---
-  async renderQueuesScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading queues...</div>`;
+  async renderQueuesScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading queues...</div>`;
+    }
 
     try {
       const queues = await this.client.listQueues(this.orgName, this.appName);
@@ -734,13 +1187,15 @@ class DashboardApp {
         </div>
       `;
     } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load queues: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load queues: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
   // --- SCREEN 5: SCHEDULES ---
-  async renderSchedulesScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading schedules...</div>`;
+  async renderSchedulesScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading schedules...</div>`;
+    }
 
     try {
       const schedules = await this.client.listSchedules(this.orgName, this.appName);
@@ -788,41 +1243,45 @@ class DashboardApp {
         </div>
       `;
     } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load schedules: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load schedules: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
   async pauseSchedule(name) {
     try {
       await this.client.pauseSchedule(this.orgName, this.appName, name);
+      this.showToast(`Schedule "${name}" paused`, "success");
       this.renderContentView();
     } catch (err) {
-      alert("Failed to pause schedule: " + err.message);
+      this.showToast(`Failed to pause schedule: ${err.message}`, "error");
     }
   }
 
   async resumeSchedule(name) {
     try {
       await this.client.resumeSchedule(this.orgName, this.appName, name);
+      this.showToast(`Schedule "${name}" resumed`, "success");
       this.renderContentView();
     } catch (err) {
-      alert("Failed to resume schedule: " + err.message);
+      this.showToast(`Failed to resume schedule: ${err.message}`, "error");
     }
   }
 
   async triggerSchedule(name) {
     try {
       const res = await this.client.triggerSchedule(this.orgName, this.appName, name);
-      alert(`Triggered schedule! Workflow ID: ${res.workflowId}`);
+      this.showToast(`Triggered schedule "${name}". New Workflow: ${res.workflowId}`, "success");
       this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
     } catch (err) {
-      alert("Failed to trigger schedule: " + err.message);
+      this.showToast(`Failed to trigger schedule: ${err.message}`, "error");
     }
   }
 
   // --- SCREEN 6: ALERTING RULES ---
-  async renderAlertingScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading alerting rules...</div>`;
+  async renderAlertingScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading alerting rules...</div>`;
+    }
 
     try {
       const rules = await this.client.listAlertingRules(this.orgName, this.appName);
@@ -869,7 +1328,7 @@ class DashboardApp {
         </div>
       `;
     } catch (err) {
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load alert rules: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load alert rules: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
@@ -878,15 +1337,15 @@ class DashboardApp {
     if (!root) return;
 
     root.innerHTML = `
-      <div class="modal-overlay" data-action="closeModalOverlay">
+      <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="modal-alert-title">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span>Create Alert Rule</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal">✕</button>
+            <span id="modal-alert-title">Create Alert Rule</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
           </div>
           <div class="modal-body">
             <div class="form-field">
-              <label class="form-label">Rule Type</label>
+              <label class="form-label" for="new-rule-type">Rule Type</label>
               <select id="new-rule-type" class="select-sm">
                 <option value="WorkflowFailure">WorkflowFailure</option>
                 <option value="SlowQueue">SlowQueue</option>
@@ -894,11 +1353,11 @@ class DashboardApp {
               </select>
             </div>
             <div class="form-field">
-              <label class="form-label">Min Interval (seconds)</label>
+              <label class="form-label" for="new-rule-interval">Min Interval (seconds)</label>
               <input type="number" id="new-rule-interval" class="input-text" value="300" min="0">
             </div>
             <div class="form-field">
-              <label class="form-label">Rule Metadata (JSON)</label>
+              <label class="form-label" for="new-rule-meta">Rule Metadata (JSON)</label>
               <textarea id="new-rule-meta" class="input-text" rows="4" style="font-family:var(--font-mono); font-size:12px;">{"threshold": 10}</textarea>
             </div>
           </div>
@@ -909,6 +1368,8 @@ class DashboardApp {
         </div>
       </div>
     `;
+    const typeSelect = document.getElementById("new-rule-type");
+    if (typeSelect) typeSelect.focus();
   }
 
   async submitCreateAlert() {
@@ -918,7 +1379,7 @@ class DashboardApp {
     try {
       ruleMetadata = JSON.parse(document.getElementById("new-rule-meta").value);
     } catch {
-      alert("Invalid JSON in rule metadata");
+      this.showToast("Invalid JSON in rule metadata", "error");
       return;
     }
 
@@ -929,25 +1390,42 @@ class DashboardApp {
         ruleMetadata,
       });
       this.closeModal();
+      this.showToast("Alert rule created successfully", "success");
       this.renderContentView();
     } catch (err) {
-      alert("Failed to create rule: " + err.message);
+      this.showToast(`Failed to create rule: ${err.message}`, "error");
     }
   }
 
   async deleteAlertRule(ruleId) {
-    if (!confirm("Delete this alerting rule?")) return;
-    try {
-      await this.client.deleteAlertingRule(this.orgName, this.appName, ruleId);
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to delete rule: " + err.message);
-    }
+    this.showConfirm({
+      title: "Delete Alert Rule",
+      message: `Are you sure you want to delete alert rule "${ruleId}"?`,
+      consequence: "Alert notifications defined by this rule will immediately stop firing. This action cannot be undone.",
+      details: [
+        { label: "Rule ID", value: ruleId },
+        { label: "Application", value: this.appName || "default" },
+        { label: "Action", value: "Permanent deletion" }
+      ],
+      confirmText: "Delete Rule",
+      confirmClass: "btn-danger",
+      onConfirm: async () => {
+        try {
+          await this.client.deleteAlertingRule(this.orgName, this.appName, ruleId);
+          this.showToast("Alert rule deleted", "success");
+          this.renderContentView();
+        } catch (err) {
+          this.showToast(`Failed to delete rule: ${err.message}`, "error");
+        }
+      }
+    });
   }
 
   // --- SCREEN 7: API KEYS ---
-  async renderKeysScreen(el) {
-    el.innerHTML = `<div class="loading-spinner">Loading API keys...</div>`;
+  async renderKeysScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading API keys...</div>`;
+    }
 
     try {
       const keys = await this.client.listAPIKeys(this.orgName);
@@ -996,7 +1474,7 @@ class DashboardApp {
         this.renderAuthRequired(el, "load API keys");
         return;
       }
-      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error);">Failed to load API keys: ${escapeHtml(err.message)}</div></div>`;
+      el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load API keys: ${escapeHtml(err.message)}</div></div>`;
     }
   }
 
@@ -1005,19 +1483,19 @@ class DashboardApp {
     if (!root) return;
 
     root.innerHTML = `
-      <div class="modal-overlay" data-action="closeModalOverlay">
+      <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="modal-key-title">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span>Mint Scoped API Key</span>
-            <button class="btn btn-xs btn-secondary" data-action="closeModal">✕</button>
+            <span id="modal-key-title">Mint Scoped API Key</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">✕</button>
           </div>
           <div class="modal-body">
             <div class="form-field">
-              <label class="form-label">Key Name</label>
+              <label class="form-label" for="new-key-name">Key Name</label>
               <input type="text" id="new-key-name" class="input-text" placeholder="e.g. ci-deploy-key">
             </div>
             <div class="form-field">
-              <label class="form-label">Application Scope</label>
+              <label class="form-label" for="new-key-app">Application Scope</label>
               <select id="new-key-app" class="select-sm">
                 <option value="">All Applications</option>
                 ${this.apps.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join("")}
@@ -1031,12 +1509,14 @@ class DashboardApp {
         </div>
       </div>
     `;
+    const nameInput = document.getElementById("new-key-name");
+    if (nameInput) nameInput.focus();
   }
 
   async submitCreateKey() {
     const name = document.getElementById("new-key-name").value.trim();
     if (!name) {
-      alert("Key name is required");
+      this.showToast("Key name is required", "error");
       return;
     }
     const appScope = document.getElementById("new-key-app").value;
@@ -1046,7 +1526,7 @@ class DashboardApp {
       const res = await this.client.createAPIKey(this.orgName, name, ["*"], appNames);
       this.renderKeyCreatedModal(name, res.token);
     } catch (err) {
-      alert("Failed to create key: " + err.message);
+      this.showToast(`Failed to create key: ${err.message}`, "error");
     }
   }
 
@@ -1055,13 +1535,13 @@ class DashboardApp {
     if (!root) return;
 
     root.innerHTML = `
-      <div class="modal-overlay">
+      <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-key-created-title">
         <div class="modal-dialog">
           <div class="modal-header">
-            <span>API Key Created</span>
+            <span id="modal-key-created-title">API Key Created: ${escapeHtml(name)}</span>
           </div>
           <div class="modal-body">
-            <p style="font-size:13px; color:var(--color-warning);">
+            <p style="font-size:13px; color:var(--color-warning-text); font-weight:500;">
               Please copy this key now. It will not be shown again.
             </p>
             <div class="json-viewer" style="padding:12px; margin-top:8px;">
@@ -1077,13 +1557,27 @@ class DashboardApp {
   }
 
   async revokeKey(name) {
-    if (!confirm(`Revoke API key "${name}"?`)) return;
-    try {
-      await this.client.revokeAPIKey(this.orgName, name);
-      this.renderContentView();
-    } catch (err) {
-      alert("Failed to revoke key: " + err.message);
-    }
+    this.showConfirm({
+      title: "Revoke API Key",
+      message: `Are you sure you want to revoke API key "${name}"?`,
+      consequence: "Any application, executor, or service authenticating with this key will immediately receive 401 Unauthorized errors.",
+      details: [
+        { label: "Key Name", value: name },
+        { label: "Organization", value: this.orgName },
+        { label: "Effect", value: "Immediate revocation" }
+      ],
+      confirmText: "Revoke Key",
+      confirmClass: "btn-danger",
+      onConfirm: async () => {
+        try {
+          await this.client.revokeAPIKey(this.orgName, name);
+          this.showToast(`API key "${name}" revoked`, "success");
+          this.renderContentView();
+        } catch (err) {
+          this.showToast(`Failed to revoke key: ${err.message}`, "error");
+        }
+      }
+    });
   }
 }
 
@@ -1115,17 +1609,39 @@ function formatTimestamp(isoStr) {
 }
 
 function calculateDuration(startStr, endStr) {
-  if (!startStr || !endStr) return "-";
+  if (!startStr) return "-";
   try {
     const start = new Date(startStr).getTime();
-    const end = new Date(endStr).getTime();
+    const isRunning = !endStr;
+    const end = endStr ? new Date(endStr).getTime() : Date.now();
     const diffMs = Math.max(0, end - start);
-    if (diffMs < 1000) return `${diffMs}ms`;
-    if (diffMs < 60000) return `${(diffMs / 1000).toFixed(1)}s`;
-    return `${Math.floor(diffMs / 60000)}m ${Math.floor((diffMs % 60000) / 1000)}s`;
+    let str = "";
+    if (diffMs < 1000) str = `${diffMs}ms`;
+    else if (diffMs < 60000) str = `${(diffMs / 1000).toFixed(1)}s`;
+    else str = `${Math.floor(diffMs / 60000)}m ${Math.floor((diffMs % 60000) / 1000)}s`;
+    return isRunning ? `${str} (running)` : str;
   } catch {
     return "-";
   }
+}
+
+function formatRelativeTime(isoStr) {
+  if (!isoStr) return "-";
+  try {
+    const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+    if (diff < 5) return "just now";
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  } catch {
+    return isoStr;
+  }
+}
+
+function truncate(str, maxLen) {
+  if (!str) return "";
+  return str.length > maxLen ? str.substring(0, maxLen - 1) + "…" : str;
 }
 
 // Initialize on DOM load
@@ -1134,75 +1650,161 @@ window.addEventListener("DOMContentLoaded", () => {
   window.app.init();
 });
 
-    document.addEventListener("click", (e) => {
-      let target = e.target.closest("[data-navigate], [data-app-change], [data-action], [data-cancel-wf], [data-resume-wf], [data-restart-wf], [data-wf-tab], [data-pause-schedule], [data-resume-schedule], [data-trigger-schedule], [data-delete-rule], [data-revoke-key], [data-copy-and-close]");
-      if (!target) {
-        if (e.target.hasAttribute("data-action") && e.target.getAttribute("data-action") === "closeModalOverlay") {
-           window.app.closeModal();
-        }
-        // Check DAG node
-        let dagNode = e.target.closest("[data-step-json]");
-        if (dagNode) {
-           window.selectStep(dagNode.getAttribute("data-step-json"));
-        }
-        // Check json viewer copy
-        let copyBtn = e.target.closest("[data-copy]");
-        if (copyBtn) {
-           navigator.clipboard.writeText(copyBtn.getAttribute("data-copy")).then(() => {
-             copyBtn.innerText = "Copied!";
-             setTimeout(() => copyBtn.innerText = "Copy", 1500);
-           });
-        }
-        return;
-      }
+document.addEventListener("click", (e) => {
+  let target = e.target.closest("[data-navigate], [data-app-change], [data-action], [data-cancel-wf], [data-resume-wf], [data-restart-wf], [data-wf-tab], [data-pause-schedule], [data-resume-schedule], [data-trigger-schedule], [data-delete-rule], [data-revoke-key], [data-copy-and-close], [data-json-mode]");
+  if (!target) {
+    if (e.target.hasAttribute("data-action") && e.target.getAttribute("data-action") === "closeModalOverlay") {
+      window.app.closeModal();
+    }
+    // Check DAG node
+    let dagNode = e.target.closest("[data-step-json]");
+    if (dagNode) {
+      window.selectStep(dagNode.getAttribute("data-step-json"));
+    }
+    // Check json viewer copy
+    let copyBtn = e.target.closest("[data-copy]");
+    if (copyBtn) {
+      navigator.clipboard.writeText(copyBtn.getAttribute("data-copy")).then(() => {
+        copyBtn.innerText = "Copied!";
+        setTimeout(() => copyBtn.innerText = "Copy", 1500);
+      });
+    }
+    return;
+  }
 
-      if (target.dataset.navigate) window.app.navigate(target.dataset.navigate.replace(/'/g, ''));
-      else if (target.dataset.appChange) window.app.onAppChange(target.dataset.appChange.replace(/'/g, ''));
-      else if (target.dataset.action === "refresh") window.app.renderContentView();
-      else if (target.dataset.action === "toggleTheme") window.app.toggleTheme();
-      else if (target.dataset.action === "closeModal") window.app.closeModal();
-      else if (target.dataset.action === "openSignIn") window.app.openSignInModal();
-      else if (target.dataset.action === "signOut") window.app.signOut();
-      else if (target.dataset.action === "submitModalSignIn") {
-        const input = document.getElementById("modal-auth-key-input");
-        window.app.submitSignIn(input ? input.value.trim() : "");
-      }
-      else if (target.dataset.action === "submitSignIn") {
-        const input = document.getElementById("auth-key-input");
-        window.app.submitSignIn(input ? input.value.trim() : "");
-      }
-      else if (target.dataset.action === "viewChildWorkflow") {
-        window.app.closeModal();
-        window.app.navigate(`workflow/${encodeURIComponent(target.dataset.childWfId || "")}`);
-      }
-      else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ''));
-      else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ''));
-      else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ''));
-      else if (target.dataset.wfTab) window.app.switchWfTab(target.dataset.wfTab.replace(/'/g, ''));
-      else if (target.dataset.pauseSchedule) window.app.pauseSchedule(target.dataset.pauseSchedule.replace(/'/g, ''));
-      else if (target.dataset.resumeSchedule) window.app.resumeSchedule(target.dataset.resumeSchedule.replace(/'/g, ''));
-      else if (target.dataset.triggerSchedule) window.app.triggerSchedule(target.dataset.triggerSchedule.replace(/'/g, ''));
-      else if (target.dataset.action === "openCreateAlert") window.app.openCreateAlertModal();
-      else if (target.dataset.action === "submitCreateAlert") window.app.submitCreateAlert();
-      else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ''));
-      else if (target.dataset.action === "openCreateKey") window.app.openCreateKeyModal();
-      else if (target.dataset.action === "submitCreateKey") window.app.submitCreateKey();
-      else if (target.dataset.revokeKey) window.app.revokeKey(target.dataset.revokeKey.replace(/'/g, ''));
-      else if (target.dataset.copyAndClose) {
-         let text = target.dataset.copyAndClose;
-         navigator.clipboard.writeText(text).then(() => { window.app.closeModal(); window.app.renderContentView(); });
-      }
+  if (target.dataset.navigate) window.app.navigate(target.dataset.navigate.replace(/'/g, ''));
+  else if (target.dataset.appChange) window.app.onAppChange(target.dataset.appChange.replace(/'/g, ''));
+  else if (target.dataset.action === "refresh") window.app.renderContentView();
+  else if (target.dataset.action === "toggleTheme") window.app.toggleTheme();
+  else if (target.dataset.action === "closeModal") window.app.closeModal();
+  else if (target.dataset.action === "closeMobileNav") window.app.closeMobileNav();
+  else if (target.dataset.action === "toggleMobileNav") window.app.toggleMobileNav();
+  else if (target.dataset.action === "executePendingConfirm") window.app.executePendingConfirm();
+  else if (target.dataset.action === "openSignIn") window.app.openSignInModal();
+  else if (target.dataset.action === "signOut") window.app.signOut();
+  else if (target.dataset.action === "submitModalSignIn") {
+    const input = document.getElementById("modal-auth-key-input");
+    window.app.submitSignIn(input ? input.value.trim() : "");
+  }
+  else if (target.dataset.action === "submitSignIn") {
+    const input = document.getElementById("auth-key-input");
+    window.app.submitSignIn(input ? input.value.trim() : "");
+  }
+  else if (target.dataset.action === "viewChildWorkflow") {
+    const childId = target.dataset.childWfId || "";
+    if (window.app && window.app.selectedWorkflowId) {
+      window.app.parentWorkflowMap.set(childId, {
+        parentId: window.app.selectedWorkflowId,
+        parentName: window.app.currentWorkflowName || window.app.selectedWorkflowId,
+        parentStatus: window.app.currentWorkflowStatus || "SUCCESS"
+      });
+    }
+    window.app.closeModal();
+    window.app.navigate(`workflow/${encodeURIComponent(childId)}`);
+  }
+  else if (target.dataset.action === "expandPayload") {
+    window.app.openExpandPayloadModal(target.dataset.payloadTitle, target.dataset.payloadRaw);
+  }
+  else if (target.dataset.action === "dagZoomIn") window.app.zoomDag(0.15);
+  else if (target.dataset.action === "dagZoomOut") window.app.zoomDag(-0.15);
+  else if (target.dataset.action === "dagReset") window.app.resetDagZoom();
+  else if (target.dataset.jsonMode) {
+    const mode = target.dataset.jsonMode;
+    const targetId = target.dataset.targetId;
+    const viewer = document.getElementById(targetId);
+    if (viewer) {
+      viewer.querySelectorAll(".json-segment-btn").forEach(b => b.classList.toggle("active", b.dataset.jsonMode === mode));
+      const decodedEl = viewer.querySelector(".json-view-decoded");
+      const rawEl = viewer.querySelector(".json-view-raw");
+      if (decodedEl) decodedEl.style.display = mode === "decoded" ? "" : "none";
+      if (rawEl) rawEl.style.display = mode === "raw" ? "" : "none";
+    }
+  }
+  else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ''));
+  else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ''));
+  else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ''));
+  else if (target.dataset.wfTab) window.app.switchWfTab(target.dataset.wfTab.replace(/'/g, ''));
+  else if (target.dataset.pauseSchedule) window.app.pauseSchedule(target.dataset.pauseSchedule.replace(/'/g, ''));
+  else if (target.dataset.resumeSchedule) window.app.resumeSchedule(target.dataset.resumeSchedule.replace(/'/g, ''));
+  else if (target.dataset.triggerSchedule) window.app.triggerSchedule(target.dataset.triggerSchedule.replace(/'/g, ''));
+  else if (target.dataset.action === "openCreateAlert") window.app.openCreateAlertModal();
+  else if (target.dataset.action === "submitCreateAlert") window.app.submitCreateAlert();
+  else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ''));
+  else if (target.dataset.action === "openCreateKey") window.app.openCreateKeyModal();
+  else if (target.dataset.action === "submitCreateKey") window.app.submitCreateKey();
+  else if (target.dataset.revokeKey) window.app.revokeKey(target.dataset.revokeKey.replace(/'/g, ''));
+  else if (target.dataset.copyAndClose) {
+    let text = target.dataset.copyAndClose;
+    navigator.clipboard.writeText(text).then(() => {
+      window.app.closeModal();
+      window.app.showToast("API key copied to clipboard", "success");
+      window.app.renderContentView();
     });
+  }
+});
 
-    document.addEventListener("change", (e) => {
-      let target = e.target.closest("[data-change]");
-      if (!target) return;
-      if (target.dataset.change === "app") window.app.onAppChange(target.value);
-      else if (target.dataset.change === "wfStatus") window.app.filterWorkflowsStatus(target.value);
-    });
+document.addEventListener("change", (e) => {
+  let target = e.target.closest("[data-change]");
+  if (!target) return;
+  if (target.dataset.change === "app") window.app.onAppChange(target.value);
+  else if (target.dataset.change === "wfStatus") window.app.filterWorkflowsStatus(target.value);
+  else if (target.dataset.change === "pollInterval") window.app.setPollInterval(target.value);
+});
 
-    document.addEventListener("input", (e) => {
-      let target = e.target.closest("[data-input]");
-      if (!target) return;
-      if (target.dataset.input === "wfTable") window.app.filterWorkflowsTable(target.value);
-    });
+document.addEventListener("input", (e) => {
+  let target = e.target.closest("[data-input]");
+  if (!target) return;
+  if (target.dataset.input === "wfTable") window.app.filterWorkflowsTable(target.value);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (window.app && window.app.mobileNavOpen) {
+      window.app.closeMobileNav();
+      return;
+    }
+    const modal = document.getElementById("modal-root");
+    if (modal && modal.children.length > 0) {
+      window.app.closeModal();
+      return;
+    }
+  }
+
+  // Keyboard activation for accessible table rows, dag nodes, and nav items
+  if (e.key === "Enter" || e.key === " ") {
+    const active = document.activeElement;
+    if (!active) return;
+    if (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA" || active.tagName === "BUTTON") {
+      return;
+    }
+    if (active.classList && (active.classList.contains("clickable") || active.hasAttribute("data-step-json") || active.classList.contains("nav-item"))) {
+      e.preventDefault();
+      active.click();
+      return;
+    }
+  }
+
+  // Focus trap in active modal or drawer
+  if (e.key === "Tab") {
+    const dialog = document.querySelector("#modal-root .modal-dialog, #modal-root .drawer-panel");
+    if (!dialog) return;
+
+    const focusables = dialog.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if (focusables.length === 0) return;
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
+});

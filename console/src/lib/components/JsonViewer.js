@@ -1,4 +1,4 @@
-// JsonViewer component for formatted payload inspection
+// JsonViewer component for formatted payload inspection with Raw/Decoded toggle and expansion
 
 export function renderJsonViewer(data, title = "") {
   if (data === undefined || data === null || data === "") {
@@ -26,10 +26,19 @@ export function renderJsonViewer(data, title = "") {
   return `
     <div class="json-viewer" id="${id}">
       <div class="json-header">
-        <span class="json-title">${escapeHtml(title)}</span>
-        <button class="btn btn-xs btn-secondary copy-btn" data-copy="${escapeHtml(raw)}">Copy</button>
+        <div class="json-header-left">
+          <span class="json-title">${escapeHtml(title)}</span>
+          <div class="json-segment-group" role="group" aria-label="Format mode">
+            <button class="json-segment-btn active" data-json-mode="decoded" data-target-id="${id}" type="button">Decoded</button>
+            <button class="json-segment-btn" data-json-mode="raw" data-target-id="${id}" type="button">Raw</button>
+          </div>
+        </div>
+        <div class="json-header-right">
+          <button class="btn btn-xs btn-secondary" data-action="expandPayload" data-payload-title="${escapeHtml(title)}" data-payload-raw="${escapeHtml(raw)}" type="button" title="Expand to fullscreen modal">⛶ Expand</button>
+          <button class="btn btn-xs btn-secondary copy-btn" data-copy="${escapeHtml(raw)}" type="button">Copy</button>
+        </div>
       </div>
-      <pre class="json-content"><code>${formatted}</code></pre>
+      <pre class="json-content"><code class="json-view-decoded">${formatted}</code><code class="json-view-raw" style="display:none;">${escapeHtml(raw)}</code></pre>
     </div>
   `;
 }
