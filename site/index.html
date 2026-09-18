@@ -415,8 +415,38 @@ h1 span.highlight {
   background: var(--bg-panel);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 40px;
+  padding: 36px;
+  margin-bottom: 32px;
+}
+.quickstart-section:last-of-type {
   margin-bottom: 96px;
+}
+.quickstart-step-head {
+  margin-bottom: 18px;
+}
+.quickstart-step-badge {
+  display: inline-block;
+  font-size: .75rem;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-raised);
+  color: var(--cobalt-hi);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.quickstart-step-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.quickstart-step-desc {
+  font-size: .9rem;
+  color: var(--ink-dim);
+  margin: 0;
 }
 .code-tabs {
   display: flex;
@@ -822,17 +852,24 @@ footer {
       <div class="section-kicker">Quickstart</div>
       <h2 class="section-title">Up and Running in 60 Seconds</h2>
       <p class="section-desc">
-        Start Relay, configure your database, and connect your existing DBOS application.
+        Start the Relay control plane with your storage engine of choice, then connect your existing DBOS application.
       </p>
     </div>
 
+    <!-- Block 1: Start Relay Control Plane -->
     <div class="quickstart-section">
+      <div class="quickstart-step-head">
+        <span class="quickstart-step-badge">Step 1</span>
+        <h3 class="quickstart-step-title">Start the Relay Control Plane</h3>
+        <p class="quickstart-step-desc">
+          Choose pure-Go embedded SQLite for instant zero-dependency local evaluation, or PostgreSQL for high-availability production clusters.
+        </p>
+      </div>
+
       <div class="code-tabs">
         <button class="code-tab-btn active" onclick="switchCode('embedded', this)">Embedded (Zero Setup)</button>
-        <button class="code-tab-btn" onclick="switchCode('docker', this)">Docker & Postgres</button>
+        <button class="code-tab-btn" onclick="switchCode('docker', this)">Docker &amp; Postgres</button>
         <button class="code-tab-btn" onclick="switchCode('binary', this)">Postgres Binary</button>
-        <button class="code-tab-btn" onclick="switchCode('python', this)">Python App Config</button>
-        <button class="code-tab-btn" onclick="switchCode('typescript', this)">TypeScript App Config</button>
       </div>
 
       <div class="code-panes">
@@ -870,8 +907,27 @@ chmod +x relay
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay migrate up
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay serve</code></pre>
         </div>
+      </div>
+    </div>
 
-        <div id="code-python" class="code-pane">
+    <!-- Block 2: Connect DBOS Applications -->
+    <div class="quickstart-section">
+      <div class="quickstart-step-head">
+        <span class="quickstart-step-badge">Step 2</span>
+        <h3 class="quickstart-step-title">Connect Your DBOS Applications</h3>
+        <p class="quickstart-step-desc">
+          Point your unmodified Python, TypeScript, or Go application at Relay over WebSocket using standard Conductor configuration.
+        </p>
+      </div>
+
+      <div class="code-tabs">
+        <button class="code-tab-btn active" onclick="switchCode('python', this)">Python SDK</button>
+        <button class="code-tab-btn" onclick="switchCode('typescript', this)">TypeScript SDK</button>
+        <button class="code-tab-btn" onclick="switchCode('go', this)">Go SDK</button>
+      </div>
+
+      <div class="code-panes">
+        <div id="code-python" class="code-pane active">
           <pre><code><span class="keyword">import</span> os
 <span class="keyword">from</span> dbos <span class="keyword">import</span> DBOS, DBOSConfig
 
@@ -879,7 +935,7 @@ RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/rel
 config: DBOSConfig = {
     <span class="string">"name"</span>: <span class="string">"checkout-service"</span>,
     <span class="string">"system_database_url"</span>: os.environ[<span class="string">"DATABASE_URL"</span>],
-    <span class="string">"conductor_url"</span>: <span class="string">"ws://localhost:8080"</span>,
+    <span class="string">"conductor_url"</span>: <span class="string">"ws://localhost:8090"</span>,
     <span class="string">"conductor_key"</span>: os.environ.get(<span class="string">"RELAY_API_KEY"</span>, <span class="string">""</span>),
 }
 
@@ -891,10 +947,29 @@ DBOS.launch()</code></pre>
           <pre><code><span class="keyword">import</span> { DBOS } <span class="keyword">from</span> <span class="string">"@dbos-inc/dbos-sdk"</span>;
 
 <span class="comment">// Set environment variables for your DBOS runtime</span>
-process.env.DBOS__CONDUCTOR_URL = <span class="string">"ws://localhost:8080"</span>;
+process.env.DBOS__CONDUCTOR_URL = <span class="string">"ws://localhost:8090"</span>;
 process.env.DBOS__CONDUCTOR_KEY = process.env.RELAY_API_KEY;
 
 <span class="keyword">await</span> DBOS.launch();</code></pre>
+        </div>
+
+        <div id="code-go" class="code-pane">
+          <pre><code><span class="keyword">package</span> main
+
+<span class="keyword">import</span> (
+    <span class="string">"os"</span>
+    <span class="string">"github.com/dbos-inc/dbos-transact-golang/dbos"</span>
+)
+
+<span class="keyword">func</span> main() {
+    <span class="comment">// Configure unmodified DBOS Go application pointing to Relay</span>
+    dbos.Launch(dbos.Config{
+        AppName:         <span class="string">"checkout-service"</span>,
+        SystemDBURL:     os.Getenv(<span class="string">"DATABASE_URL"</span>),
+        ConductorURL:    <span class="string">"ws://localhost:8090"</span>,
+        ConductorAPIKey: os.Getenv(<span class="string">"RELAY_API_KEY"</span>),
+    })
+}</code></pre>
         </div>
       </div>
     </div>
@@ -941,11 +1016,13 @@ function switchScreenshot(id, btn) {
 }
 
 function switchCode(id, btn) {
-  document.querySelectorAll('.code-pane').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.code-tab-btn').forEach(b => b.classList.remove('active'));
-  const target = document.getElementById('code-' + id);
+  const container = btn.closest('.quickstart-section');
+  if (!container) return;
+  container.querySelectorAll('.code-pane').forEach(el => el.classList.remove('active'));
+  container.querySelectorAll('.code-tab-btn').forEach(b => b.classList.remove('active'));
+  const target = container.querySelector('#code-' + id);
   if (target) target.classList.add('active');
-  if (btn) btn.classList.add('active');
+  btn.classList.add('active');
 }
 </script>
 
