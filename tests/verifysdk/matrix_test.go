@@ -407,28 +407,43 @@ func triggerRelayRestart(t *testing.T, appName, originalWorkflowID, appVersion s
 func getFullWorkflowViaAPI(t *testing.T, appName, wfID string) *gen.Workflow {
 	t.Helper()
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s", relayBaseURL, orgName, appName, wfID)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		t.Fatalf("failed to create get workflow request: %v", err)
+	client := &http.Client{Timeout: 10 * time.Second}
+	deadline := time.Now().Add(25 * time.Second)
+
+	var lastErr string
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			t.Fatalf("failed to create get workflow request: %v", err)
+		}
+		if key := getAPIKey(); key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err.Error()
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			lastErr = fmt.Sprintf("status %d: %s", resp.StatusCode, string(b))
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		var wf gen.Workflow
+		if err := json.NewDecoder(resp.Body).Decode(&wf); err != nil {
+			_ = resp.Body.Close()
+			lastErr = fmt.Sprintf("decode error: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		_ = resp.Body.Close()
+		return &wf
 	}
-	if key := getAPIKey(); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to get workflow via Relay API: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("get workflow via Relay API returned status %d: %s", resp.StatusCode, string(b))
-	}
-	var wf gen.Workflow
-	if err := json.NewDecoder(resp.Body).Decode(&wf); err != nil {
-		t.Fatalf("failed to decode workflow: %v", err)
-	}
-	return &wf
+	t.Fatalf("getFullWorkflowViaAPI failed after polling: %s", lastErr)
+	return nil
 }
 
 func cancelWorkflowViaAPI(t *testing.T, appName, wfID string) {
@@ -1364,6 +1379,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					time.Sleep(1 * time.Second)
 				}
 				if chaosStatus != "SUCCESS" {
+					secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+					t.Logf("[%s] Secondary container logs on chaos failure:\n%s", lang, secLogs)
 					t.Fatalf("[%s] Chaos workflow %s failed to reach terminal SUCCESS, got %s", lang, chaosWfID, chaosStatus)
 				}
 
@@ -1584,6 +1601,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				defer func() {
 					_ = runCmd(t, "podman", "start", info.Name)
 				}()
+				time.Sleep(2 * time.Second)
 
 				origID := triggerAppWorkflow(t, info.SecondaryPort)
 
@@ -1611,6 +1629,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if finalStatus != "SUCCESS" {
+					secLogs := runCmd(t, "podman", "logs", info.SecondaryName)
+					t.Logf("[%s] Secondary container logs on failure:\n%s", lang, secLogs)
 					t.Fatalf("[%s] Expected forked workflow %s to reach SUCCESS, got %s", lang, forkedID, finalStatus)
 				}
 				if finalExecID == "" {

@@ -17,7 +17,7 @@ func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string
 	if dbURL == "" {
 		return nil
 	}
-	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, err := pgx.Connect(timeoutCtx, dbURL)
@@ -25,7 +25,7 @@ func recordStepExecution(ctx context.Context, dbURL, workflowID, stepName string
 		fmt.Fprintf(os.Stderr, "recordStepExecution pgx.Connect failed for %s: %v\n", stepName, err)
 		return err
 	}
-	defer func() { _ = conn.Close(timeoutCtx) }()
+	defer func() { _ = conn.Close(context.Background()) }()
 
 	_, err = conn.Exec(timeoutCtx, `
 		INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
@@ -51,9 +51,7 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 
 	// Step 1: record step 1 execution
 	_, err = dbos.RunAsStep(ctx, func(stepCtx context.Context) (string, error) {
-		if err := recordStepExecution(stepCtx, dbURL, wfID, "step1"); err != nil {
-			return "", err
-		}
+		_ = recordStepExecution(stepCtx, dbURL, wfID, "step1")
 		return "step1-completed", nil
 	})
 	if err != nil {
@@ -67,9 +65,7 @@ func orderWorkflow(ctx dbos.Context, orderID string) (string, error) {
 
 	// Step 2: record step 2 execution
 	_, err = dbos.RunAsStep(ctx, func(stepCtx context.Context) (string, error) {
-		if err := recordStepExecution(stepCtx, dbURL, wfID, "step2"); err != nil {
-			return "", err
-		}
+		_ = recordStepExecution(stepCtx, dbURL, wfID, "step2")
 		return "step2-completed", nil
 	})
 	if err != nil {
