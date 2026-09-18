@@ -34,8 +34,8 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dbos-inc/dbos-transact-golang v1.4.0 h1:tdIg3H5aHvtDNFg/2dtmVUTKu5HSIrYjDIPjY8JgkxE=
-github.com/dbos-inc/dbos-transact-golang v1.4.0/go.mod h1:qTLZ/eJDybK03DRFSzVgs7ZURPMXXY2IGs75fx62HFc=
+github.com/dbos-inc/dbos-transact-golang v1.3.0 h1:f0C107qLuUsRrvsYApb6Qi/WGGeCGzL/am26jxjMrOw=
+github.com/dbos-inc/dbos-transact-golang v1.3.0/go.mod h1:HEjtVW5wgpkpTIAp+FAIVldSr+oiiolyFZ+2RJda8gI=
 github.com/dhui/dktest v0.4.6 h1:+DPKyScKSEp3VLtbMDHcUq6V5Lm5zfZZVb0Sk7Ahom4=
 github.com/dhui/dktest v0.4.6/go.mod h1:JHTSYDtKkvFNFHJKqCzVzqXecyv+tKt8EzceOmQOgbU=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=

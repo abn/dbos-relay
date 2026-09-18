@@ -272,10 +272,30 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  padding: 6px 14px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
+}
+
+.btn-icon-only {
+  padding: 5px 8px;
+  min-width: 28px;
+  height: 28px;
+  justify-content: center;
+}
+
+.editor-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-header-controls .select-control {
+  padding: 3px 8px;
+  font-size: 12px;
+  height: 28px;
+  max-width: 340px;
 }
 
 .pane-meta {
@@ -296,6 +316,7 @@ html, body {
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .tab-item.active {

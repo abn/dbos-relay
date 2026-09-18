@@ -480,7 +480,6 @@ class PlaygroundController {
     this.runBtn.disabled = true;
     this.runBtn.innerHTML = `
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      <span>Executing...</span>
     `;
 
     const randomSuffix = Math.floor(10000 + Math.random() * 90000);
@@ -699,7 +698,6 @@ class PlaygroundController {
       this.runBtn.disabled = false;
       this.runBtn.innerHTML = `
         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Run Workflow</span>
       `;
     }
   }

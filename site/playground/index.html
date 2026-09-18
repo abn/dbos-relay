@@ -13,8 +13,7 @@
   <header class="playground-header">
     <div class="brand-section">
       <img src="assets/logo.svg" alt="Relay Logo" class="brand-logo" />
-      <span class="brand-title">Relay Playground</span>
-      <span class="brand-badge">WASM Interactive</span>
+      <span class="brand-title">Playground</span>
       <div id="db-status" class="db-status-pill">
         <span class="status-dot ready"></span>
         <span id="db-status-text" class="status-text">PGlite Loading...</span>
@@ -22,16 +21,6 @@
     </div>
 
     <div class="controls-section">
-      <select id="demo-select" class="select-control" aria-label="Select demo workflow">
-        <option value="checkout">Demo 1: E-Commerce Checkout (Child DAG)</option>
-        <option value="payment">Demo 2: Payment Processing (Retries &amp; Idempotency)</option>
-      </select>
-
-      <button id="run-btn" class="btn btn-primary" title="Execute workflow in browser">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Run Workflow</span>
-      </button>
-
       <button id="fail-toggle-btn" class="btn btn-danger-outline" title="Inject simulated step failure to observe error handling">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         <span>Inject Step Failure</span>
@@ -67,9 +56,17 @@
         <div class="pane-header">
           <div class="tabs-group">
             <span class="tab-item active">workflow.ts</span>
-            <span class="tab-item">TypeScript / DBOS Transact</span>
+            <span class="tab-item">TypeScript</span>
           </div>
-          <span class="pane-meta">In-Browser Client Execution</span>
+          <div class="editor-header-controls">
+            <select id="demo-select" class="select-control" aria-label="Select demo workflow">
+              <option value="checkout">Demo 1: E-Commerce Checkout (Child DAG)</option>
+              <option value="payment">Demo 2: Payment Processing (Retries &amp; Idempotency)</option>
+            </select>
+            <button id="run-btn" class="btn btn-primary btn-icon-only" title="Run workflow in browser" aria-label="Run Workflow">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </button>
+          </div>
         </div>
 
         <div class="editor-wrapper">
