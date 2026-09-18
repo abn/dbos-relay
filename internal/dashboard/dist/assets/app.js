@@ -648,6 +648,8 @@
       this.mobileNavOpen = false;
       this.pendingConfirmAction = null;
       this.parentWorkflowMap = /* @__PURE__ */ new Map();
+      this.workflowAppMap = /* @__PURE__ */ new Map();
+      this.selectedWorkflowApp = "";
       this.currentWorkflowName = "";
       this.currentWorkflowStatus = "";
       this.dagZoom = 1;
@@ -1029,12 +1031,13 @@
         const savedApp = localStorage.getItem("relay_selected_app");
         if (savedApp && this.apps.some((a) => a.name === savedApp)) {
           this.appName = savedApp;
-        } else if (this.apps && this.apps.length > 0 && !this.appName) {
-          this.appName = this.apps[0].name;
+        } else {
+          this.appName = "";
         }
       } catch (err) {
         console.warn("Listing applications:", err);
         this.apps = [];
+        this.appName = "";
       }
     }
     handleRouting() {
@@ -1134,8 +1137,8 @@
           <div class="selector-group">
             <label class="form-label" for="header-app-select" style="margin:0;">App:</label>
             <select id="header-app-select" class="select-sm" data-change="app" aria-label="Active application">
+              <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
               ${this.apps.map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
-              ${this.apps.length === 0 ? `<option value="">No applications</option>` : ""}
             </select>
           </div>
           <div class="selector-group">
@@ -1186,10 +1189,16 @@
       }
     }
     onAppChange(newAppName) {
-      this.appName = newAppName;
-      localStorage.setItem("relay_selected_app", newAppName);
-      const select = document.getElementById("header-app-select");
-      if (select) select.value = newAppName;
+      this.appName = newAppName || "";
+      if (newAppName) {
+        localStorage.setItem("relay_selected_app", newAppName);
+      } else {
+        localStorage.removeItem("relay_selected_app");
+      }
+      const selects = document.querySelectorAll('[data-change="app"]');
+      selects.forEach((s) => {
+        s.value = this.appName;
+      });
       if (this.pollInterval === "stream") {
         this.startSSE();
       }
@@ -1234,35 +1243,60 @@
       }
       try {
         await this.loadApplications();
-        let executors = [];
-        let workflows = [];
-        let queues = [];
-        let schedules = [];
-        if (this.appName) {
-          const [execRes, wfRes, qRes, schRes] = await Promise.allSettled([
-            this.client.listExecutors(this.orgName, this.appName),
-            this.client.listWorkflows(this.orgName, this.appName, { limit: 100 }),
-            this.client.listQueues ? this.client.listQueues(this.orgName, this.appName) : Promise.resolve([]),
-            this.client.listSchedules ? this.client.listSchedules(this.orgName, this.appName) : Promise.resolve([])
-          ]);
-          if (execRes.status === "fulfilled") executors = execRes.value || [];
-          if (wfRes.status === "fulfilled") workflows = wfRes.value || [];
-          if (qRes.status === "fulfilled") queues = qRes.value || [];
-          if (schRes.status === "fulfilled") schedules = schRes.value || [];
+        const apps = this.apps || [];
+        const perAppResults = await Promise.allSettled(
+          apps.map(async (app) => {
+            const [execRes, wfRes, qRes, schRes] = await Promise.allSettled([
+              this.client.listExecutors(this.orgName, app.name),
+              this.client.listWorkflows(this.orgName, app.name, { limit: 25 }),
+              this.client.listQueues ? this.client.listQueues(this.orgName, app.name) : Promise.resolve([]),
+              this.client.listSchedules ? this.client.listSchedules(this.orgName, app.name) : Promise.resolve([])
+            ]);
+            return {
+              app,
+              executors: execRes.status === "fulfilled" ? execRes.value || [] : [],
+              workflows: wfRes.status === "fulfilled" ? wfRes.value || [] : [],
+              queues: qRes.status === "fulfilled" ? qRes.value || [] : [],
+              schedules: schRes.status === "fulfilled" ? schRes.value || [] : []
+            };
+          })
+        );
+        let allExecutors = [];
+        let allWorkflows = [];
+        let totalQueues = 0;
+        let totalSchedules = 0;
+        const appMetrics = /* @__PURE__ */ new Map();
+        for (const res of perAppResults) {
+          if (res.status === "fulfilled") {
+            const { app, executors, workflows, queues, schedules } = res.value;
+            executors.forEach((e) => allExecutors.push({ ...e, appName: app.name }));
+            workflows.forEach((w) => {
+              this.workflowAppMap.set(w.workflowId, app.name);
+              allWorkflows.push({ ...w, appName: app.name });
+            });
+            totalQueues += queues.length;
+            totalSchedules += schedules.length;
+            appMetrics.set(app.name, {
+              executors,
+              healthyExecutors: executors.filter((e) => e.status === "HEALTHY").length,
+              workflowsCount: workflows.length,
+              queuesCount: queues.length,
+              schedulesCount: schedules.length
+            });
+          }
         }
-        const activeExecutors = executors.filter((e) => e.status === "HEALTHY").length;
-        const disconnectedExecutors = executors.filter((e) => e.status === "DISCONNECTED").length;
-        const inFlightWfs = workflows.filter((w) => w.status === "PENDING" || w.status === "ENQUEUED").length;
-        const failedWfs = workflows.filter((w) => w.status === "ERROR").length;
-        const recentWorkflows = [...workflows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
+        const activeExecutors = allExecutors.filter((e) => e.status === "HEALTHY").length;
+        const disconnectedExecutors = allExecutors.filter((e) => e.status === "DISCONNECTED").length;
+        const inFlightWfs = allWorkflows.filter((w) => w.status === "PENDING" || w.status === "ENQUEUED").length;
+        const failedWfs = allWorkflows.filter((w) => w.status === "ERROR").length;
+        const recentWorkflows = [...allWorkflows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
         el.innerHTML = `
         <div class="stat-grid">
           <div class="stat-card">
-            <span class="stat-label">Workflows</span>
-            <span class="stat-value">${workflows.length}</span>
+            <span class="stat-label">Applications</span>
+            <span class="stat-value">${apps.length}</span>
             <div class="kpi-subtext">
-              <span class="kpi-sub-pill kpi-info">${inFlightWfs} in flight</span>
-              <span class="kpi-sub-pill ${failedWfs > 0 ? "kpi-error" : "kpi-success"}">${failedWfs} errors</span>
+              <span class="kpi-sub-pill kpi-success">${apps.filter((a) => a.status === "AVAILABLE").length} active</span>
             </div>
           </div>
           <div class="stat-card">
@@ -1274,18 +1308,19 @@
             </div>
           </div>
           <div class="stat-card">
-            <span class="stat-label">Active Queues & Schedules</span>
-            <span class="stat-value">${queues.length + schedules.length}</span>
+            <span class="stat-label">Fleet Workflows</span>
+            <span class="stat-value">${allWorkflows.length}</span>
             <div class="kpi-subtext">
-              <span class="kpi-sub-pill">${queues.length} queues</span>
-              <span class="kpi-sub-pill">${schedules.length} schedules</span>
+              <span class="kpi-sub-pill kpi-info">${inFlightWfs} in flight</span>
+              <span class="kpi-sub-pill ${failedWfs > 0 ? "kpi-error" : "kpi-success"}">${failedWfs} errors</span>
             </div>
           </div>
           <div class="stat-card">
-            <span class="stat-label">Applications</span>
-            <span class="stat-value">${this.apps.length}</span>
+            <span class="stat-label">Active Queues & Schedules</span>
+            <span class="stat-value">${totalQueues + totalSchedules}</span>
             <div class="kpi-subtext">
-              <span class="kpi-sub-pill">${escapeHtml4(this.appName || "None")}</span>
+              <span class="kpi-sub-pill">${totalQueues} queues</span>
+              <span class="kpi-sub-pill">${totalSchedules} schedules</span>
             </div>
           </div>
         </div>
@@ -1293,8 +1328,58 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <span class="card-title">Recent Workflow Executions</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live operational telemetry</span>
+              <span class="card-title">Applications</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Registered applications in fleet</span>
+            </div>
+            <span class="badge badge-neutral">${apps.length} total</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Application</th>
+                  <th>Status</th>
+                  <th>Runtime</th>
+                  <th>Live Executors</th>
+                  <th>Workflows</th>
+                  <th>Queues / Schedules</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${apps.length > 0 ? apps.map((a) => {
+          const m = appMetrics.get(a.name) || { healthyExecutors: 0, workflowsCount: 0, queuesCount: 0, schedulesCount: 0 };
+          return `
+                    <tr>
+                      <td><strong>${escapeHtml4(a.name)}</strong></td>
+                      <td>${renderStatusPill(a.status)}</td>
+                      <td><span class="badge badge-neutral">${escapeHtml4(a.language || "dbos")}</span></td>
+                      <td>
+                        <span class="badge ${m.healthyExecutors > 0 ? "badge-success" : "badge-neutral"}">
+                          ${m.healthyExecutors} live
+                        </span>
+                      </td>
+                      <td>${m.workflowsCount} recorded</td>
+                      <td>${m.queuesCount}q / ${m.schedulesCount}s</td>
+                      <td>
+                        <div style="display:flex; gap:6px;">
+                          <button class="btn btn-xs btn-primary" data-app-change='${escapeHtml4(a.name)}' data-navigate="workflows">Workflows \u2192</button>
+                          <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(a.name)}' data-navigate="queues">Queues</button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+        }).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No applications registered.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Recent Fleet Workflows</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live operational telemetry across applications</span>
             </div>
             <a href="#/workflows" class="btn btn-xs btn-secondary" data-navigate="workflows">View All Workflows \u2192</a>
           </div>
@@ -1303,6 +1388,7 @@
               <thead>
                 <tr>
                   <th>Status</th>
+                  <th>Application</th>
                   <th>Workflow ID</th>
                   <th>Name</th>
                   <th>Queue</th>
@@ -1313,8 +1399,9 @@
               </thead>
               <tbody>
                 ${recentWorkflows.length > 0 ? recentWorkflows.map((w) => `
-                  <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml4(w.workflowId)}" data-navigate="workflow/${escapeHtml4(w.workflowId)}">
+                  <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml4(w.workflowId)}" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">
                     <td>${renderStatusPill(w.status)}</td>
+                    <td><span class="badge badge-info">${escapeHtml4(w.appName)}</span></td>
                     <td><code>${escapeHtml4(truncate2(w.workflowId, 22))}</code></td>
                     <td><strong>${escapeHtml4(w.workflowName || "unnamed")}</strong></td>
                     <td>${escapeHtml4(w.queueName || "default")}</td>
@@ -1325,10 +1412,10 @@
                     </td>
                     <td>${calculateDuration(w.createdAt, w.completedAt)}</td>
                     <td>
-                      <a href="#/workflow/${escapeHtml4(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml4(w.workflowId)}">Inspect \u2197</a>
+                      <a href="#/workflow/${escapeHtml4(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">Inspect \u2197</a>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflow executions recorded for this application.</td></tr>`}
+                `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflow executions recorded across applications.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1336,13 +1423,18 @@
 
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Connected Executors (${escapeHtml4(this.appName || "No app")})</span>
+            <div>
+              <span class="card-title">Connected Executors</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live nodes connected to Relay</span>
+            </div>
+            <span class="badge badge-neutral">${allExecutors.length} total</span>
           </div>
           <div class="table-container">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Executor ID</th>
+                  <th>Application</th>
                   <th>Status</th>
                   <th>Hostname</th>
                   <th>Version</th>
@@ -1351,51 +1443,24 @@
                 </tr>
               </thead>
               <tbody>
-                ${executors.length > 0 ? executors.map((e) => `
+                ${allExecutors.length > 0 ? allExecutors.map((e) => `
                   <tr>
                     <td><code>${escapeHtml4(e.executorId)}</code></td>
+                    <td><span class="badge badge-info">${escapeHtml4(e.appName)}</span></td>
                     <td>${renderStatusPill(e.status)}</td>
                     <td>${escapeHtml4(e.hostname || "localhost")}</td>
                     <td><span class="badge">${escapeHtml4(e.appVersion || "v1.0.0")}</span></td>
                     <td>${escapeHtml4(e.language || "unknown")}</td>
                     <td>${formatTimestamp(e.updatedAt)}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No executors registered for this application.</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">Registered Applications</span>
-          </div>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Timeout</th>
-                  <th>Private Mode</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${this.apps.map((a) => `
-                  <tr class="clickable" tabindex="0" role="button" aria-label="Select application ${escapeHtml4(a.name)}" data-app-change='${escapeHtml4(a.name)}'>
-                    <td><strong>${escapeHtml4(a.name)}</strong></td>
-                    <td>${renderStatusPill(a.status)}</td>
-                    <td>${a.executorTimeoutSecs || 60}s</td>
-                    <td>${a.privateMode ? "Enabled" : "Disabled"}</td>
-                  </tr>
-                `).join("")}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No executors currently connected.</td></tr>`}
               </tbody>
             </table>
           </div>
         </div>
       `;
       } catch (err) {
-        el.innerHTML = `<div class="card"><div class="card-body" style="color:var(--color-error-text);">Failed to load fleet: ${escapeHtml4(err.message)}</div></div>`;
+        this.renderErrorState(el, "Fleet & Applications", err.message);
       }
     }
     // --- SCREEN 2: WORKFLOW SEARCH & LIST ---
@@ -1404,10 +1469,40 @@
         el.innerHTML = `<div class="loading-spinner">Loading workflows...</div>`;
       }
       try {
-        const workflows = await this.client.listWorkflows(this.orgName, this.appName, { limit: 50 });
+        let workflows = [];
+        if (!this.appName) {
+          const results = await Promise.allSettled(
+            (this.apps || []).map(async (app) => {
+              const list = await this.client.listWorkflows(this.orgName, app.name, { limit: 50 });
+              return list.map((w) => ({ ...w, appName: app.name }));
+            })
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              workflows.push(...r.value);
+            }
+          }
+          workflows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        } else {
+          const list = await this.client.listWorkflows(this.orgName, this.appName, { limit: 50 });
+          workflows = list.map((w) => ({ ...w, appName: this.appName }));
+        }
+        workflows.forEach((w) => {
+          if (w.appName) {
+            this.workflowAppMap.set(w.workflowId, w.appName);
+          }
+        });
+        const appSelectOptions = `
+        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
+        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
+      `;
         el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
+            <label class="form-label" for="filter-app" style="margin:0;">App:</label>
+            <select id="filter-app" class="select-sm" data-change="app" aria-label="Filter workflows by application">
+              ${appSelectOptions}
+            </select>
             <input type="text" id="filter-id" class="input-text" placeholder="Search workflows... [/]" data-input="wfTable" aria-label="Search workflows by ID or name">
             <select id="filter-status" class="select-sm" data-change="wfStatus" aria-label="Filter workflows by status">
               <option value="">All Statuses</option>
@@ -1429,6 +1524,7 @@
               <thead>
                 <tr>
                   <th>Workflow ID</th>
+                  <th>Application</th>
                   <th>Status</th>
                   <th>Workflow Name</th>
                   <th>Queue</th>
@@ -1439,8 +1535,9 @@
               </thead>
               <tbody>
                 ${workflows.length > 0 ? workflows.map((wf) => `
-                  <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml4(wf.workflowId)}" data-navigate='workflow/${encodeURIComponent(wf.workflowId)}'>
+                  <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml4(wf.workflowId)}" data-navigate='workflow/${encodeURIComponent(wf.workflowId)}' data-wf-app="${escapeHtml4(wf.appName || "")}">
                     <td><code>${escapeHtml4(wf.workflowId)}</code></td>
+                    <td><span class="badge badge-info">${escapeHtml4(wf.appName || "default")}</span></td>
                     <td>${renderStatusPill(wf.status)}</td>
                     <td><strong>${escapeHtml4(wf.workflowName || "unnamed")}</strong></td>
                     <td>${escapeHtml4(wf.queueName || "default")}</td>
@@ -1448,14 +1545,14 @@
                     <td>${formatTimestamp(wf.createdAt)}</td>
                     <td>${calculateDuration(wf.createdAt, wf.completedAt)}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary);">No workflows found.</td></tr>`}
+                `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflows found.</td></tr>`}
               </tbody>
             </table>
           </div>
         </div>
       `;
       } catch (err) {
-        this.renderErrorState(el, `Workflows (${escapeHtml4(this.appName || "No app")})`, err.message);
+        this.renderErrorState(el, `Workflows (${escapeHtml4(this.appName || "All Applications")})`, err.message);
       }
     }
     filterWorkflowsTable(query) {
@@ -1483,8 +1580,24 @@
         el.innerHTML = `<div class="loading-spinner">Loading workflow details...</div>`;
       }
       try {
-        const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
-        const steps = await this.client.listSteps(this.orgName, this.appName, this.selectedWorkflowId);
+        let targetApp = this.selectedWorkflowApp || this.workflowAppMap.get(this.selectedWorkflowId) || this.appName;
+        if (!targetApp && this.apps && this.apps.length > 0) {
+          for (const app of this.apps) {
+            try {
+              await this.client.getWorkflow(this.orgName, app.name, this.selectedWorkflowId);
+              targetApp = app.name;
+              this.workflowAppMap.set(this.selectedWorkflowId, targetApp);
+              break;
+            } catch {
+            }
+          }
+        }
+        if (!targetApp) {
+          targetApp = this.appName || (this.apps[0] ? this.apps[0].name : "default");
+        }
+        this.selectedWorkflowApp = targetApp;
+        const wf = await this.client.getWorkflow(this.orgName, targetApp, this.selectedWorkflowId);
+        const steps = await this.client.listSteps(this.orgName, targetApp, this.selectedWorkflowId);
         this.currentWorkflowName = wf.workflowName || wf.workflowId;
         this.currentWorkflowStatus = wf.status;
         const childStepEntries = steps.filter((s) => Boolean(s.childWorkflowId));
@@ -1493,8 +1606,8 @@
           const childResults = await Promise.allSettled(
             childStepEntries.map(async (step) => {
               try {
-                const childWf = await this.client.getWorkflow(this.orgName, this.appName, step.childWorkflowId);
-                const childSteps = await this.client.listSteps(this.orgName, this.appName, step.childWorkflowId);
+                const childWf = await this.client.getWorkflow(this.orgName, targetApp, step.childWorkflowId);
+                const childSteps = await this.client.listSteps(this.orgName, targetApp, step.childWorkflowId);
                 return {
                   stepId: step.stepId,
                   childWorkflowId: step.childWorkflowId,
@@ -1527,8 +1640,10 @@
             <span>Workflows</span>
           </a>
           <span class="wf-breadcrumb-separator" aria-hidden="true">/</span>
+          <span class="badge badge-info" style="font-size:11px;">${escapeHtml4(targetApp)}</span>
+          <span class="wf-breadcrumb-separator" aria-hidden="true">/</span>
           ${parentInfo ? `
-            <a href="#/workflow/${encodeURIComponent(parentInfo.parentId)}" class="wf-breadcrumb-link" data-navigate="workflow/${encodeURIComponent(parentInfo.parentId)}" aria-label="Parent workflow ${escapeHtml4(parentInfo.parentName)}">
+            <a href="#/workflow/${encodeURIComponent(parentInfo.parentId)}" class="wf-breadcrumb-link" data-navigate="workflow/${encodeURIComponent(parentInfo.parentId)}" data-wf-app="${escapeHtml4(targetApp)}" aria-label="Parent workflow ${escapeHtml4(parentInfo.parentName)}">
               <span class="status-dot ${parentStatusDotClass}"></span>
               <span>${escapeHtml4(truncate2(parentInfo.parentName || parentInfo.parentId, 20))}</span>
             </a>
@@ -1551,18 +1666,22 @@
             </div>
             <div style="display:flex; gap:8px;">
               ${wf.status === "PENDING" || wf.status === "ENQUEUED" ? `
-                <button class="btn btn-sm btn-danger" data-cancel-wf='${escapeHtml4(wf.workflowId)}'>Cancel</button>
+                <button class="btn btn-sm btn-danger" data-cancel-wf='${escapeHtml4(wf.workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Cancel</button>
               ` : ""}
               ${wf.status === "CANCELLED" ? `
-                <button class="btn btn-sm btn-primary" data-resume-wf='${escapeHtml4(wf.workflowId)}'>Resume</button>
+                <button class="btn btn-sm btn-primary" data-resume-wf='${escapeHtml4(wf.workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Resume</button>
               ` : ""}
               ${wf.status === "ERROR" ? `
-                <button class="btn btn-sm btn-primary" data-restart-wf='${escapeHtml4(wf.workflowId)}'>Restart</button>
+                <button class="btn btn-sm btn-primary" data-restart-wf='${escapeHtml4(wf.workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Restart</button>
               ` : ""}
             </div>
           </div>
           <div class="card-body">
             <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;">
+              <div>
+                <span class="stat-label">Application</span>
+                <div><span class="badge badge-info">${escapeHtml4(targetApp)}</span></div>
+              </div>
               <div>
                 <span class="stat-label">Workflow Name</span>
                 <div><strong>${escapeHtml4(wf.workflowName || "unnamed")}</strong></div>
@@ -1624,8 +1743,9 @@
       if (btn) btn.classList.add("active");
       const content = document.getElementById("wf-tab-content");
       if (!content) return;
+      const targetApp = this.selectedWorkflowApp || this.workflowAppMap.get(this.selectedWorkflowId) || this.appName;
       if (tab === "io") {
-        const wf = await this.client.getWorkflow(this.orgName, this.appName, this.selectedWorkflowId);
+        const wf = await this.client.getWorkflow(this.orgName, targetApp, this.selectedWorkflowId);
         content.innerHTML = `
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
           <div>
@@ -1640,7 +1760,7 @@
       `;
       } else if (tab === "events") {
         content.innerHTML = `<div class="loading-spinner">Loading events...</div>`;
-        const events = await this.client.getWorkflowEvents(this.orgName, this.appName, this.selectedWorkflowId);
+        const events = await this.client.getWorkflowEvents(this.orgName, targetApp, this.selectedWorkflowId);
         content.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Event Key</th><th>Value</th></tr></thead>
@@ -1653,7 +1773,7 @@
       `;
       } else if (tab === "notifications") {
         content.innerHTML = `<div class="loading-spinner">Loading notifications...</div>`;
-        const notifs = await this.client.getWorkflowNotifications(this.orgName, this.appName, this.selectedWorkflowId);
+        const notifs = await this.client.getWorkflowNotifications(this.orgName, targetApp, this.selectedWorkflowId);
         content.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Topic</th><th>Message</th><th>Consumed</th><th>Time</th></tr></thead>
@@ -1671,21 +1791,22 @@
       `;
       }
     }
-    async cancelWorkflow(id) {
+    async cancelWorkflow(id, appName) {
+      const targetApp = appName || this.selectedWorkflowApp || this.workflowAppMap.get(id) || this.appName;
       this.showConfirm({
         title: "Cancel Workflow Execution",
         message: `Are you sure you want to cancel workflow ${id}?`,
         consequence: "Execution will halt immediately. In-flight and pending steps will be cancelled and cannot be resumed without explicit operator intervention.",
         details: [
           { label: "Workflow ID", value: id },
-          { label: "Application", value: this.appName || "default" },
+          { label: "Application", value: targetApp || "default" },
           { label: "Transition", value: "-> CANCELLED" }
         ],
         confirmText: "Cancel Workflow",
         confirmClass: "btn-danger",
         onConfirm: async () => {
           try {
-            await this.client.cancelWorkflow(this.orgName, this.appName, id);
+            await this.client.cancelWorkflow(this.orgName, targetApp, id);
             this.showToast(`Workflow ${id} cancelled`, "success");
             this.renderWorkflowDetailScreen(document.getElementById("content-view"));
           } catch (err) {
@@ -1694,19 +1815,25 @@
         }
       });
     }
-    async resumeWorkflow(id) {
+    async resumeWorkflow(id, appName) {
+      const targetApp = appName || this.selectedWorkflowApp || this.workflowAppMap.get(id) || this.appName;
       try {
-        await this.client.resumeWorkflow(this.orgName, this.appName, id);
+        await this.client.resumeWorkflow(this.orgName, targetApp, id);
         this.showToast(`Resumed workflow ${id}`, "success");
         this.renderWorkflowDetailScreen(document.getElementById("content-view"));
       } catch (err) {
         this.showToast(`Failed to resume: ${err.message}`, "error");
       }
     }
-    async restartWorkflow(id) {
+    async restartWorkflow(id, appName) {
+      const targetApp = appName || this.selectedWorkflowApp || this.workflowAppMap.get(id) || this.appName;
       try {
-        const res = await this.client.forkWorkflow(this.orgName, this.appName, id, 0);
+        const res = await this.client.forkWorkflow(this.orgName, targetApp, id, 0);
         this.showToast(`Restarted workflow! New ID: ${res.workflowId}`, "success");
+        if (res.workflowId && targetApp) {
+          this.selectedWorkflowApp = targetApp;
+          this.workflowAppMap.set(res.workflowId, targetApp);
+        }
         this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
       } catch (err) {
         this.showToast(`Failed to restart: ${err.message}`, "error");
@@ -1865,18 +1992,58 @@
         el.innerHTML = `<div class="loading-spinner">Loading queues...</div>`;
       }
       try {
-        const queues = await this.client.listQueues(this.orgName, this.appName);
+        let queues = [];
+        if (!this.appName) {
+          const results = await Promise.allSettled(
+            (this.apps || []).map(async (app) => {
+              try {
+                const list = await this.client.listQueues(this.orgName, app.name);
+                return (list || []).map((q) => ({ ...q, appName: app.name }));
+              } catch {
+                return [];
+              }
+            })
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              queues.push(...r.value);
+            }
+          }
+        } else {
+          const list = await this.client.listQueues(this.orgName, this.appName);
+          queues = (list || []).map((q) => ({ ...q, appName: this.appName }));
+        }
+        const appSelectOptions = `
+        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
+        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
+      `;
         el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <label class="form-label" for="filter-app-queues" style="margin:0;">App:</label>
+            <select id="filter-app-queues" class="select-sm" data-change="app" aria-label="Filter queues by application">
+              ${appSelectOptions}
+            </select>
+          </div>
+          <div>
+            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Queues (${escapeHtml4(this.appName || "No app")})</span>
-            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
+            <div>
+              <span class="card-title">Queues</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
+            </div>
+            <span class="badge badge-neutral">${queues.length} total</span>
           </div>
           <div class="table-container">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Queue Name</th>
+                  <th>Application</th>
                   <th>Concurrency</th>
                   <th>Worker Concurrency</th>
                   <th>Rate Limit</th>
@@ -1888,13 +2055,14 @@
                 ${queues.length > 0 ? queues.map((q) => `
                   <tr>
                     <td><strong>${escapeHtml4(q.name)}</strong></td>
+                    <td><span class="badge badge-info">${escapeHtml4(q.appName || "default")}</span></td>
                     <td>${q.concurrency !== null ? q.concurrency : "Unlimited"}</td>
                     <td>${q.workerConcurrency !== null ? q.workerConcurrency : "-"}</td>
                     <td>${q.rateLimitMax ? `${q.rateLimitMax} / ${q.rateLimitPeriodSecs}s` : "None"}</td>
                     <td>${q.priorityEnabled ? "Yes" : "No"}</td>
                     <td>${q.partitionQueue ? "Yes" : "No"}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">No queues configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No queues configured.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1905,7 +2073,7 @@
           this.renderNoExecutorState(el, "queues");
           return;
         }
-        this.renderErrorState(el, `Queues (${escapeHtml4(this.appName || "No app")})`, err.message);
+        this.renderErrorState(el, `Queues (${escapeHtml4(this.appName || "All Applications")})`, err.message);
       }
     }
     // --- SCREEN 5: SCHEDULES ---
@@ -1914,18 +2082,58 @@
         el.innerHTML = `<div class="loading-spinner">Loading schedules...</div>`;
       }
       try {
-        const schedules = await this.client.listSchedules(this.orgName, this.appName);
+        let schedules = [];
+        if (!this.appName) {
+          const results = await Promise.allSettled(
+            (this.apps || []).map(async (app) => {
+              try {
+                const list = await this.client.listSchedules(this.orgName, app.name);
+                return (list || []).map((s) => ({ ...s, appName: app.name }));
+              } catch {
+                return [];
+              }
+            })
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              schedules.push(...r.value);
+            }
+          }
+        } else {
+          const list = await this.client.listSchedules(this.orgName, this.appName);
+          schedules = (list || []).map((s) => ({ ...s, appName: this.appName }));
+        }
+        const appSelectOptions = `
+        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
+        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
+      `;
         el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <label class="form-label" for="filter-app-schedules" style="margin:0;">App:</label>
+            <select id="filter-app-schedules" class="select-sm" data-change="app" aria-label="Filter schedules by application">
+              ${appSelectOptions}
+            </select>
+          </div>
+          <div>
+            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Scheduled Jobs (${escapeHtml4(this.appName || "No app")})</span>
-            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
+            <div>
+              <span class="card-title">Scheduled Jobs</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
+            </div>
+            <span class="badge badge-neutral">${schedules.length} total</span>
           </div>
           <div class="table-container">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Schedule Name</th>
+                  <th>Application</th>
                   <th>Workflow Name</th>
                   <th>Cron Expression</th>
                   <th>Status</th>
@@ -1937,6 +2145,7 @@
                 ${schedules.length > 0 ? schedules.map((s) => `
                   <tr>
                     <td><strong>${escapeHtml4(s.scheduleName)}</strong></td>
+                    <td><span class="badge badge-info">${escapeHtml4(s.appName || "default")}</span></td>
                     <td>${escapeHtml4(s.workflowName)}</td>
                     <td><code>${escapeHtml4(s.cronExpression)}</code></td>
                     <td>${renderStatusPill(s.status)}</td>
@@ -1944,15 +2153,15 @@
                     <td>
                       <div style="display:flex; gap:4px;">
                         ${s.status === "ACTIVE" ? `
-                          <button class="btn btn-xs btn-secondary" data-pause-schedule='${escapeHtml4(s.scheduleName)}'>Pause</button>
+                          <button class="btn btn-xs btn-secondary" data-pause-schedule='${escapeHtml4(s.scheduleName)}' data-schedule-app='${escapeHtml4(s.appName || "")}'>Pause</button>
                         ` : `
-                          <button class="btn btn-xs btn-secondary" data-resume-schedule='${escapeHtml4(s.scheduleName)}'>Resume</button>
+                          <button class="btn btn-xs btn-secondary" data-resume-schedule='${escapeHtml4(s.scheduleName)}' data-schedule-app='${escapeHtml4(s.appName || "")}'>Resume</button>
                         `}
-                        <button class="btn btn-xs btn-primary" data-trigger-schedule='${escapeHtml4(s.scheduleName)}'>Trigger Now</button>
+                        <button class="btn btn-xs btn-primary" data-trigger-schedule='${escapeHtml4(s.scheduleName)}' data-schedule-app='${escapeHtml4(s.appName || "")}'>Trigger Now</button>
                       </div>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">No schedules configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No schedules configured.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1963,31 +2172,38 @@
           this.renderNoExecutorState(el, "schedules");
           return;
         }
-        this.renderErrorState(el, `Scheduled Jobs (${escapeHtml4(this.appName || "No app")})`, err.message);
+        this.renderErrorState(el, `Scheduled Jobs (${escapeHtml4(this.appName || "All Applications")})`, err.message);
       }
     }
-    async pauseSchedule(name) {
+    async pauseSchedule(name, appName) {
+      const targetApp = appName || this.appName;
       try {
-        await this.client.pauseSchedule(this.orgName, this.appName, name);
+        await this.client.pauseSchedule(this.orgName, targetApp, name);
         this.showToast(`Schedule "${name}" paused`, "success");
         this.renderContentView();
       } catch (err) {
         this.showToast(`Failed to pause schedule: ${err.message}`, "error");
       }
     }
-    async resumeSchedule(name) {
+    async resumeSchedule(name, appName) {
+      const targetApp = appName || this.appName;
       try {
-        await this.client.resumeSchedule(this.orgName, this.appName, name);
+        await this.client.resumeSchedule(this.orgName, targetApp, name);
         this.showToast(`Schedule "${name}" resumed`, "success");
         this.renderContentView();
       } catch (err) {
         this.showToast(`Failed to resume schedule: ${err.message}`, "error");
       }
     }
-    async triggerSchedule(name) {
+    async triggerSchedule(name, appName) {
+      const targetApp = appName || this.appName;
       try {
-        const res = await this.client.triggerSchedule(this.orgName, this.appName, name);
+        const res = await this.client.triggerSchedule(this.orgName, targetApp, name);
         this.showToast(`Triggered schedule "${name}". New Workflow: ${res.workflowId}`, "success");
+        if (res.workflowId && targetApp) {
+          this.selectedWorkflowApp = targetApp;
+          this.workflowAppMap.set(res.workflowId, targetApp);
+        }
         this.navigate(`workflow/${encodeURIComponent(res.workflowId)}`);
       } catch (err) {
         this.showToast(`Failed to trigger schedule: ${err.message}`, "error");
@@ -1999,11 +2215,38 @@
         el.innerHTML = `<div class="loading-spinner">Loading alerting rules...</div>`;
       }
       try {
-        const rules = await this.client.listAlertingRules(this.orgName, this.appName);
+        let rules = [];
+        if (!this.appName) {
+          const results = await Promise.allSettled(
+            (this.apps || []).map(async (app) => {
+              try {
+                const list = await this.client.listAlertingRules(this.orgName, app.name);
+                return (list || []).map((r) => ({ ...r, appName: app.name }));
+              } catch {
+                return [];
+              }
+            })
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled") {
+              rules.push(...r.value);
+            }
+          }
+        } else {
+          const list = await this.client.listAlertingRules(this.orgName, this.appName);
+          rules = (list || []).map((r) => ({ ...r, appName: this.appName }));
+        }
+        const appSelectOptions = `
+        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
+        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
+      `;
         el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <span class="text-secondary" style="font-size:12px;">Active Alert Rules</span>
+            <label class="form-label" for="filter-app-alerts" style="margin:0;">App:</label>
+            <select id="filter-app-alerts" class="select-sm" data-change="app" aria-label="Filter alert rules by application">
+              ${appSelectOptions}
+            </select>
           </div>
           <div>
             <button class="btn btn-sm btn-primary" data-action="openCreateAlert">+ New Alert Rule</button>
@@ -2011,11 +2254,19 @@
         </div>
 
         <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Active Alert Rules</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
+            </div>
+            <span class="badge badge-neutral">${rules.length} total</span>
+          </div>
           <div class="table-container">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Rule ID</th>
+                  <th>Application</th>
                   <th>Type</th>
                   <th>Min Interval</th>
                   <th>Metadata</th>
@@ -2027,15 +2278,16 @@
                 ${rules.length > 0 ? rules.map((r) => `
                   <tr>
                     <td><code>${escapeHtml4(r.id)}</code></td>
+                    <td><span class="badge badge-info">${escapeHtml4(r.appName || "default")}</span></td>
                     <td><strong>${escapeHtml4(r.ruleType)}</strong></td>
                     <td>${r.minIntervalSecs || 0}s</td>
                     <td><code>${escapeHtml4(JSON.stringify(r.ruleMetadata || {}))}</code></td>
                     <td>${formatTimestamp(r.lastFiredAt)}</td>
                     <td>
-                      <button class="btn btn-xs btn-danger" data-delete-rule='${escapeHtml4(r.id)}'>Delete</button>
+                      <button class="btn btn-xs btn-danger" data-delete-rule='${escapeHtml4(r.id)}' data-rule-app='${escapeHtml4(r.appName || "")}'>Delete</button>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary);">No alerting rules configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No alerting rules configured.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2046,12 +2298,13 @@
           this.renderAuthRequired(el, "load alert rules");
           return;
         }
-        this.renderErrorState(el, `Alert Rules (${escapeHtml4(this.appName || "No app")})`, err.message);
+        this.renderErrorState(el, `Alert Rules (${escapeHtml4(this.appName || "All Applications")})`, err.message);
       }
     }
     openCreateAlertModal() {
       const root = document.getElementById("modal-root");
       if (!root) return;
+      const appOptions = (this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("");
       root.innerHTML = `
       <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="modal-alert-title">
         <div class="modal-dialog">
@@ -2062,6 +2315,12 @@
             </button>
           </div>
           <div class="modal-body">
+            <div class="form-field">
+              <label class="form-label" for="new-rule-app">Application</label>
+              <select id="new-rule-app" class="select-sm">
+                ${appOptions}
+              </select>
+            </div>
             <div class="form-field">
               <label class="form-label" for="new-rule-type">Rule Type</label>
               <select id="new-rule-type" class="select-sm">
@@ -2086,10 +2345,12 @@
         </div>
       </div>
     `;
-      const typeSelect = document.getElementById("new-rule-type");
-      if (typeSelect) typeSelect.focus();
+      const appSelect = document.getElementById("new-rule-app");
+      if (appSelect) appSelect.focus();
     }
     async submitCreateAlert() {
+      const appSelect = document.getElementById("new-rule-app");
+      const targetApp = appSelect ? appSelect.value : this.appName || (this.apps[0] ? this.apps[0].name : "");
       const ruleType = document.getElementById("new-rule-type").value;
       const minIntervalSecs = parseInt(document.getElementById("new-rule-interval").value, 10) || 0;
       let ruleMetadata = {};
@@ -2100,7 +2361,7 @@
         return;
       }
       try {
-        await this.client.createAlertingRule(this.orgName, this.appName, {
+        await this.client.createAlertingRule(this.orgName, targetApp, {
           ruleType,
           minIntervalSecs,
           ruleMetadata
@@ -2112,21 +2373,22 @@
         this.showToast(`Failed to create rule: ${err.message}`, "error");
       }
     }
-    async deleteAlertRule(ruleId) {
+    async deleteAlertRule(ruleId, appName) {
+      const targetApp = appName || this.appName || (this.apps[0] ? this.apps[0].name : "default");
       this.showConfirm({
         title: "Delete Alert Rule",
         message: `Are you sure you want to delete alert rule "${ruleId}"?`,
         consequence: "Alert notifications defined by this rule will immediately stop firing. This action cannot be undone.",
         details: [
           { label: "Rule ID", value: ruleId },
-          { label: "Application", value: this.appName || "default" },
+          { label: "Application", value: targetApp },
           { label: "Action", value: "Permanent deletion" }
         ],
         confirmText: "Delete Rule",
         confirmClass: "btn-danger",
         onConfirm: async () => {
           try {
-            await this.client.deleteAlertingRule(this.orgName, this.appName, ruleId);
+            await this.client.deleteAlertingRule(this.orgName, targetApp, ruleId);
             this.showToast("Alert rule deleted", "success");
             this.renderContentView();
           } catch (err) {
@@ -2362,8 +2624,18 @@
       }
       return;
     }
-    if (target.dataset.navigate) window.app.navigate(target.dataset.navigate.replace(/'/g, ""));
-    else if (target.dataset.appChange) window.app.onAppChange(target.dataset.appChange.replace(/'/g, ""));
+    if (target.dataset.navigate) {
+      const navPath = target.dataset.navigate.replace(/'/g, "");
+      const wfApp = target.dataset.wfApp || (target.closest("[data-wf-app]") ? target.closest("[data-wf-app]").dataset.wfApp : "");
+      if (wfApp) {
+        window.app.selectedWorkflowApp = wfApp;
+        const parts = navPath.split("/");
+        if (parts[0] === "workflow" && parts[1]) {
+          window.app.workflowAppMap.set(decodeURIComponent(parts[1]), wfApp);
+        }
+      }
+      window.app.navigate(navPath);
+    } else if (target.dataset.appChange) window.app.onAppChange(target.dataset.appChange.replace(/'/g, ""));
     else if (target.dataset.action === "refresh") window.app.renderContentView();
     else if (target.dataset.action === "toggleTheme") window.app.toggleTheme();
     else if (target.dataset.action === "closeModal") window.app.closeModal();
@@ -2405,16 +2677,16 @@
         if (decodedEl) decodedEl.style.display = mode === "decoded" ? "" : "none";
         if (rawEl) rawEl.style.display = mode === "raw" ? "" : "none";
       }
-    } else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""));
-    else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ""));
-    else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ""));
+    } else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""), target.dataset.targetApp);
+    else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ""), target.dataset.targetApp);
+    else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ""), target.dataset.targetApp);
     else if (target.dataset.wfTab) window.app.switchWfTab(target.dataset.wfTab.replace(/'/g, ""));
-    else if (target.dataset.pauseSchedule) window.app.pauseSchedule(target.dataset.pauseSchedule.replace(/'/g, ""));
-    else if (target.dataset.resumeSchedule) window.app.resumeSchedule(target.dataset.resumeSchedule.replace(/'/g, ""));
-    else if (target.dataset.triggerSchedule) window.app.triggerSchedule(target.dataset.triggerSchedule.replace(/'/g, ""));
+    else if (target.dataset.pauseSchedule) window.app.pauseSchedule(target.dataset.pauseSchedule.replace(/'/g, ""), target.dataset.scheduleApp);
+    else if (target.dataset.resumeSchedule) window.app.resumeSchedule(target.dataset.resumeSchedule.replace(/'/g, ""), target.dataset.scheduleApp);
+    else if (target.dataset.triggerSchedule) window.app.triggerSchedule(target.dataset.triggerSchedule.replace(/'/g, ""), target.dataset.scheduleApp);
     else if (target.dataset.action === "openCreateAlert") window.app.openCreateAlertModal();
     else if (target.dataset.action === "submitCreateAlert") window.app.submitCreateAlert();
-    else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ""));
+    else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ""), target.dataset.ruleApp);
     else if (target.dataset.action === "openCreateKey") window.app.openCreateKeyModal();
     else if (target.dataset.action === "submitCreateKey") window.app.submitCreateKey();
     else if (target.dataset.revokeKey) window.app.revokeKey(target.dataset.revokeKey.replace(/'/g, ""));

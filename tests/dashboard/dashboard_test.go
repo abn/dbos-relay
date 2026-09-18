@@ -873,3 +873,31 @@ func TestDashboard_NoConnectedExecutorsState(t *testing.T) {
 		t.Errorf("bundle should include 'No Connected Executors' friendly notice")
 	}
 }
+
+func TestDashboard_FleetWideAndPerSectionFiltering(t *testing.T) {
+	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+
+	// Ensure fleet-wide option and per-section filter dropdowns exist
+	if !strings.Contains(bundle, "All Applications") {
+		t.Errorf("bundle should include 'All Applications' option")
+	}
+	if !strings.Contains(bundle, "filter-app") {
+		t.Errorf("bundle should include workflow filter-app selector")
+	}
+	if !strings.Contains(bundle, "filter-app-queues") {
+		t.Errorf("bundle should include queues filter-app-queues selector")
+	}
+	if !strings.Contains(bundle, "filter-app-schedules") {
+		t.Errorf("bundle should include schedules filter-app-schedules selector")
+	}
+	if !strings.Contains(bundle, "filter-app-alerts") {
+		t.Errorf("bundle should include alert rules filter-app-alerts selector")
+	}
+	if !strings.Contains(bundle, "workflowAppMap") {
+		t.Errorf("bundle should include workflowAppMap for cross-app workflow routing")
+	}
+}

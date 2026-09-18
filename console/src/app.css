@@ -134,6 +134,37 @@ table.data-table,
   font-variant-numeric: tabular-nums lining-nums;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.badge-info {
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+  border-color: rgba(68, 147, 248, 0.25);
+}
+
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+  border-color: rgba(63, 185, 80, 0.25);
+}
+
+.badge-neutral {
+  background: var(--bg-surface-raised);
+  color: var(--text-tertiary);
+  border-color: var(--border);
+}
+
 /* App Shell */
 #app {
   display: flex;
