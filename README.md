@@ -17,6 +17,10 @@ license.
 Unmodified DBOS applications connect to Relay simply by pointing their Conductor
 URL and API key at the Relay instance.
 
+| Workflow Family DAG | Fleet & Applications |
+| :---: | :---: |
+| <a href="site/assets/screenshots/dashboard-workflow-dag.png"><img src="site/assets/screenshots/dashboard-workflow-dag.png" alt="Relay Workflow Family DAG" width="100%"></a> | <a href="site/assets/screenshots/dashboard-fleet.png"><img src="site/assets/screenshots/dashboard-fleet.png" alt="Relay Fleet and Applications Overview" width="100%"></a> |
+
 ## Key Features
 
 - **Dual-Engine Storage (ADR 0011)**: Pure-Go embedded SQLite (`modernc.org/sqlite`) for zero-dependency local development and single-node instances, plus PostgreSQL for clustered, multi-instance production deployments.
