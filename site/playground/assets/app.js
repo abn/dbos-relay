@@ -1039,6 +1039,11 @@
       }
       this.applyTheme(this.theme);
       window.addEventListener("hashchange", () => this.handleRouting());
+      window.addEventListener("message", (event) => {
+        if (event.data && event.data.type === "set_theme") {
+          this.applyTheme(event.data.theme);
+        }
+      });
       await this.loadApplications();
       if (appParam && this.apps.some((a) => a.name === appParam)) {
         this.appName = appParam;
@@ -1049,9 +1054,23 @@
       this.theme = theme;
       document.documentElement.setAttribute("data-theme", theme);
       localStorage.setItem("relay-theme", theme);
+      const themeBtn = document.querySelector("[data-action='toggleTheme']");
+      if (themeBtn) {
+        themeBtn.innerHTML = theme === "dark" ? `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <span class="theme-text" style="margin-left:4px;">Light</span>
+      ` : `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <span class="theme-text" style="margin-left:4px;">Dark</span>
+      `;
+      }
     }
     toggleTheme() {
-      this.applyTheme(this.theme === "dark" ? "light" : "dark");
+      const next = this.theme === "dark" ? "light" : "dark";
+      this.applyTheme(next);
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "theme_changed", theme: next }, "*");
+      }
     }
     async loadApplications() {
       try {
@@ -1112,13 +1131,18 @@
       <aside class="sidebar ${this.mobileNavOpen ? "mobile-open" : ""} ${this.sidebarFolded ? "folded" : ""}">
         <div class="sidebar-header">
           <a href="#/fleet" class="brand-logo" aria-label="Relay Home" title="Relay Home">
-            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" class="brand-logo-svg" aria-hidden="true">
               <path d="M9 6.5V25.5" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round"/>
               <path d="M9 7.5H17C20.5899 7.5 23.5 10.4101 23.5 14C23.5 17.5899 20.5899 20.5 17 20.5H9" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M15.5 19.5L22.5 25.5" stroke="var(--color-purple)" stroke-width="3" stroke-linecap="round"/>
               <circle cx="23" cy="25" r="2" fill="var(--color-purple)"/>
             </svg>
             <span class="brand-text">Relay</span>
+            <span class="sidebar-hover-expand" data-action="toggleSidebarFold" title="Expand sidebar" aria-label="Expand sidebar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </span>
           </a>
           <span class="brand-badge">Dashboard</span>
           <button class="sidebar-fold-toggle" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}" title="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}">
@@ -1167,12 +1191,6 @@
       return `
       <header class="top-header">
         <div class="header-left">
-          <button class="sidebar-toggle-btn" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}" title="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              <line x1="9" y1="3" x2="9" y2="21"/>
-            </svg>
-          </button>
           <button class="mobile-nav-toggle" data-action="toggleMobileNav" aria-label="Toggle navigation menu">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 6h16M4 12h16M4 18h16"/>

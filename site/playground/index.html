@@ -6,6 +6,7 @@
   <title>Relay Playground - In-Browser DBOS Workflow Control Plane</title>
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="stylesheet" href="playground.css" />
+  <script src="assets/prism.min.js"></script>
 </head>
 <body>
   <!-- Top Navigation & Controls Bar -->
@@ -23,31 +24,37 @@
     <div class="controls-section">
       <select id="demo-select" class="select-control" aria-label="Select demo workflow">
         <option value="checkout">Demo 1: E-Commerce Checkout (Child DAG)</option>
-        <option value="payment">Demo 2: Payment Processing (Retries & Idempotency)</option>
+        <option value="payment">Demo 2: Payment Processing (Retries &amp; Idempotency)</option>
       </select>
 
       <button id="run-btn" class="btn btn-primary" title="Execute workflow in browser">
-        ▶ Run Workflow
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span>Run Workflow</span>
       </button>
 
       <button id="fail-toggle-btn" class="btn btn-danger-outline" title="Inject simulated step failure to observe error handling">
-        ⚡ Inject Step Failure
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Inject Step Failure</span>
       </button>
 
       <button id="reset-btn" class="btn btn-secondary" title="Reset in-browser database to clean seed state">
-        ↻ Reset DB
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <span>Reset DB</span>
       </button>
 
       <button id="toggle-editor-btn" class="btn btn-secondary" title="Toggle code editor panel (fold/expand)">
-        ◨ Fold Code Panel
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        <span>Fold Code Panel</span>
       </button>
 
       <button id="theme-btn" class="btn btn-secondary" title="Toggle dark and light themes">
-        ☀️ Light Mode
+        <svg class="theme-icon-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <span class="theme-label">Light Mode</span>
       </button>
 
       <a href="/wiki/" class="btn btn-secondary" style="text-decoration: none;">
-        Docs →
+        <span>Docs</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
       </a>
     </div>
   </header>
@@ -62,20 +69,21 @@
             <span class="tab-item active">workflow.ts</span>
             <span class="tab-item">TypeScript / DBOS Transact</span>
           </div>
-          <span style="font-size: 11px; opacity: 0.8;">In-Browser Client Execution</span>
+          <span class="pane-meta">In-Browser Client Execution</span>
         </div>
 
         <div class="editor-wrapper">
+          <pre id="code-highlighting" class="code-highlighting" aria-hidden="true"><code id="code-highlighting-content" class="language-typescript"></code></pre>
           <textarea id="code-editor" class="code-textarea" spellcheck="false" aria-label="Workflow Code Editor"></textarea>
         </div>
 
         <div class="log-panel">
           <div class="pane-header">
             <span>Execution Console (Live Telemetry)</span>
-            <span style="font-size: 11px; opacity: 0.8;">stdout / step transitions</span>
+            <span class="pane-meta">stdout / step transitions</span>
           </div>
           <div id="console-logs" class="log-content">
-            <div class="log-line info">[System] Playground ready. Select a workflow and click '▶ Run Workflow' to observe live execution.</div>
+            <div class="log-line info">[System] Playground ready. Select a workflow and click 'Run Workflow' to observe live execution.</div>
           </div>
         </div>
       </section>
@@ -89,13 +97,13 @@
     <!-- Collapsible Bottom Drawer: Live SQL & DBOS Database Inspector -->
     <section class="drawer-container">
       <div class="drawer-header">
-        <div style="font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 8px;">
+        <div class="drawer-title-group">
           <span>Database Inspector</span>
-          <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(PostgreSQL 16 in WebAssembly)</span>
+          <span class="drawer-subtitle">(PostgreSQL 16 in WebAssembly)</span>
         </div>
 
         <div class="sql-presets">
-          <span style="font-size: 11px; color: var(--text-muted);">Quick Queries:</span>
+          <span class="sql-presets-label">Quick Queries:</span>
           <button class="preset-btn" data-sql="SELECT workflow_id, name, status, duration_ms, authenticated_user, created_at FROM dbos.workflow_status ORDER BY created_at DESC;">
             dbos.workflow_status
           </button>

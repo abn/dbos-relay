@@ -57,4 +57,11 @@ try {
   process.exit(1);
 }
 
+// 6. Sync to site/playground/assets if directory exists
+const PLAYGROUND_ASSETS = path.join(__dirname, "..", "site", "playground", "assets");
+if (fs.existsSync(PLAYGROUND_ASSETS)) {
+  fs.copyFileSync(path.join(ASSETS_DIST, "app.js"), path.join(PLAYGROUND_ASSETS, "app.js"));
+  fs.copyFileSync(path.join(ASSETS_DIST, "app.css"), path.join(PLAYGROUND_ASSETS, "app.css"));
+}
+
 console.log("Relay dashboard built successfully into internal/dashboard/dist/");

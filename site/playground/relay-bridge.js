@@ -304,5 +304,13 @@
     return nativeFetch(input, init);
   };
 
+  channel.onmessage = (event) => {
+    if (event.data && event.data.type === "relay_telemetry") {
+      if (window.app && typeof window.app.renderContentView === "function") {
+        window.app.renderContentView();
+      }
+    }
+  };
+
   console.log("[RelayBridge] In-browser mock API and SSE bridge initialized");
 })();

@@ -180,8 +180,6 @@ table.data-table,
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
 }
 
@@ -203,9 +201,33 @@ table.data-table,
   justify-content: center;
 }
 
+.sidebar-hover-expand {
+  display: none;
+}
+
 .sidebar.folded .brand-logo {
   justify-content: center;
-  width: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  position: relative;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.sidebar.folded .brand-logo:hover {
+  background: var(--bg-surface-raised);
+}
+
+.sidebar.folded .brand-logo:hover .brand-logo-svg {
+  display: none;
+}
+
+.sidebar.folded .brand-logo:hover .sidebar-hover-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
 }
 
 .sidebar.folded .nav-item {
@@ -289,25 +311,6 @@ table.data-table,
   background: var(--bg-surface-raised);
   color: var(--text-primary);
   border-color: var(--border);
-}
-
-.sidebar-toggle-btn {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 6px;
-  border-radius: var(--radius-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.sidebar-toggle-btn:hover {
-  background: var(--bg-surface-raised);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
 }
 
 .sidebar-nav {
@@ -1565,7 +1568,6 @@ table.data-table tr.clickable:focus-visible {
     justify-content: center;
   }
 
-  .sidebar-toggle-btn,
   .sidebar-fold-toggle {
     display: none !important;
   }

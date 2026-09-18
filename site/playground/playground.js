@@ -91,9 +91,12 @@ class PlaygroundController {
     this.themeBtn = document.getElementById("theme-btn");
     this.demoSelect = document.getElementById("demo-select");
     this.codeEditor = document.getElementById("code-editor");
+    this.codeHighlighting = document.getElementById("code-highlighting");
+    this.codeHighlightingContent = document.getElementById("code-highlighting-content");
     this.consoleLogs = document.getElementById("console-logs");
     this.sqlInput = document.getElementById("sql-input");
     this.sqlRunBtn = document.getElementById("sql-run-btn");
+    this.queryResults = document.getElementById("query-results");
     this.dbStatus = document.getElementById("db-status");
     this.dbStatusText = document.getElementById("db-status-text");
     this.statusDot = this.dbStatus ? this.dbStatus.querySelector(".status-dot") : null;
@@ -113,6 +116,22 @@ class PlaygroundController {
     }
 
     this.consoleIframe = document.getElementById("console-iframe");
+
+    // Code editor input & scroll sync for syntax highlighting
+    if (this.codeEditor) {
+      this.codeEditor.addEventListener("input", () => this.updateHighlighting());
+      this.codeEditor.addEventListener("scroll", () => this.syncScroll());
+      this.codeEditor.addEventListener("keydown", (e) => {
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const start = this.codeEditor.selectionStart;
+          const end = this.codeEditor.selectionEnd;
+          this.codeEditor.value = this.codeEditor.value.substring(0, start) + "  " + this.codeEditor.value.substring(end);
+          this.codeEditor.selectionStart = this.codeEditor.selectionEnd = start + 2;
+          this.updateHighlighting();
+        }
+      });
+    }
 
     // Preset buttons
     document.querySelectorAll(".preset-btn").forEach(btn => {
@@ -134,8 +153,41 @@ class PlaygroundController {
       if (e.key === "Enter") this.executeSql();
     });
 
+    // Theme initialization and synchronization
+    const savedTheme = localStorage.getItem("relay-theme") || "dark";
+    this.setTheme(savedTheme, false);
+
+    if (this.consoleIframe) {
+      this.consoleIframe.addEventListener("load", () => {
+        const theme = document.documentElement.getAttribute("data-theme") || "dark";
+        this.consoleIframe.contentWindow?.postMessage({ type: "set_theme", theme }, "*");
+      });
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "theme_changed") {
+        this.setTheme(event.data.theme, false);
+      }
+    });
+
     // Initial code
     this.codeEditor.value = DEMO_SCRIPTS.checkout;
+    this.updateHighlighting();
+  }
+
+  updateHighlighting() {
+    if (!this.codeEditor || !this.codeHighlightingContent) return;
+    const text = this.codeEditor.value;
+    this.codeHighlightingContent.textContent = text + (text.endsWith("\n") ? "" : "\n");
+    if (window.Prism) {
+      window.Prism.highlightElement(this.codeHighlightingContent);
+    }
+  }
+
+  syncScroll() {
+    if (!this.codeEditor || !this.codeHighlighting) return;
+    this.codeHighlighting.scrollTop = this.codeEditor.scrollTop;
+    this.codeHighlighting.scrollLeft = this.codeEditor.scrollLeft;
   }
 
   log(msg, type = "info") {
@@ -147,28 +199,47 @@ class PlaygroundController {
     this.consoleLogs.scrollTop = this.consoleLogs.scrollHeight;
   }
 
+  setTheme(theme, notifyIframe = true) {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("relay-theme", theme);
+    if (this.themeBtn) {
+      const label = this.themeBtn.querySelector(".theme-label");
+      if (label) label.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+      const icon = this.themeBtn.querySelector("svg");
+      if (icon) {
+        icon.outerHTML = theme === "dark" ? `
+          <svg class="theme-icon-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        ` : `
+          <svg class="theme-icon-moon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        `;
+      }
+    }
+    if (notifyIframe && this.consoleIframe && this.consoleIframe.contentWindow) {
+      this.consoleIframe.contentWindow.postMessage({ type: "set_theme", theme }, "*");
+    }
+  }
+
   toggleTheme() {
     const current = document.documentElement.getAttribute("data-theme") || "dark";
     const next = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("relay-theme", next);
-    this.themeBtn.textContent = next === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode";
-
-    // Notify iframe
-    if (this.consoleIframe && this.consoleIframe.contentWindow) {
-      this.consoleIframe.contentWindow.postMessage({ type: "set_theme", theme: next }, "*");
-    }
+    this.setTheme(next, true);
   }
 
   toggleFailure() {
     this.injectFailure = !this.injectFailure;
     if (this.injectFailure) {
       this.failBtn.classList.add("active");
-      this.failBtn.textContent = "⚡ Step Failure: ON";
+      this.failBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Step Failure: ON</span>
+      `;
       this.log("Step failure injection armed: reserveInventory will throw InventoryShortageError", "warn");
     } else {
       this.failBtn.classList.remove("active");
-      this.failBtn.textContent = "⚡ Inject Step Failure";
+      this.failBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Inject Step Failure</span>
+      `;
       this.log("Step failure injection cleared: normal workflow execution", "info");
     }
   }
@@ -182,14 +253,20 @@ class PlaygroundController {
 
   toggleEditorFold() {
     this.editorFolded = !this.editorFolded;
-    localStorage.setItem("relay-playground-editor-folded", String(this.editorFolded));
+    localStorage.setItem("relay-playground-editor-folded", this.editorFolded);
     this.applyEditorFold(this.editorFolded);
   }
 
   applyEditorFold(folded) {
     if (this.leftPane) this.leftPane.classList.toggle("folded", folded);
     if (this.toggleEditorBtn) {
-      this.toggleEditorBtn.textContent = folded ? "◧ Show Code Panel" : "◨ Fold Code Panel";
+      this.toggleEditorBtn.innerHTML = folded ? `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+        <span>Show Code Panel</span>
+      ` : `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        <span>Fold Code Panel</span>
+      `;
       this.toggleEditorBtn.title = folded ? "Expand code editor panel" : "Fold code editor panel";
     }
   }
@@ -197,6 +274,7 @@ class PlaygroundController {
   switchDemo(key) {
     if (DEMO_SCRIPTS[key]) {
       this.codeEditor.value = DEMO_SCRIPTS[key];
+      this.updateHighlighting();
       this.log(`Switched demo script to: ${key}`, "info");
     }
   }
@@ -207,6 +285,7 @@ class PlaygroundController {
       // Dynamic import PGlite from CDN
       const { PGlite } = await import("https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js");
       window.pgliteDb = new PGlite();
+      this.db = window.pgliteDb;
       this.log("PGlite WASM engine started successfully in browser memory", "success");
       this.setDbStatus("PGlite (Postgres 16 WASM) Ready", "ready");
 
@@ -244,6 +323,7 @@ class PlaygroundController {
       },
       exec: async (sql) => {}
     };
+    this.db = window.pgliteDb;
 
     this.setDbStatus("In-Memory Engine Ready", "ready");
     this.seedInitialData();
@@ -275,12 +355,17 @@ class PlaygroundController {
         workflow_id TEXT PRIMARY KEY,
         status TEXT NOT NULL,
         name TEXT NOT NULL,
+        class_name TEXT,
+        config_name TEXT,
         authenticated_user TEXT DEFAULT 'playground-user',
         assumed_role TEXT,
         authenticated_roles JSONB DEFAULT '[]',
+        request TEXT,
         output TEXT,
         error TEXT,
         executor_id TEXT,
+        app_id TEXT DEFAULT 'ecommerce-checkout',
+        app_version TEXT DEFAULT '1.0.0',
         application_version TEXT DEFAULT '1.0.0',
         application_id TEXT DEFAULT 'ecommerce-checkout',
         created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -292,7 +377,9 @@ class PlaygroundController {
         workflow_id TEXT NOT NULL,
         function_id INTEGER NOT NULL,
         name TEXT NOT NULL,
+        type TEXT DEFAULT 'step',
         status TEXT NOT NULL,
+        input TEXT,
         output TEXT,
         error TEXT,
         child_workflow_id TEXT,
@@ -380,11 +467,21 @@ class PlaygroundController {
     });
   }
 
+  broadcastUpdate(event, data) {
+    channel.postMessage({
+      type: "relay_telemetry",
+      payload: { type: event, data, timestamp: Date.now() }
+    });
+  }
+
   async runWorkflow() {
     if (this.isRunning) return;
     this.isRunning = true;
     this.runBtn.disabled = true;
-    this.runBtn.innerHTML = "⏳ Executing...";
+    this.runBtn.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>Executing...</span>
+    `;
 
     const randomSuffix = Math.floor(10000 + Math.random() * 90000);
     const wfId = `wf-ord-${randomSuffix}`;
@@ -396,150 +493,214 @@ class PlaygroundController {
 
     try {
       // 1. Insert initial PENDING workflow
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.workflow_status (workflow_id, status, name, authenticated_user, created_at, updated_at)
-        VALUES ($1, 'PENDING', 'ProcessCheckoutWorkflow', 'playground-user', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-      `, [wfId]);
-      this.refreshConsole();
+      await this.db.query(`
+        INSERT INTO dbos.workflow_status (
+          workflow_id, status, name, class_name, config_name,
+          authenticated_user, assumed_role, authenticated_roles,
+          request, output, error, executor_id, app_id, app_version,
+          created_at, updated_at
+        ) VALUES (
+          $1, 'PENDING', 'ProcessCheckoutWorkflow', 'OrderService', 'default',
+          'customer-portal', 'customer', '["customer"]',
+          $2, NULL, NULL, 'exec-inbrowser-1', 'app-ecommerce', '1.0.0',
+          $3, $3
+        )
+      `, [
+        wfId,
+        JSON.stringify({ orderId: wfId, items: ["dbos-pro-license", "relay-support-tier"], amount: 299 }),
+        Date.now()
+      ]);
 
-      // Navigate iframe to the workflow detail view
+      this.broadcastUpdate("workflow_created", { workflowId: wfId, status: "PENDING" });
       if (this.consoleIframe && this.consoleIframe.contentWindow) {
-        this.consoleIframe.contentWindow.location.hash = `#workflow/${wfId}`;
+        this.consoleIframe.contentWindow.location.hash = `#/workflow/${wfId}`;
       }
-
-      await this.sleep(400);
-
-      // Transition to RUNNING
-      await window.pgliteDb.query(`
-        UPDATE dbos.workflow_status SET status = 'RUNNING' WHERE workflow_id = $1;
-      `, [wfId]);
-      this.refreshConsole();
-
-      // Step 1: validateCart
-      this.log(`[Step 1/5] Executing validateCart...`, "step");
+      await this.executeSql();
       await this.sleep(450);
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, duration_ms)
-        VALUES ($1, 1, 'validateCart', 'SUCCESS', '{"valid":true,"cartTotal":149.50}', 450);
-      `, [wfId]);
+
+      // Step 1: Validate Cart
+      this.log(`[Step 1/5] Executing validateCart...`, "step");
+      await this.db.query(`
+        INSERT INTO dbos.operation_execution (
+          workflow_id, function_id, name, type, status,
+          input, output, error, duration_ms, created_at
+        ) VALUES (
+          $1, 0, 'validateCart', 'step', 'SUCCESS',
+          $2, $3, NULL, 450, $4
+        )
+      `, [
+        wfId,
+        JSON.stringify({ orderId: wfId, amount: 299 }),
+        JSON.stringify({ valid: true, items: ["dbos-pro-license", "relay-support-tier"] }),
+        Date.now()
+      ]);
       this.log(`✓ Step 1: validateCart completed in 450ms`, "success");
-      this.refreshConsole();
-
-      await this.sleep(300);
-
-      // Step 2: reserveInventory (Failure Point)
-      this.log(`[Step 2/5] Executing reserveInventory...`, "step");
+      await this.executeSql();
       await this.sleep(400);
 
+      // Step 2: Reserve Inventory (Failure Injection Target)
+      this.log(`[Step 2/5] Executing reserveInventory...`, "step");
       if (this.injectFailure) {
-        const errJson = JSON.stringify({ error: "InventoryShortageError", message: "Item DBOS-RELAY-KEY out of stock" });
-        await window.pgliteDb.query(`
-          INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, error, duration_ms)
-          VALUES ($1, 2, 'reserveInventory', 'ERROR', $2, 400);
-        `, [wfId, errJson]);
+        await this.db.query(`
+          INSERT INTO dbos.operation_execution (
+            workflow_id, function_id, name, type, status,
+            input, output, error, duration_ms, created_at
+          ) VALUES (
+            $1, 1, 'reserveInventory', 'step', 'ERROR',
+            $2, NULL, $3, 320, $4
+          )
+        `, [
+          wfId,
+          JSON.stringify({ sku: "DBOS-RELAY-KEY", qty: 2 }),
+          JSON.stringify({ code: "INVENTORY_SHORTAGE", message: "Requested stock SKU DBOS-RELAY-KEY exhausted in regional warehouse" }),
+          Date.now()
+        ]);
 
-        await window.pgliteDb.query(`
-          UPDATE dbos.workflow_status SET status = 'ERROR', error = $2, duration_ms = 850 WHERE workflow_id = $1;
-        `, [wfId, errJson]);
+        await this.db.query(`
+          UPDATE dbos.workflow_status
+          SET status = 'ERROR',
+              error = $1,
+              duration_ms = 1220,
+              updated_at = $2
+          WHERE workflow_id = $3
+        `, [
+          JSON.stringify({ message: "Step reserveInventory failed: InventoryShortageError" }),
+          Date.now(),
+          wfId
+        ]);
 
-        this.log(`✗ Step 2: reserveInventory failed: InventoryShortageError: Item DBOS-RELAY-KEY out of stock`, "error");
-        this.log(`[DBOS] Workflow halted in ERROR state. Durable state checkpointed in PGlite.`, "warn");
-        this.refreshConsole();
+        this.log(`✗ Step 2: reserveInventory FAILED (Simulated Failure Injected)`, "error");
+        this.log(`[DBOS] Workflow ${wfId} entered ERROR state. Transaction rolled back cleanly.`, "error");
+        this.broadcastUpdate("workflow_failed", { workflowId: wfId, status: "ERROR" });
+        await this.executeSql();
         return;
       }
 
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, duration_ms)
-        VALUES ($1, 2, 'reserveInventory', 'SUCCESS', '{"reserved":true,"qty":2}', 400);
-      `, [wfId]);
+      await this.db.query(`
+        INSERT INTO dbos.operation_execution (
+          workflow_id, function_id, name, type, status,
+          input, output, error, duration_ms, created_at
+        ) VALUES (
+          $1, 1, 'reserveInventory', 'step', 'SUCCESS',
+          $2, $3, NULL, 400, $4
+        )
+      `, [
+        wfId,
+        JSON.stringify({ sku: "DBOS-RELAY-KEY", qty: 2 }),
+        JSON.stringify({ reserved: true, sku: "DBOS-RELAY-KEY", warehouse: "us-west-primary" }),
+        Date.now()
+      ]);
       this.log(`✓ Step 2: reserveInventory completed in 400ms`, "success");
-      this.refreshConsole();
+      await this.executeSql();
+      await this.sleep(500);
 
-      await this.sleep(300);
-
-      // Step 3: authorizePaymentGateway (Child Workflow)
+      // Step 3: Child Workflow AuthorizePaymentGateway
       this.log(`[Step 3/5] Spawning Child Workflow AuthorizePaymentGateway (${childAuthId})...`, "step");
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.workflow_status (workflow_id, status, name, authenticated_user)
-        VALUES ($1, 'RUNNING', 'AuthorizePaymentGateway', 'playground-user');
-      `, [childAuthId]);
+      await this.db.query(`
+        INSERT INTO dbos.workflow_status (
+          workflow_id, status, name, class_name, config_name,
+          authenticated_user, assumed_role, authenticated_roles,
+          request, output, error, executor_id, app_id, app_version,
+          created_at, updated_at
+        ) VALUES (
+          $1, 'SUCCESS', 'AuthorizePaymentGateway', 'PaymentService', 'default',
+          'customer-portal', 'customer', '["customer"]',
+          $2, $3, NULL, 'exec-inbrowser-1', 'app-ecommerce', '1.0.0',
+          $4, $4
+        )
+      `, [
+        childAuthId,
+        JSON.stringify({ parentId: wfId, amount: 299, currency: "USD" }),
+        JSON.stringify({ authCode: "AUTH-89214-OK", gateway: "Stripe-Mock" }),
+        Date.now()
+      ]);
 
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, child_workflow_id, duration_ms)
-        VALUES ($1, 3, 'authorizePaymentGateway', 'RUNNING', NULL, $2, 0);
-      `, [wfId, childAuthId]);
-      this.refreshConsole();
+      await this.db.query(`
+        INSERT INTO dbos.operation_execution (
+          workflow_id, function_id, name, type, status,
+          input, output, error, duration_ms, created_at, child_workflow_id
+        ) VALUES (
+          $1, 2, 'authorizePayment', 'child_workflow', 'SUCCESS',
+          $2, $3, NULL, 650, $4, $5
+        )
+      `, [
+        wfId,
+        JSON.stringify({ amount: 299 }),
+        JSON.stringify({ authorized: true, transactionId: "tx_mock_9921" }),
+        Date.now(),
+        childAuthId
+      ]);
+      this.log(`✓ Step 3: Child Workflow AuthorizePaymentGateway (${childAuthId}) completed in 650ms`, "success");
+      await this.executeSql();
+      await this.sleep(400);
 
-      await this.sleep(350);
-
-      // Child Step 1: checkFraudVelocity
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, duration_ms)
-        VALUES ($1, 1, 'checkFraudVelocity', 'SUCCESS', '{"score":4,"cleared":true}', 150);
-      `, [childAuthId]);
-      this.log(`  ↳ [Child Step 1] checkFraudVelocity completed in 150ms`, "success");
-      this.refreshConsole();
-
-      await this.sleep(350);
-
-      // Child Step 2: chargeCard
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, duration_ms)
-        VALUES ($1, 2, 'chargeCard', 'SUCCESS', '{"auth":"AUTH-91823","amount":149.50}', 320);
-      `, [childAuthId]);
-      await window.pgliteDb.query(`
-        UPDATE dbos.workflow_status SET status = 'SUCCESS', duration_ms = 470 WHERE workflow_id = $1;
-      `, [childAuthId]);
-      this.log(`  ↳ [Child Step 2] chargeCard completed in 320ms`, "success");
-
-      await window.pgliteDb.query(`
-        UPDATE dbos.operation_execution SET status = 'SUCCESS', duration_ms = 520, output = '{"authorized":true}'
-        WHERE workflow_id = $1 AND function_id = 3;
-      `, [wfId]);
-      this.log(`✓ Step 3: authorizePaymentGateway child workflow finished successfully`, "success");
-      this.refreshConsole();
-
-      await this.sleep(300);
-
-      // Step 4: scheduleShipping
+      // Step 4: Schedule Carrier Shipping
       this.log(`[Step 4/5] Executing scheduleShipping...`, "step");
+      await this.db.query(`
+        INSERT INTO dbos.operation_execution (
+          workflow_id, function_id, name, type, status,
+          input, output, error, duration_ms, created_at
+        ) VALUES (
+          $1, 3, 'scheduleShipping', 'step', 'SUCCESS',
+          $2, $3, NULL, 380, $4
+        )
+      `, [
+        wfId,
+        JSON.stringify({ carrier: "FastTrack", orderId: wfId }),
+        JSON.stringify({ trackingNumber: "FT-9912048", status: "DISPATCHED" }),
+        Date.now()
+      ]);
+      this.log(`✓ Step 4: scheduleShipping completed in 380ms (Tracking: FT-9912048)`, "success");
+      await this.executeSql();
       await this.sleep(350);
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, duration_ms)
-        VALUES ($1, 4, 'scheduleShipping', 'SUCCESS', '{"carrier":"FastTrack","tracking":"FT-88902"}', 350);
-      `, [wfId]);
-      this.log(`✓ Step 4: scheduleShipping completed in 350ms`, "success");
-      this.refreshConsole();
 
-      await this.sleep(300);
-
-      // Step 5: sendReceiptNotification
+      // Step 5: Send Receipt Notification
       this.log(`[Step 5/5] Executing sendReceiptNotification...`, "step");
-      await this.sleep(200);
-      await window.pgliteDb.query(`
-        INSERT INTO dbos.operation_execution (workflow_id, function_id, name, status, output, duration_ms)
-        VALUES ($1, 5, 'sendReceiptNotification', 'SUCCESS', '{"email":"alice@example.com","delivered":true}', 200);
-      `, [wfId]);
-      this.log(`✓ Step 5: sendReceiptNotification completed in 200ms`, "success");
+      await this.db.query(`
+        INSERT INTO dbos.operation_execution (
+          workflow_id, function_id, name, type, status,
+          input, output, error, duration_ms, created_at
+        ) VALUES (
+          $1, 4, 'sendReceiptNotification', 'step', 'SUCCESS',
+          $2, $3, NULL, 220, $4
+        )
+      `, [
+        wfId,
+        JSON.stringify({ recipient: "operator@example.com", orderId: wfId }),
+        JSON.stringify({ delivered: true, timestamp: Date.now() }),
+        Date.now()
+      ]);
+      this.log(`✓ Step 5: sendReceiptNotification completed in 220ms`, "success");
 
-      // Root Workflow SUCCESS
-      await window.pgliteDb.query(`
+      // Final: Complete parent workflow
+      const totalDuration = 2100;
+      await this.db.query(`
         UPDATE dbos.workflow_status
-        SET status = 'SUCCESS', duration_ms = 1920, output = '{"orderId":"${wfId}","status":"FULFILLED"}'
-        WHERE workflow_id = $1;
-      `, [wfId]);
+        SET status = 'SUCCESS',
+            output = $1,
+            duration_ms = $2,
+            updated_at = $3
+        WHERE workflow_id = $4
+      `, [
+        JSON.stringify({ status: "ORDER_FULFILLED", orderId: wfId, invoiceUrl: `https://relay.local/invoices/${wfId}` }),
+        totalDuration,
+        Date.now(),
+        wfId
+      ]);
 
-      this.log(`🎉 Workflow ${wfId} fulfilled successfully in 1.92s!`, "success");
-      this.refreshConsole();
-      await this.executeSql(`SELECT * FROM dbos.workflow_status WHERE workflow_id = '${wfId}';`);
+      this.log(`✓ [DBOS] Workflow ${wfId} completed with status SUCCESS (${totalDuration}ms total duration)`, "success");
+      this.broadcastUpdate("workflow_completed", { workflowId: wfId, status: "SUCCESS" });
+      await this.executeSql();
 
     } catch (err) {
-      console.error("Workflow execution error:", err);
       this.log(`Execution error: ${err.message}`, "error");
     } finally {
       this.isRunning = false;
       this.runBtn.disabled = false;
-      this.runBtn.innerHTML = "▶ Run Workflow";
+      this.runBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span>Run Workflow</span>
+      `;
     }
   }
 
