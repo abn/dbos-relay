@@ -214,23 +214,72 @@ header nav a.active {
 .sidebar::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
 
 .side-sec {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
-.side-title {
-  font-size: .75rem;
+details.side-sec summary.side-summary,
+.side-sec.side-leaf .side-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: 4px;
+  user-select: none;
+  transition: background .12s;
+}
+details.side-sec summary.side-summary::-webkit-details-marker {
+  display: none;
+}
+details.side-sec summary.side-summary:hover,
+.side-sec.side-leaf .side-summary:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.side-title-link,
+.side-title-text {
+  font-size: .78rem;
   font-weight: 700;
-  letter-spacing: .08em;
+  letter-spacing: .06em;
+  text-transform: uppercase;
   color: var(--ink-dim);
-  margin-bottom: 8px;
-  padding: 0 8px;
+  border-bottom: none;
+  flex: 1;
+  transition: color .12s;
+}
+.side-title-link:hover {
+  color: var(--ink);
+}
+.side-title-link.active {
+  color: var(--cobalt-hi);
+  font-weight: 800;
+}
+.side-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-dim);
+  padding: 2px;
+  transition: color .12s;
+}
+.side-chevron svg {
+  transition: transform .15s ease;
+  transform: rotate(0deg);
+}
+details.side-sec:not([open]) .side-chevron svg {
+  transform: rotate(-90deg);
+}
+details.side-sec summary.side-summary:hover .side-chevron {
+  color: var(--ink);
 }
 .side ul {
   list-style: none;
+  padding-left: 6px;
+  margin-top: 2px;
 }
 .side li {
   margin: 2px 0;
 }
-.side a {
+.side li a {
   display: block;
   font-size: .86rem;
   color: var(--ink-dim);
@@ -240,7 +289,7 @@ header nav a.active {
   line-height: 1.4;
   transition: all .12s;
 }
-.side a:hover {
+.side li a:hover {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.04);
 }

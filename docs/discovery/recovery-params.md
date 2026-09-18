@@ -118,13 +118,14 @@ The Conductor OpenAPI specification (`components.schemas.Executor.properties.sta
 defines three lifecycle statuses: `HEALTHY`, `DISCONNECTED`, and `DEAD`.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> HEALTHY: WebSocket connected and executor_info reply received
-    HEALTHY --> DISCONNECTED: Socket closed or ping wait > 25s
-    DISCONNECTED --> HEALTHY: Reconnect within executorTimeoutSecs (same executor_id)
-    DISCONNECTED --> DEAD: Grace period elapses (executorTimeoutSecs, default 60s)
-    DEAD --> Deleted: Recovery acknowledged by healthy peer with success: true
-    Deleted --> [*]: Dead executor registration record deleted
+flowchart TD
+    START(["Start"]) -->|WebSocket connected and executor_info received| HEALTHY["HEALTHY"]
+    HEALTHY -->|Socket closed or ping wait exceeds 25s| DISCONNECTED["DISCONNECTED"]
+    DISCONNECTED -->|Reconnect within executorTimeoutSecs| HEALTHY
+    DISCONNECTED -->|Grace period elapses, default 60s| DEAD["DEAD"]
+    DEAD -->|Dispatch recovery to healthy peer| RECOVERY["Recovery Dispatched"]
+    RECOVERY -->|Acknowledged with success| DELETED["Deleted"]
+    DELETED --> PRUNED(["Registration record pruned"])
 ```
 
 ### State transition rules

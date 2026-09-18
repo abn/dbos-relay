@@ -127,13 +127,19 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
   });
+  document.querySelectorAll('.side-title-link').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+      e.stopPropagation();
+    });
+  });
 </script>
 <script type="module">
   if (document.querySelector('.mermaid')) {
     import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs')
-      .then(function(m) {
-        m.default.initialize({
-          startOnLoad: true,
+      .then(async function(m) {
+        var mermaid = m.default;
+        mermaid.initialize({
+          startOnLoad: false,
           theme: 'dark',
           themeVariables: {
             darkMode: true,
@@ -143,6 +149,7 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
             lineColor: '#58a6ff'
           }
         });
+        await mermaid.run();
       })
       .catch(function(err) {
         console.warn('Mermaid runtime deferred:', err);
@@ -168,10 +175,50 @@ func (r *Renderer) sidebarHTML(activeSection, activeSlug string) string {
 		if len(sec.Pages) == 0 {
 			continue
 		}
-		b.WriteString(`<div class="side-sec">`)
-		fmt.Fprintf(&b, `<div class="side-title">%s</div>`, template.HTMLEscapeString(sec.Title))
+
+		var rootPage *Page
+		var childPages []Page
+		for i := range sec.Pages {
+			p := &sec.Pages[i]
+			if (sec.ID == "" && (p.Slug == "index" || p.Slug == "")) || (sec.ID != "" && p.Slug == sec.ID+"/index") {
+				rootPage = p
+			} else {
+				childPages = append(childPages, *p)
+			}
+		}
+
+		secHref := ""
+		secActive := ""
+		if rootPage != nil {
+			secHref = "/wiki/" + rootPage.Slug + ".html"
+			if rootPage.Slug == activeSlug {
+				secActive = " active"
+			}
+		}
+
+		if len(childPages) == 0 {
+			b.WriteString(`<div class="side-sec side-leaf"><div class="side-summary">`)
+			if secHref != "" {
+				fmt.Fprintf(&b, `<a href="%s" class="side-title-link%s">%s</a>`, secHref, secActive, template.HTMLEscapeString(sec.Title))
+			} else {
+				fmt.Fprintf(&b, `<span class="side-title-text">%s</span>`, template.HTMLEscapeString(sec.Title))
+			}
+			b.WriteString(`</div></div>`)
+			continue
+		}
+
+		b.WriteString(`<details class="side-sec" open>`)
+		b.WriteString(`<summary class="side-summary">`)
+		if secHref != "" {
+			fmt.Fprintf(&b, `<a href="%s" class="side-title-link%s">%s</a>`, secHref, secActive, template.HTMLEscapeString(sec.Title))
+		} else {
+			fmt.Fprintf(&b, `<span class="side-title-text">%s</span>`, template.HTMLEscapeString(sec.Title))
+		}
+		b.WriteString(`<span class="side-chevron" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span>`)
+		b.WriteString(`</summary>`)
+
 		b.WriteString(`<ul>`)
-		for _, page := range sec.Pages {
+		for _, page := range childPages {
 			active := ""
 			if page.Slug == activeSlug {
 				active = ` class="active"`
@@ -183,7 +230,7 @@ func (r *Renderer) sidebarHTML(activeSection, activeSlug string) string {
 			}
 			fmt.Fprintf(&b, `<li%s><a href="%s">%s</a></li>`, active, href, template.HTMLEscapeString(title))
 		}
-		b.WriteString(`</ul></div>`)
+		b.WriteString(`</ul></details>`)
 	}
 	b.WriteString(`</nav>`)
 	return b.String()

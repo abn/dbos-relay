@@ -24,15 +24,14 @@ Each executor registration transitions through four discrete lifecycle states:
 A dead executor's work is offered to a healthy peer executor belonging to the same application and organisation, preferring one running the same application version. Relay asks that peer to recover the dead executor's workflows by dispatching a `recovery` frame (`executor_ids: [dead_executor_id]`). On a successful reply (`success: true`), Relay deletes the dead executor's record and writes the action to the audit log. On failure, peer disconnect, or acknowledgement timeout, Relay fails over sequentially to the next healthy candidate with backoff. If no healthy peers are connected or willing to adopt, the executor remains in `DEAD` status until a healthy peer joins.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> HEALTHY: Executor connects
-    HEALTHY --> DISCONNECTED: Socket closed or ping wait > 25s
-    DISCONNECTED --> HEALTHY: Reconnect within grace period (same executor_id)
-    DISCONNECTED --> DEAD: Grace period elapses (default 60s)
-    DEAD --> Recovering: Dispatch recovery frame to healthy peer
-    Recovering --> Deleted: Peer acknowledges recovery (success: true)
-    Recovering --> DEAD: Failover or timeout (retry next candidate)
-    Deleted --> [*]: Dead executor registration pruned
+flowchart TD
+    HEALTHY["HEALTHY"] -->|Socket closed or ping wait exceeds 25s| DISCONNECTED["DISCONNECTED"]
+    DISCONNECTED -->|Reconnect within grace period| HEALTHY
+    DISCONNECTED -->|Grace period elapses, default 60s| DEAD["DEAD"]
+    DEAD -->|Dispatch recovery frame to healthy peer| RECOVERING["Recovering"]
+    RECOVERING -->|Peer acknowledges with success| DELETED["Deleted"]
+    RECOVERING -->|Failover or timeout| DEAD
+    DELETED --> PRUNED(["Pruned from registry"])
 ```
 
 ## Rules
