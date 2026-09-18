@@ -881,8 +881,7 @@ chmod +x relay
 <span class="comment"># 2. Start Relay with pure-Go embedded storage (no PostgreSQL required)</span>
 ./relay serve --embedded
 
-<span class="comment"># 3. Open the embedded web dashboard</span>
-open http://localhost:8090</code></pre>
+<span class="comment"># 3. Open http://localhost:8090 in your browser to view the web dashboard</span></code></pre>
         </div>
 
         <div id="code-docker" class="code-pane">
@@ -894,8 +893,7 @@ docker run -d \
   -e RELAY_LISTEN_ADDR=<span class="string">"0.0.0.0:8090"</span> \
   ghcr.io/abn/relay:latest serve
 
-<span class="comment"># 2. Open the embedded web dashboard</span>
-open http://localhost:8090</code></pre>
+<span class="comment"># 2. Open http://localhost:8090 in your browser to view the web dashboard</span></code></pre>
         </div>
 
         <div id="code-binary" class="code-pane">
@@ -905,7 +903,9 @@ chmod +x relay
 
 <span class="comment"># 2. Run migrations and start the control plane backed by PostgreSQL</span>
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay migrate up
-RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay serve</code></pre>
+RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay serve
+
+<span class="comment"># 3. Open http://localhost:8090 in your browser to view the web dashboard</span></code></pre>
         </div>
       </div>
     </div>
