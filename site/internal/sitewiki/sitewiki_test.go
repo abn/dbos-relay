@@ -117,8 +117,11 @@ func main() {}
 		t.Errorf("missing or malformed mermaid pre block in:\n%s", htmlStr)
 	}
 
-	// Verify standard code block
-	if !strings.Contains(htmlStr, "<pre><code class=\"language-go\">func main() {}") {
-		t.Errorf("missing or malformed standard go code block in:\n%s", htmlStr)
+	// Verify highlighted code block
+	if !strings.Contains(htmlStr, `<pre class="chroma"><code class="language-go">`) {
+		t.Errorf("missing chroma code block in:\n%s", htmlStr)
+	}
+	if !strings.Contains(htmlStr, `class="kd">func</span>`) {
+		t.Errorf("missing syntax highlighted func token in:\n%s", htmlStr)
 	}
 }

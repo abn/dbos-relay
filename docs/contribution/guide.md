@@ -16,7 +16,7 @@ merged however good it is.
 
 ## Setup
 
-```
+```bash
 ./.agents/bootstrap.sh
 make check
 ```

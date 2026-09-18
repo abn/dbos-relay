@@ -153,46 +153,36 @@ For DBOS-managed profiles (`cloud.dbos.dev`), the client hardcodes:
 
 ### Execution sequence
 
-```
-dbosctl                      OIDC Provider                  Conductor / Relay
-   |                               |                                |
-   | 1. Discovery                  |                                |
-   |------------------------------>|                                |
-   |    GET /.well-known/          |                                |
-   |        openid-configuration   |                                |
-   |<------------------------------|                                |
-   |    returns endpoints          |                                |
-   |                               |                                |
-   | 2. Request Device Code        |                                |
-   |------------------------------>|                                |
-   |    POST /device/code          |                                |
-   |    (client_id, scope, aud)    |                                |
-   |<------------------------------|                                |
-   |    device_code, user_code,    |                                |
-   |    verification_uri, interval |                                |
-   |                               |                                |
-   | 3. User browser prompt        |                                |
-   |    "Open {uri} and confirm    |                                |
-   |     code: {user_code}"        |                                |
-   |                               |                                |
-   | 4. Polling loop (interval)    |                                |
-   |------------------------------>|                                |
-   |    POST /oauth/token          |                                |
-   |    grant_type=device_code     |                                |
-   |<------------------------------|                                |
-   |    status / tokens            |                                |
-   |    (authorization_pending,    |                                |
-   |     slow_down, or 200 OK)     |                                |
-   |                               |                                |
-   | 5. Best-effort identity lookup|                                |
-   |--------------------------------------------------------------->|
-   |    GET /v2/users/me (Bearer access_token)                      |
-   |<---------------------------------------------------------------|
-   |    200 OK: {name, org_name}                                    |
-   |                               |                                |
-   | 6. Persist credentials        |                                |
-   |    saves tokens + org to      |                                |
-   |    credentials.yaml           |                                |
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant CLI as dbosctl
+    participant OIDC as OIDC Provider
+    participant Relay as Conductor / Relay
+
+    Note over CLI,OIDC: 1. Discovery
+    CLI->>OIDC: GET /.well-known/openid-configuration
+    OIDC-->>CLI: Return endpoints metadata
+
+    Note over CLI,OIDC: 2. Request Device Code
+    CLI->>OIDC: POST /device/code (client_id, scope, audience)
+    OIDC-->>CLI: device_code, user_code, verification_uri, interval
+
+    Note over User,CLI: 3. User Browser Prompt
+    CLI->>User: Prompt: Open verification_uri and confirm code user_code
+
+    Note over CLI,OIDC: 4. Polling Loop
+    loop Polling (interval)
+        CLI->>OIDC: POST /oauth/token (grant_type=device_code)
+        OIDC-->>CLI: authorization_pending / slow_down / 200 OK (tokens)
+    end
+
+    Note over CLI,Relay: 5. Identity Lookup
+    CLI->>Relay: GET /v2/users/me (Bearer access_token)
+    Relay-->>CLI: 200 OK { name, org_name }
+
+    Note over CLI: 6. Persist tokens and org to credentials.yaml
 ```
 
 ### Error and status handling during polling

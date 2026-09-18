@@ -117,35 +117,14 @@ Liveness detection operates as follows:
 The Conductor OpenAPI specification (`components.schemas.Executor.properties.status`)
 defines three lifecycle statuses: `HEALTHY`, `DISCONNECTED`, and `DEAD`.
 
-```
-                    +-----------------------+
-                    |        HEALTHY        |<-----------------------+
-                    +-----------------------+                        |
-                                |                                    |
-                Socket closed / |                                    |
-               Ping wait > 25s  |                                    |
-                                v                                    |
-                    +-----------------------+                        |
-                    |     DISCONNECTED      |                        |
-                    +-----------------------+                        |
-                                |                                    |
-        Grace period elapses    |        Reconnect within            |
-       (executorTimeoutSecs,    |       executorTimeoutSecs          |
-            default 60s)        |        with same executor_id       |
-                                v                                    |
-                    +-----------------------+                        |
-                    |         DEAD          |                        |
-                    +-----------------------+                        |
-                                |                                    |
-                     Dispatch recovery to                            |
-                     healthy peer executor                           |
-                                |                                    |
-                     Recovery acknowledged                           |
-                     with { success: true }                          |
-                                |                                    |
-                                v                                    |
-                     Delete dead executor                            |
-                      registration record                            |
+```mermaid
+stateDiagram-v2
+    [*] --> HEALTHY: WebSocket connected and executor_info reply received
+    HEALTHY --> DISCONNECTED: Socket closed or ping wait > 25s
+    DISCONNECTED --> HEALTHY: Reconnect within executorTimeoutSecs (same executor_id)
+    DISCONNECTED --> DEAD: Grace period elapses (executorTimeoutSecs, default 60s)
+    DEAD --> Deleted: Recovery acknowledged by healthy peer with success: true
+    Deleted --> [*]: Dead executor registration record deleted
 ```
 
 ### State transition rules

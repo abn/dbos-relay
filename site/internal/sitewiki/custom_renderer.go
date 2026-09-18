@@ -1,10 +1,15 @@
 package sitewiki
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"strings"
 
+	"github.com/alecthomas/chroma/v2"
+	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
@@ -113,39 +118,57 @@ func (r *customRenderer) renderBlockquote(w util.BufWriter, source []byte, n ast
 }
 
 func (r *customRenderer) renderFencedCodeBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
+	}
 	n := node.(*ast.FencedCodeBlock)
 	lang := string(n.Language(source))
 
+	var buf bytes.Buffer
+	lines := n.Lines()
+	for i := 0; i < lines.Len(); i++ {
+		line := lines.At(i)
+		buf.Write(line.Value(source))
+	}
+	codeText := buf.String()
+
 	if lang == "mermaid" {
-		if entering {
-			_, _ = w.WriteString("<pre class=\"mermaid\">\n")
-			lines := n.Lines()
-			for i := 0; i < lines.Len(); i++ {
-				line := lines.At(i)
-				_, _ = w.Write(line.Value(source))
-			}
-		} else {
-			_, _ = w.WriteString("</pre>\n")
-		}
-		return ast.WalkContinue, nil
+		_, _ = w.WriteString("<pre class=\"mermaid\">\n")
+		_, _ = w.WriteString(codeText)
+		_, _ = w.WriteString("</pre>\n")
+		return ast.WalkSkipChildren, nil
 	}
 
-	// Standard fenced code block
-	if entering {
-		_, _ = w.WriteString("<pre><code")
-		if len(lang) > 0 {
-			_, _ = fmt.Fprintf(w, " class=\"language-%s\"", template.HTMLEscapeString(lang))
-		}
-		_ = w.WriteByte('>')
-		lines := n.Lines()
-		for i := 0; i < lines.Len(); i++ {
-			line := lines.At(i)
-			_, _ = w.WriteString(template.HTMLEscapeString(string(line.Value(source))))
-		}
-	} else {
+	if lang == "" {
+		_, _ = w.WriteString("<pre><code>")
+		_, _ = w.WriteString(template.HTMLEscapeString(codeText))
 		_, _ = w.WriteString("</code></pre>\n")
+		return ast.WalkSkipChildren, nil
 	}
-	return ast.WalkContinue, nil
+
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		lexer = lexers.Match(lang)
+	}
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	lexer = chroma.Coalesce(lexer)
+
+	style := styles.Get("github-dark")
+	formatter := chromahtml.New(chromahtml.WithClasses(true), chromahtml.PreventSurroundingPre(true))
+	iterator, err := lexer.Tokenise(nil, codeText)
+	if err != nil {
+		_, _ = fmt.Fprintf(w, "<pre><code class=\"language-%s\">", template.HTMLEscapeString(lang))
+		_, _ = w.WriteString(template.HTMLEscapeString(codeText))
+		_, _ = w.WriteString("</code></pre>\n")
+		return ast.WalkSkipChildren, nil
+	}
+
+	_, _ = fmt.Fprintf(w, "<pre class=\"chroma\"><code class=\"language-%s\">", template.HTMLEscapeString(lang))
+	_ = formatter.Format(w, style, iterator)
+	_, _ = w.WriteString("</code></pre>\n")
+	return ast.WalkSkipChildren, nil
 }
 
 func alertTitle(kind string) string {

@@ -20,16 +20,46 @@ Executors connect outbound over WebSockets. Clients, the dashboard, and a
 metrics scraper connect inbound over HTTP. Between them sit a connection hub
 and a router; behind them sits Relay's own small Postgres database.
 
-```
-  executor --ws--\                                  /--http-- control client
-  executor --ws----  gateway -> hub -> router -> api --http-- dashboard
-  executor --ws--/            (correlation) (local  \--http-- metrics scrape
-                                            or peer)
-                                |            |         |
-                          liveness and    ownership   store
-                          recovery        lookup
-                                |            |         |
-                                \------ Relay Postgres ------/
+```mermaid
+flowchart LR
+    subgraph Inbound["Executors"]
+        E1["Executor 1"]
+        E2["Executor 2"]
+        E3["Executor N"]
+    end
+
+    subgraph RelayCore["Relay Core"]
+        GW["Gateway (WS)"]
+        HUB["Hub (Correlation)"]
+        RTR["Router (Local / Peer)"]
+        API["HTTP API"]
+    end
+
+    subgraph Consumers["Control and Monitoring"]
+        CLI["Control Client"]
+        DASH["Dashboard"]
+        METRICS["Metrics Scraper"]
+    end
+
+    subgraph Storage["Relay Postgres"]
+        DB[("Relay Postgres\n• Liveness and recovery\n• Ownership lookup\n• Operational store")]
+    end
+
+    E1 -->|ws| GW
+    E2 -->|ws| GW
+    E3 -->|ws| GW
+
+    GW --> HUB
+    HUB --> RTR
+    RTR --> API
+
+    API -->|http| CLI
+    API -->|http| DASH
+    API -->|http| METRICS
+
+    HUB -.-> DB
+    RTR -.-> DB
+    API -.-> DB
 ```
 
 ## Modules

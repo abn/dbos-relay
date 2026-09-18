@@ -5,6 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## 2026-09-18
 
+* **Update**: Converted ASCII architecture and lifecycle diagrams in `docs/architecture/components.md`, `docs/architecture/recovery.md`, `docs/discovery/recovery-params.md`, and `docs/discovery/client-behaviour.md` to Mermaid sequence diagrams, flowcharts, and state machines, and integrated Chroma syntax highlighting into the static wiki rendering engine.
 * **Update**: Documented multi-database fleet architecture and design rationale for omitting database credentials and topology management from the control plane UI in [Data plane access via SDK client](architecture/dataplane.md).
 * **Creation**: Added standalone Cloudflare-deployable project landing page and documentation site in `site/` with live dashboard screenshot showcase, feature comparison matrix, and static OKF wiki generator.
 * **Update**: Added Server-Sent Events (SSE) streaming mode for real-time dashboard telemetry, broadcasting workflow updates and heartbeats with EventSource token query authorization.

@@ -86,7 +86,7 @@ If a migration fails mid-execution (for example due to network termination or co
 the database driver marks `schema_migrations.dirty = true`. When dirty, Relay refuses to start
 or apply further migrations:
 
-```
+```text
 migration failed: Dirty database version <N>. Fix and force version.
 ```
 

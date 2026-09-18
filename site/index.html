@@ -441,16 +441,28 @@ h1 span.highlight {
   background: var(--bg-raised);
   font-weight: 600;
 }
+.code-panes {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 340px;
+}
 .code-pane {
-  display: none;
+  grid-area: 1 / 1;
+  visibility: hidden;
+  opacity: 0;
   background: var(--bg-2);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 20px;
   overflow-x: auto;
+  min-width: 0;
+  transition: opacity .15s ease;
+  pointer-events: none;
 }
 .code-pane.active {
-  display: block;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 .code-pane pre code {
   color: var(--ink);
@@ -822,8 +834,9 @@ footer {
         <button class="code-tab-btn" onclick="switchCode('typescript', this)">TypeScript App Config</button>
       </div>
 
-      <div id="code-docker" class="code-pane active">
-        <pre><code><span class="comment"># 1. Start Relay with Docker pointing to your PostgreSQL instance</span>
+      <div class="code-panes">
+        <div id="code-docker" class="code-pane active">
+          <pre><code><span class="comment"># 1. Start Relay with Docker pointing to your PostgreSQL instance</span>
 docker run -d \
   --name relay \
   -p 8080:8080 \
@@ -833,20 +846,20 @@ docker run -d \
 
 <span class="comment"># 2. Open the embedded web dashboard</span>
 open http://localhost:8080</code></pre>
-      </div>
+        </div>
 
-      <div id="code-binary" class="code-pane">
-        <pre><code><span class="comment"># 1. Download and run the standalone binary</span>
+        <div id="code-binary" class="code-pane">
+          <pre><code><span class="comment"># 1. Download and run the standalone binary</span>
 curl -fsSL https://github.com/abn/relay/releases/latest/download/relay-linux-amd64 -o relay
 chmod +x relay
 
 <span class="comment"># 2. Run migrations and start the control plane</span>
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay migrate up
 RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay serve</code></pre>
-      </div>
+        </div>
 
-      <div id="code-python" class="code-pane">
-        <pre><code><span class="keyword">import</span> os
+        <div id="code-python" class="code-pane">
+          <pre><code><span class="keyword">import</span> os
 <span class="keyword">from</span> dbos <span class="keyword">import</span> DBOS, DBOSConfig
 
 <span class="comment"># Configure unmodified DBOS app pointing to your Relay instance</span>
@@ -859,16 +872,17 @@ config: DBOSConfig = {
 
 DBOS(config=config)
 DBOS.launch()</code></pre>
-      </div>
+        </div>
 
-      <div id="code-typescript" class="code-pane">
-        <pre><code><span class="keyword">import</span> { DBOS } <span class="keyword">from</span> <span class="string">"@dbos-inc/dbos-sdk"</span>;
+        <div id="code-typescript" class="code-pane">
+          <pre><code><span class="keyword">import</span> { DBOS } <span class="keyword">from</span> <span class="string">"@dbos-inc/dbos-sdk"</span>;
 
 <span class="comment">// Set environment variables for your DBOS runtime</span>
 process.env.DBOS__CONDUCTOR_URL = <span class="string">"ws://localhost:8080"</span>;
 process.env.DBOS__CONDUCTOR_KEY = process.env.RELAY_API_KEY;
 
 <span class="keyword">await</span> DBOS.launch();</code></pre>
+        </div>
       </div>
     </div>
   </section>
