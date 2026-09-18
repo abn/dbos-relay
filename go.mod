@@ -4,13 +4,14 @@ go 1.26.7
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/dbos-inc/dbos-transact-golang v1.3.0
+	github.com/dbos-inc/dbos-transact-golang v1.4.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/spf13/cobra v1.10.2
 	gopkg.in/yaml.v3 v3.0.1
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -80,7 +81,6 @@ require (
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.59.0 // indirect
 )
 
 tool (
