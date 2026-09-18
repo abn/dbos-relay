@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relay Playground - In-Browser DBOS Workflow Control Plane</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="playground.css" />
+</head>
+<body>
+  <!-- Top Navigation & Controls Bar -->
+  <header class="playground-header">
+    <div class="brand-section">
+      <img src="assets/logo.svg" alt="Relay Logo" class="brand-logo" />
+      <span class="brand-title">Relay Playground</span>
+      <span class="brand-badge">WASM Interactive</span>
+      <span id="db-status" class="status-indicator ready">PGlite Loading...</span>
+    </div>
+
+    <div class="controls-section">
+      <select id="demo-select" class="select-control" aria-label="Select demo workflow">
+        <option value="checkout">Demo 1: E-Commerce Checkout (Child DAG)</option>
+        <option value="payment">Demo 2: Payment Processing (Retries & Idempotency)</option>
+      </select>
+
+      <button id="run-btn" class="btn btn-primary" title="Execute workflow in browser">
+        ▶ Run Workflow
+      </button>
+
+      <button id="fail-toggle-btn" class="btn btn-danger-outline" title="Inject simulated step failure to observe error handling">
+        ⚡ Inject Step Failure
+      </button>
+
+      <button id="reset-btn" class="btn btn-secondary" title="Reset in-browser database to clean seed state">
+        ↻ Reset DB
+      </button>
+
+      <button id="theme-btn" class="btn btn-secondary" title="Toggle dark and light themes">
+        ☀️ Light Mode
+      </button>
+
+      <a href="/wiki/" class="btn btn-secondary" style="text-decoration: none;">
+        Docs →
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Split Body -->
+  <main class="playground-main">
+    <div class="split-container">
+      <!-- Left Pane: Code Editor & Execution Log -->
+      <section class="left-pane">
+        <div class="pane-header">
+          <div class="tabs-group">
+            <span class="tab-item active">workflow.ts</span>
+            <span class="tab-item">TypeScript / DBOS Transact</span>
+          </div>
+          <span style="font-size: 11px; opacity: 0.8;">In-Browser Client Execution</span>
+        </div>
+
+        <div class="editor-wrapper">
+          <textarea id="code-editor" class="code-textarea" spellcheck="false" aria-label="Workflow Code Editor"></textarea>
+        </div>
+
+        <div class="log-panel">
+          <div class="pane-header">
+            <span>Execution Console (Live Telemetry)</span>
+            <span style="font-size: 11px; opacity: 0.8;">stdout / step transitions</span>
+          </div>
+          <div id="console-logs" class="log-content">
+            <div class="log-line info">[System] Playground ready. Select a workflow and click '▶ Run Workflow' to observe live execution.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Pane: Full Relay Operations Console -->
+      <section class="right-pane">
+        <iframe id="console-iframe" src="console.html" class="console-iframe" title="Relay Full Operations Console"></iframe>
+      </section>
+    </div>
+
+    <!-- Collapsible Bottom Drawer: Live SQL & DBOS Database Inspector -->
+    <section class="drawer-container">
+      <div class="drawer-header">
+        <div style="font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 8px;">
+          <span>Database Inspector</span>
+          <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">(PostgreSQL 16 in WebAssembly)</span>
+        </div>
+
+        <div class="sql-presets">
+          <span style="font-size: 11px; color: var(--text-muted);">Quick Queries:</span>
+          <button class="preset-btn" data-sql="SELECT workflow_id, name, status, duration_ms, authenticated_user, created_at FROM dbos.workflow_status ORDER BY created_at DESC;">
+            dbos.workflow_status
+          </button>
+          <button class="preset-btn" data-sql="SELECT workflow_id, function_id, name, status, duration_ms, child_workflow_id FROM dbos.operation_execution ORDER BY created_at DESC;">
+            dbos.operation_execution
+          </button>
+          <button class="preset-btn" data-sql="SELECT * FROM applications;">
+            applications
+          </button>
+          <button class="preset-btn" data-sql="SELECT * FROM executors;">
+            executors
+          </button>
+        </div>
+      </div>
+
+      <div class="drawer-body">
+        <div class="sql-bar">
+          <input id="sql-input" class="sql-input" type="text" value="SELECT * FROM dbos.workflow_status ORDER BY created_at DESC;" placeholder="Enter SQL query..." />
+          <button id="sql-run-btn" class="btn btn-secondary">Query SQL</button>
+        </div>
+
+        <div id="query-results" class="table-wrapper">
+          <!-- Live SQL Results Table will be dynamically rendered here -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="playground.js"></script>
+</body>
+</html>

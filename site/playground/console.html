@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relay Dashboard (Playground Embedded)</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="assets/app.css" />
+  <!-- In-browser Relay API bridge to PGlite -->
+  <script src="relay-bridge.js"></script>
+  <style>
+    /* Playground embedded UI overrides */
+    body {
+      background: var(--bg, #0d1117);
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    /* Ensure clean full-height layout in iframe */
+    #app {
+      height: 100vh;
+      width: 100vw;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>

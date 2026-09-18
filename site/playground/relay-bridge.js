@@ -1,0 +1,259 @@
+// relay-bridge.js - In-browser API & SSE bridge for embedded Relay Console
+// Intercepts fetch() and EventSource() calls inside the console iframe
+// and routes them to the in-memory PGlite / storage database.
+
+(function () {
+  const nativeFetch = window.fetch;
+  const channel = new BroadcastChannel("relay-playground-bus");
+
+  // In-memory fallback state if PGlite is still initializing
+  const state = {
+    apps: [
+      {
+        name: "ecommerce-checkout",
+        organization: "default",
+        status: "AVAILABLE",
+        runtime: "typescript",
+        createdAt: "2026-09-18T18:00:00Z"
+      }
+    ],
+    executors: [
+      {
+        id: "wasm-executor-1",
+        name: "ecommerce-checkout",
+        status: "healthy",
+        hostname: "browser-wasm",
+        ipAddress: "127.0.0.1",
+        version: "1.0.0",
+        lastHeartbeat: new Date().toISOString()
+      }
+    ],
+    queues: [
+      { name: "orders-vip", appName: "ecommerce-checkout", concurrency: 20, activeCount: 1 },
+      { name: "orders-standard", appName: "ecommerce-checkout", concurrency: 50, activeCount: 2 }
+    ],
+    schedules: [
+      { name: "daily-reconciliation", appName: "ecommerce-checkout", schedule: "0 0 * * *", workflowName: "ReconciliationWorkflow", status: "ACTIVE", lastRun: new Date().toISOString() }
+    ],
+    alerts: [
+      { id: "rule-1", name: "High Error Rate", appName: "ecommerce-checkout", metric: "workflow_failure_rate", condition: "gt", threshold: 5, status: "ACTIVE" }
+    ],
+    keys: [
+      { id: "key-1", name: "dev-local-key", prefix: "dbos_sec_dev", createdAt: "2026-09-18T18:00:00Z", permissions: ["*"], appNames: ["*"] }
+    ]
+  };
+
+  // Helper to query parent PGlite instance if available
+  async function queryDb(sql, params = []) {
+    if (window.parent && window.parent.pgliteDb) {
+      try {
+        const res = await window.parent.pgliteDb.query(sql, params);
+        return res.rows;
+      } catch (err) {
+        console.warn("[RelayBridge] SQL query error, falling back:", err);
+      }
+    }
+    return null;
+  }
+
+  // Custom EventSource polyfill for SSE telemetry
+  class MockEventSource {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 1; // OPEN
+      this.onopen = null;
+      this.onmessage = null;
+      this.onerror = null;
+
+      this.handler = (event) => {
+        if (this.onmessage && event.data && event.data.type === "relay_telemetry") {
+          this.onmessage({
+            data: JSON.stringify(event.data.payload)
+          });
+        }
+      };
+
+      channel.addEventListener("message", this.handler);
+      setTimeout(() => {
+        if (this.onopen) this.onopen({ type: "open" });
+      }, 50);
+    }
+
+    close() {
+      this.readyState = 2;
+      channel.removeEventListener("message", this.handler);
+    }
+  }
+
+  window.EventSource = MockEventSource;
+
+  // Intercept fetch
+  window.fetch = async function (input, init) {
+    const url = typeof input === "string" ? input : input.url;
+    const parsed = new URL(url, window.location.href);
+    const path = parsed.pathname;
+
+    // Static assets bypass
+    if (path.includes("/assets/") || path.endsWith(".js") || path.endsWith(".css") || path.endsWith(".svg") || path.endsWith(".png")) {
+      return nativeFetch(input, init);
+    }
+
+    // Standard headers
+    const jsonHeaders = { "Content-Type": "application/json" };
+
+    // 1. /v2/users/me -> 404 Problem Details (Self-hosted no-auth mode signal)
+    if (path === "/v2/users/me" || path === "/v2/users") {
+      return new Response(
+        JSON.stringify({
+          type: "https://relay.dbos.dev/errors/not-found",
+          title: "Not Found",
+          status: 404,
+          detail: "User endpoint disabled in self-hosted no-auth playground mode"
+        }),
+        { status: 404, headers: jsonHeaders }
+      );
+    }
+
+    // 2. /v2/orgs/{org}/apps
+    if (path.match(/^\/v2\/orgs\/[^/]+\/apps$/)) {
+      const rows = await queryDb("SELECT name, organization, status, runtime, created_at FROM applications;");
+      const data = rows && rows.length > 0 ? rows.map(r => ({
+        name: r.name,
+        organization: r.organization,
+        status: r.status,
+        runtime: r.runtime,
+        createdAt: r.created_at
+      })) : state.apps;
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
+    }
+
+    // 3. /v2/orgs/{org}/apps/{app}/executors
+    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/executors$/)) {
+      const rows = await queryDb("SELECT id, name, status, hostname, ip_address, version, last_heartbeat FROM executors;");
+      const data = rows && rows.length > 0 ? rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        hostname: r.hostname,
+        ipAddress: r.ip_address,
+        version: r.version,
+        lastHeartbeat: r.last_heartbeat
+      })) : state.executors;
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
+    }
+
+    // 4. /v2/orgs/{org}/apps/{app}/workflows (List workflows)
+    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/workflows$/)) {
+      const rows = await queryDb(
+        "SELECT workflow_id, status, name, authenticated_user, output, error, duration_ms, created_at, updated_at " +
+        "FROM dbos.workflow_status ORDER BY created_at DESC LIMIT 50;"
+      );
+      const data = (rows || []).map(r => ({
+        workflow_id: r.workflow_id,
+        workflow_name: r.name,
+        status: r.status,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        duration_ms: r.duration_ms || 0,
+        authenticated_user: r.authenticated_user || "playground-user",
+        output: r.output,
+        error: r.error
+      }));
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
+    }
+
+    // 5. /v2/orgs/{org}/apps/{app}/workflows/{id}/steps (Workflow DAG steps)
+    const stepsMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/workflows\/([^/]+)\/steps$/);
+    if (stepsMatch) {
+      const workflowId = stepsMatch[1];
+      const rows = await queryDb(
+        "SELECT function_id, name, status, output, error, child_workflow_id, duration_ms " +
+        "FROM dbos.operation_execution WHERE workflow_id = $1 ORDER BY function_id ASC;",
+        [workflowId]
+      );
+      const data = (rows || []).map(r => ({
+        function_id: r.function_id,
+        name: r.name,
+        status: r.status,
+        output: r.output,
+        error: r.error,
+        childWorkflowId: r.child_workflow_id,
+        durationMs: r.duration_ms || 0
+      }));
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
+    }
+
+    // 6. /v2/orgs/{org}/apps/{app}/workflows/{id}/events
+    const eventsMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/workflows\/([^/]+)\/events$/);
+    if (eventsMatch) {
+      const workflowId = eventsMatch[1];
+      const rows = await queryDb(
+        "SELECT key, value FROM dbos.workflow_events WHERE workflow_id = $1;",
+        [workflowId]
+      );
+      return new Response(JSON.stringify(rows || []), { status: 200, headers: jsonHeaders });
+    }
+
+    // 7. /v2/orgs/{org}/apps/{app}/workflows/{id}/notifications
+    const notifsMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/workflows\/([^/]+)\/notifications$/);
+    if (notifsMatch) {
+      return new Response(JSON.stringify([]), { status: 200, headers: jsonHeaders });
+    }
+
+    // 8. /v2/orgs/{org}/apps/{app}/workflows/{id} (Single workflow details)
+    const singleWfMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/workflows\/([^/]+)$/);
+    if (singleWfMatch) {
+      const workflowId = singleWfMatch[1];
+      const rows = await queryDb(
+        "SELECT workflow_id, status, name, authenticated_user, output, error, duration_ms, created_at, updated_at " +
+        "FROM dbos.workflow_status WHERE workflow_id = $1;",
+        [workflowId]
+      );
+      if (rows && rows.length > 0) {
+        const r = rows[0];
+        const data = {
+          workflow_id: r.workflow_id,
+          workflow_name: r.name,
+          status: r.status,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          duration_ms: r.duration_ms || 0,
+          authenticated_user: r.authenticated_user || "playground-user",
+          output: r.output,
+          error: r.error
+        };
+        return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
+      }
+      return new Response(JSON.stringify({ title: "Workflow not found", status: 404 }), { status: 404, headers: jsonHeaders });
+    }
+
+    // 9. /v2/orgs/{org}/apps/{app}/queues
+    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/queues$/)) {
+      return new Response(JSON.stringify(state.queues), { status: 200, headers: jsonHeaders });
+    }
+
+    // 10. /v2/orgs/{org}/apps/{app}/schedules
+    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/schedules$/)) {
+      return new Response(JSON.stringify(state.schedules), { status: 200, headers: jsonHeaders });
+    }
+
+    // 11. /v2/orgs/{org}/apps/{app}/alerts
+    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/alerts$/)) {
+      return new Response(JSON.stringify(state.alerts), { status: 200, headers: jsonHeaders });
+    }
+
+    // 12. /v2/orgs/{org}/keys
+    if (path.match(/^\/v2\/orgs\/[^/]+\/keys$/)) {
+      return new Response(JSON.stringify(state.keys), { status: 200, headers: jsonHeaders });
+    }
+
+    // 13. Cancel, Resume, Fork endpoints
+    if (path.includes("/cancel") || path.includes("/resume") || path.includes("/fork")) {
+      return new Response(JSON.stringify({ status: "SUCCESS" }), { status: 200, headers: jsonHeaders });
+    }
+
+    return nativeFetch(input, init);
+  };
+
+  console.log("[RelayBridge] In-browser mock API and SSE bridge initialized");
+})();
