@@ -19,12 +19,18 @@
     ],
     executors: [
       {
+        executorId: "wasm-executor-1",
         id: "wasm-executor-1",
         name: "ecommerce-checkout",
-        status: "healthy",
+        appName: "ecommerce-checkout",
+        status: "HEALTHY",
         hostname: "browser-wasm",
         ipAddress: "127.0.0.1",
         version: "1.0.0",
+        appVersion: "1.0.0",
+        language: "typescript",
+        createdAt: "2026-09-18T18:00:00Z",
+        updatedAt: new Date().toISOString(),
         lastHeartbeat: new Date().toISOString()
       }
     ],
@@ -39,7 +45,7 @@
       { id: "rule-1", name: "High Error Rate", appName: "ecommerce-checkout", metric: "workflow_failure_rate", condition: "gt", threshold: 5, status: "ACTIVE" }
     ],
     keys: [
-      { id: "key-1", name: "dev-local-key", prefix: "dbos_sec_dev", createdAt: "2026-09-18T18:00:00Z", permissions: ["*"], appNames: ["*"] }
+      { id: "key-1", tokenName: "dev-local-key", name: "dev-local-key", prefix: "dbos_sec_dev", createdAt: "2026-09-18T18:00:00Z", permissions: ["*"], appIds: ["*"], appNames: ["*"] }
     ],
     workflows: [
       {
@@ -119,6 +125,7 @@
     const url = typeof input === "string" ? input : input.url;
     const parsed = new URL(url, window.location.href);
     const path = parsed.pathname;
+    const method = (init && init.method ? init.method : (typeof input === "object" && input.method ? input.method : "GET")).toUpperCase();
 
     // Static assets bypass
     if (path.includes("/assets/") || path.endsWith(".js") || path.endsWith(".css") || path.endsWith(".svg") || path.endsWith(".png")) {
@@ -158,13 +165,19 @@
     if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/executors$/)) {
       const rows = await queryDb("SELECT id, name, status, hostname, ip_address, version, last_heartbeat FROM executors;");
       const data = rows && rows.length > 0 ? rows.map(r => ({
+        executorId: r.id,
         id: r.id,
-        name: r.name,
-        status: r.status,
-        hostname: r.hostname,
+        name: r.name || "ecommerce-checkout",
+        appName: r.name || "ecommerce-checkout",
+        status: (r.status || "HEALTHY").toUpperCase(),
+        hostname: r.hostname || "browser-wasm",
         ipAddress: r.ip_address,
-        version: r.version,
-        lastHeartbeat: r.last_heartbeat
+        version: r.version || "1.0.0",
+        appVersion: r.version || "1.0.0",
+        language: "typescript",
+        createdAt: "2026-09-18T18:00:00Z",
+        updatedAt: r.last_heartbeat || new Date().toISOString(),
+        lastHeartbeat: r.last_heartbeat || new Date().toISOString()
       })) : state.executors;
       return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
@@ -291,9 +304,36 @@
       return new Response(JSON.stringify(state.alerts), { status: 200, headers: jsonHeaders });
     }
 
-    // 12. /v2/orgs/{org}/keys
-    if (path.match(/^\/v2\/orgs\/[^/]+\/keys$/)) {
-      return new Response(JSON.stringify(state.keys), { status: 200, headers: jsonHeaders });
+    // 12. /v2/orgs/{org}/tokens or /keys
+    if (path.match(/^\/v2\/orgs\/[^/]+\/(tokens|keys)$/)) {
+      if (method === "GET") {
+        return new Response(JSON.stringify(state.keys), { status: 200, headers: jsonHeaders });
+      }
+    }
+    const tokenMatch = path.match(/^\/v2\/orgs\/[^/]+\/tokens\/([^/]+)$/);
+    if (tokenMatch) {
+      const name = decodeURIComponent(tokenMatch[1]);
+      if (method === "DELETE") {
+        state.keys = state.keys.filter(k => (k.tokenName !== name && k.name !== name));
+        return new Response(null, { status: 204 });
+      }
+      if (method === "POST") {
+        let body = {};
+        try { if (init && init.body) body = JSON.parse(init.body); } catch (_) {}
+        const newKey = {
+          id: "key-" + Date.now(),
+          tokenName: name,
+          name: name,
+          prefix: "dbos_sec_browser",
+          token: "dbos_sec_" + Math.random().toString(36).substring(2, 15),
+          createdAt: new Date().toISOString(),
+          permissions: body.permissions || ["*"],
+          appIds: body.appNames || ["*"],
+          appNames: body.appNames || ["*"]
+        };
+        state.keys.push(newKey);
+        return new Response(JSON.stringify(newKey), { status: 201, headers: jsonHeaders });
+      }
     }
 
     // 13. Cancel, Resume, Fork endpoints
