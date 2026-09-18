@@ -14,7 +14,10 @@
       <img src="assets/logo.svg" alt="Relay Logo" class="brand-logo" />
       <span class="brand-title">Relay Playground</span>
       <span class="brand-badge">WASM Interactive</span>
-      <span id="db-status" class="status-indicator ready">PGlite Loading...</span>
+      <div id="db-status" class="db-status-pill">
+        <span class="status-dot ready"></span>
+        <span id="db-status-text" class="status-text">PGlite Loading...</span>
+      </div>
     </div>
 
     <div class="controls-section">
@@ -33,6 +36,10 @@
 
       <button id="reset-btn" class="btn btn-secondary" title="Reset in-browser database to clean seed state">
         ↻ Reset DB
+      </button>
+
+      <button id="toggle-editor-btn" class="btn btn-secondary" title="Toggle code editor panel (fold/expand)">
+        ◨ Fold Code Panel
       </button>
 
       <button id="theme-btn" class="btn btn-secondary" title="Toggle dark and light themes">

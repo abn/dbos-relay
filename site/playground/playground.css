@@ -46,9 +46,9 @@ html, body {
   overflow: hidden;
 }
 
-/* Header */
 .playground-header {
   height: 52px;
+  min-height: 52px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-color);
   display: flex;
@@ -56,12 +56,21 @@ html, body {
   justify-content: space-between;
   padding: 0 16px;
   gap: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.playground-header::-webkit-scrollbar {
+  display: none;
 }
 
 .brand-section {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .brand-logo {
@@ -168,13 +177,24 @@ html, body {
   flex-direction: column;
   border-right: 1px solid var(--border-color);
   background: var(--bg-panel);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.left-pane.folded {
+  width: 0 !important;
+  border-right: none;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .right-pane {
-  width: 54%;
+  flex: 1;
   height: 100%;
   background: var(--bg-main);
   position: relative;
+  min-width: 0;
 }
 
 .console-iframe {
@@ -366,16 +386,37 @@ html, body {
   white-space: nowrap;
 }
 
+.db-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.status-dot,
 .status-indicator {
   display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-right: 6px;
+  flex-shrink: 0;
 }
 
+.status-dot.ready,
 .status-indicator.ready { background: var(--accent-green); }
+
+.status-dot.running,
 .status-indicator.running { background: var(--accent-amber); animation: pulse 1.5s infinite; }
+
+.status-dot.error,
 .status-indicator.error { background: var(--accent-red); }
 
 @keyframes pulse {

@@ -20,6 +20,7 @@ class DashboardApp {
     this.pollTimer = null;
     this.sseSource = null;
     this.mobileNavOpen = false;
+    this.sidebarFolded = localStorage.getItem("relay-sidebar-folded") === "true";
     this.pendingConfirmAction = null;
     this.parentWorkflowMap = new Map();
     this.workflowAppMap = new Map();
@@ -413,11 +414,39 @@ class DashboardApp {
     if (overlay) overlay.classList.remove("active");
   }
 
+  toggleSidebarFold() {
+    this.sidebarFolded = !this.sidebarFolded;
+    localStorage.setItem("relay-sidebar-folded", String(this.sidebarFolded));
+    const sidebar = document.querySelector(".sidebar");
+    if (sidebar) {
+      sidebar.classList.toggle("folded", this.sidebarFolded);
+    }
+    const toggleBtns = document.querySelectorAll("[data-action='toggleSidebarFold']");
+    toggleBtns.forEach(btn => {
+      btn.setAttribute("title", this.sidebarFolded ? "Expand sidebar" : "Fold sidebar");
+      btn.setAttribute("aria-label", this.sidebarFolded ? "Expand sidebar" : "Fold sidebar");
+    });
+    const collapseIconBtn = document.querySelector(".sidebar-collapse-btn");
+    if (collapseIconBtn) {
+      collapseIconBtn.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          ${this.sidebarFolded ? '<polyline points="9 18 15 12 9 6"/>' : '<polyline points="15 18 9 12 15 6"/>'}
+        </svg>
+      `;
+    }
+  }
+
   async init() {
     const params = new URLSearchParams(window.location.search);
     const themeParam = params.get("theme");
     if (themeParam === "light" || themeParam === "dark") {
       this.theme = themeParam;
+    }
+    const sidebarParam = params.get("sidebar");
+    if (sidebarParam === "folded") {
+      this.sidebarFolded = true;
+    } else if (sidebarParam === "expanded") {
+      this.sidebarFolded = false;
     }
     const appParam = params.get("app");
     if (appParam) {
@@ -509,42 +538,55 @@ class DashboardApp {
     ];
 
     return `
-      <aside class="sidebar ${this.mobileNavOpen ? 'mobile-open' : ''}">
+      <aside class="sidebar ${this.mobileNavOpen ? 'mobile-open' : ''} ${this.sidebarFolded ? 'folded' : ''}">
         <div class="sidebar-header">
-          <a href="#/fleet" class="brand-logo" aria-label="Relay Home">
+          <a href="#/fleet" class="brand-logo" aria-label="Relay Home" title="Relay Home">
             <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <path d="M9 6.5V25.5" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round"/>
               <path d="M9 7.5H17C20.5899 7.5 23.5 10.4101 23.5 14C23.5 17.5899 20.5899 20.5 17 20.5H9" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M15.5 19.5L22.5 25.5" stroke="var(--color-purple)" stroke-width="3" stroke-linecap="round"/>
               <circle cx="23" cy="25" r="2" fill="var(--color-purple)"/>
             </svg>
-            <span>Relay</span>
+            <span class="brand-text">Relay</span>
           </a>
           <span class="brand-badge">Dashboard</span>
+          <button class="sidebar-fold-toggle" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? 'Expand sidebar' : 'Fold sidebar'}" title="${this.sidebarFolded ? 'Expand sidebar' : 'Fold sidebar'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
         </div>
         <nav class="sidebar-nav" aria-label="Main Navigation">
           ${navItems.map(item => `
             <a href="#/${item.id}"
                class="nav-item ${this.currentRoute === item.id || (this.currentRoute === 'workflow-detail' && item.id === 'workflows') ? 'active' : ''}"
-               data-navigate="${item.id}">
+               data-navigate="${item.id}"
+               title="${item.label}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 ${item.icon}
               </svg>
-              <span>${item.label}</span>
+              <span class="nav-label">${item.label}</span>
             </a>
           `).join("")}
         </nav>
         <div class="sidebar-footer">
-          <span>Relay Control Plane</span>
-          <button class="btn btn-xs btn-secondary" data-action="toggleTheme" aria-label="Toggle dark and light theme">
-            ${this.theme === "dark" ? `
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              <span style="margin-left:4px;">Light</span>
-            ` : `
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              <span style="margin-left:4px;">Dark</span>
-            `}
-          </button>
+          <span class="sidebar-footer-text">Relay Control Plane</span>
+          <div class="sidebar-footer-actions">
+            <button class="btn btn-xs btn-secondary" data-action="toggleTheme" aria-label="Toggle dark and light theme" title="Toggle theme">
+              ${this.theme === "dark" ? `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <span class="theme-text" style="margin-left:4px;">Light</span>
+              ` : `
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <span class="theme-text" style="margin-left:4px;">Dark</span>
+              `}
+            </button>
+            <button class="btn btn-xs btn-secondary sidebar-collapse-btn" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? 'Expand sidebar' : 'Fold sidebar'}" title="${this.sidebarFolded ? 'Expand sidebar' : 'Fold sidebar'}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                ${this.sidebarFolded ? '<polyline points="9 18 15 12 9 6"/>' : '<polyline points="15 18 9 12 15 6"/>'}
+              </svg>
+            </button>
+          </div>
         </div>
       </aside>
     `;
@@ -555,6 +597,12 @@ class DashboardApp {
     return `
       <header class="top-header">
         <div class="header-left">
+          <button class="sidebar-toggle-btn" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? 'Expand sidebar' : 'Fold sidebar'}" title="${this.sidebarFolded ? 'Expand sidebar' : 'Fold sidebar'}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+            </svg>
+          </button>
           <button class="mobile-nav-toggle" data-action="toggleMobileNav" aria-label="Toggle navigation menu">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M4 6h16M4 12h16M4 18h16"/>
@@ -2276,6 +2324,7 @@ document.addEventListener("click", (e) => {
   else if (target.dataset.action === "closeModal") window.app.closeModal();
   else if (target.dataset.action === "closeMobileNav") window.app.closeMobileNav();
   else if (target.dataset.action === "toggleMobileNav") window.app.toggleMobileNav();
+  else if (target.dataset.action === "toggleSidebarFold") window.app.toggleSidebarFold();
   else if (target.dataset.action === "executePendingConfirm") window.app.executePendingConfirm();
   else if (target.dataset.action === "openSignIn") window.app.openSignInModal();
   else if (target.dataset.action === "signOut") window.app.signOut();

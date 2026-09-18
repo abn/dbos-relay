@@ -94,8 +94,24 @@ class PlaygroundController {
     this.consoleLogs = document.getElementById("console-logs");
     this.sqlInput = document.getElementById("sql-input");
     this.sqlRunBtn = document.getElementById("sql-run-btn");
-    this.queryResults = document.getElementById("query-results");
     this.dbStatus = document.getElementById("db-status");
+    this.dbStatusText = document.getElementById("db-status-text");
+    this.statusDot = this.dbStatus ? this.dbStatus.querySelector(".status-dot") : null;
+    this.toggleEditorBtn = document.getElementById("toggle-editor-btn");
+    this.leftPane = document.querySelector(".left-pane");
+    this.editorFolded = localStorage.getItem("relay-playground-editor-folded") === "true";
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("editor") === "folded") {
+      this.editorFolded = true;
+    } else if (urlParams.get("editor") === "expanded") {
+      this.editorFolded = false;
+    }
+    if (this.editorFolded) this.applyEditorFold(true);
+
+    if (this.toggleEditorBtn) {
+      this.toggleEditorBtn.addEventListener("click", () => this.toggleEditorFold());
+    }
+
     this.consoleIframe = document.getElementById("console-iframe");
 
     // Preset buttons
@@ -157,6 +173,27 @@ class PlaygroundController {
     }
   }
 
+  setDbStatus(text, state = "ready") {
+    if (this.dbStatusText) this.dbStatusText.textContent = text;
+    if (this.statusDot) {
+      this.statusDot.className = `status-dot ${state}`;
+    }
+  }
+
+  toggleEditorFold() {
+    this.editorFolded = !this.editorFolded;
+    localStorage.setItem("relay-playground-editor-folded", String(this.editorFolded));
+    this.applyEditorFold(this.editorFolded);
+  }
+
+  applyEditorFold(folded) {
+    if (this.leftPane) this.leftPane.classList.toggle("folded", folded);
+    if (this.toggleEditorBtn) {
+      this.toggleEditorBtn.textContent = folded ? "◧ Show Code Panel" : "◨ Fold Code Panel";
+      this.toggleEditorBtn.title = folded ? "Expand code editor panel" : "Fold code editor panel";
+    }
+  }
+
   switchDemo(key) {
     if (DEMO_SCRIPTS[key]) {
       this.codeEditor.value = DEMO_SCRIPTS[key];
@@ -171,8 +208,7 @@ class PlaygroundController {
       const { PGlite } = await import("https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js");
       window.pgliteDb = new PGlite();
       this.log("PGlite WASM engine started successfully in browser memory", "success");
-      this.dbStatus.textContent = "PGlite (Postgres 16 WASM) Ready";
-      this.dbStatus.className = "status-indicator ready";
+      this.setDbStatus("PGlite (Postgres 16 WASM) Ready", "ready");
 
       await this.createSchema();
       await this.seedInitialData();
@@ -209,8 +245,7 @@ class PlaygroundController {
       exec: async (sql) => {}
     };
 
-    this.dbStatus.textContent = "In-Memory Engine Ready";
-    this.dbStatus.className = "status-indicator ready";
+    this.setDbStatus("In-Memory Engine Ready", "ready");
     this.seedInitialData();
   }
 
