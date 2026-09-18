@@ -1171,17 +1171,17 @@
     getRouteTitle() {
       switch (this.currentRoute) {
         case "fleet":
-          return "Fleet & Applications";
+          return this.appName ? `Fleet: ${this.appName}` : "Fleet & Applications";
         case "workflows":
-          return "Workflows";
+          return this.appName ? `Workflows: ${this.appName}` : "Workflows";
         case "workflow-detail":
           return `Workflow: ${this.selectedWorkflowId || ""}`;
         case "queues":
-          return "Queues";
+          return this.appName ? `Queues: ${this.appName}` : "Queues";
         case "schedules":
-          return "Schedules";
+          return this.appName ? `Schedules: ${this.appName}` : "Schedules";
         case "alerting":
-          return "Alerting Rules";
+          return this.appName ? `Alert Rules: ${this.appName}` : "Alerting Rules";
         case "keys":
           return "API Keys";
         default:
@@ -1199,6 +1199,10 @@
       selects.forEach((s) => {
         s.value = this.appName;
       });
+      const headerTitle = document.querySelector(".header-title");
+      if (headerTitle) {
+        headerTitle.textContent = this.getRouteTitle();
+      }
       if (this.pollInterval === "stream") {
         this.startSSE();
       }
@@ -1243,9 +1247,13 @@
       }
       try {
         await this.loadApplications();
-        const apps = this.apps || [];
+        const allApps = this.apps || [];
+        const isFiltered = Boolean(this.appName);
+        const appsToQuery = isFiltered ? allApps.filter((a) => a.name === this.appName) : allApps;
+        const effectiveApps = appsToQuery.length > 0 ? appsToQuery : allApps;
+        const selectedApp = isFiltered ? allApps.find((a) => a.name === this.appName) : null;
         const perAppResults = await Promise.allSettled(
-          apps.map(async (app) => {
+          effectiveApps.map(async (app) => {
             const [execRes, wfRes, qRes, schRes] = await Promise.allSettled([
               this.client.listExecutors(this.orgName, app.name),
               this.client.listWorkflows(this.orgName, app.name, { limit: 25 }),
@@ -1290,13 +1298,61 @@
         const inFlightWfs = allWorkflows.filter((w) => w.status === "PENDING" || w.status === "ENQUEUED").length;
         const failedWfs = allWorkflows.filter((w) => w.status === "ERROR").length;
         const recentWorkflows = [...allWorkflows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
-        el.innerHTML = `
+        const filterBannerHtml = isFiltered ? `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:10px 16px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--radius-md);">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; color:var(--text-secondary);">Filtered to application:</span>
+            <span class="badge badge-info">${escapeHtml4(this.appName)}</span>
+            ${selectedApp ? `<span class="badge badge-neutral">${escapeHtml4(selectedApp.language || "dbos")}</span>` : ""}
+            ${selectedApp ? renderStatusPill(selectedApp.status) : ""}
+          </div>
+          <button class="btn btn-xs btn-secondary" data-app-change="" aria-label="Reset filter to all applications">Show All Applications</button>
+        </div>
+      ` : "";
+        const kpiCardsHtml = isFiltered ? `
+        <div class="stat-grid">
+          <div class="stat-card">
+            <span class="stat-label">Application Status</span>
+            <div style="margin-top:6px;">
+              ${selectedApp ? renderStatusPill(selectedApp.status) : `<span class="badge badge-neutral">UNKNOWN</span>`}
+            </div>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill">${selectedApp && selectedApp.privateMode ? "Private mode" : "Public mode"}</span>
+              <span class="kpi-sub-pill">${selectedApp ? selectedApp.executorTimeoutSecs || 60 : 60}s timeout</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Connected Executors</span>
+            <span class="stat-value" style="color: var(--color-success-text);">${activeExecutors}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill kpi-success">${activeExecutors} healthy</span>
+              ${disconnectedExecutors > 0 ? `<span class="kpi-sub-pill kpi-error">${disconnectedExecutors} disconnected</span>` : `<span class="kpi-sub-pill">0 disconnected</span>`}
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Workflows</span>
+            <span class="stat-value">${allWorkflows.length}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill kpi-info">${inFlightWfs} in flight</span>
+              <span class="kpi-sub-pill ${failedWfs > 0 ? "kpi-error" : "kpi-success"}">${failedWfs} errors</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Active Queues & Schedules</span>
+            <span class="stat-value">${totalQueues + totalSchedules}</span>
+            <div class="kpi-subtext">
+              <span class="kpi-sub-pill">${totalQueues} queues</span>
+              <span class="kpi-sub-pill">${totalSchedules} schedules</span>
+            </div>
+          </div>
+        </div>
+      ` : `
         <div class="stat-grid">
           <div class="stat-card">
             <span class="stat-label">Applications</span>
-            <span class="stat-value">${apps.length}</span>
+            <span class="stat-value">${allApps.length}</span>
             <div class="kpi-subtext">
-              <span class="kpi-sub-pill kpi-success">${apps.filter((a) => a.status === "AVAILABLE").length} active</span>
+              <span class="kpi-sub-pill kpi-success">${allApps.filter((a) => a.status === "AVAILABLE").length} active</span>
             </div>
           </div>
           <div class="stat-card">
@@ -1324,14 +1380,56 @@
             </div>
           </div>
         </div>
-
+      `;
+        const appSectionHtml = isFiltered ? `
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Application Details: ${escapeHtml4(this.appName)}</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Runtime configuration</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-xs btn-primary" data-app-change='${escapeHtml4(this.appName)}' data-navigate="workflows">Workflows \u2192</button>
+              <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(this.appName)}' data-navigate="queues">Queues</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom:0;">
+              <div>
+                <span class="stat-label">Application Name</span>
+                <div><strong>${escapeHtml4(this.appName)}</strong></div>
+              </div>
+              <div>
+                <span class="stat-label">Runtime Language</span>
+                <div><span class="badge badge-neutral">${escapeHtml4(selectedApp ? selectedApp.language || "dbos" : "-")}</span></div>
+              </div>
+              <div>
+                <span class="stat-label">Executor Timeout</span>
+                <div>${selectedApp ? selectedApp.executorTimeoutSecs || 60 : 60} seconds</div>
+              </div>
+              <div>
+                <span class="stat-label">Network Mode</span>
+                <div>${selectedApp && selectedApp.privateMode ? "Private network" : "Public access"}</div>
+              </div>
+              <div>
+                <span class="stat-label">Live Executors</span>
+                <div>
+                  <span class="badge ${activeExecutors > 0 ? "badge-success" : "badge-neutral"}">
+                    ${activeExecutors} live
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : `
         <div class="card">
           <div class="card-header">
             <div>
               <span class="card-title">Applications</span>
               <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Registered applications in fleet</span>
             </div>
-            <span class="badge badge-neutral">${apps.length} total</span>
+            <span class="badge badge-neutral">${allApps.length} total</span>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -1347,7 +1445,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${apps.length > 0 ? apps.map((a) => {
+                ${allApps.length > 0 ? allApps.map((a) => {
           const m = appMetrics.get(a.name) || { healthyExecutors: 0, workflowsCount: 0, queuesCount: 0, schedulesCount: 0 };
           return `
                     <tr>
@@ -1374,21 +1472,30 @@
             </table>
           </div>
         </div>
+      `;
+        el.innerHTML = `
+        ${filterBannerHtml}
+        ${kpiCardsHtml}
+        ${appSectionHtml}
 
         <div class="card">
           <div class="card-header">
             <div>
-              <span class="card-title">Recent Fleet Workflows</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live operational telemetry across applications</span>
+              <span class="card-title">${isFiltered ? `Recent Workflows (${escapeHtml4(this.appName)})` : "Recent Fleet Workflows"}</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">
+                ${isFiltered ? `Live operational telemetry for ${escapeHtml4(this.appName)}` : "Live operational telemetry across applications"}
+              </span>
             </div>
-            <a href="#/workflows" class="btn btn-xs btn-secondary" data-navigate="workflows">View All Workflows \u2192</a>
+            <a href="#/workflows" class="btn btn-xs btn-secondary" data-navigate="workflows">
+              ${isFiltered ? "View App Workflows \u2192" : "View All Workflows \u2192"}
+            </a>
           </div>
           <div class="table-container">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>Status</th>
-                  <th>Application</th>
+                  ${!isFiltered ? "<th>Application</th>" : ""}
                   <th>Workflow ID</th>
                   <th>Name</th>
                   <th>Queue</th>
@@ -1401,7 +1508,7 @@
                 ${recentWorkflows.length > 0 ? recentWorkflows.map((w) => `
                   <tr class="clickable" tabindex="0" role="button" aria-label="View workflow ${escapeHtml4(w.workflowId)}" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">
                     <td>${renderStatusPill(w.status)}</td>
-                    <td><span class="badge badge-info">${escapeHtml4(w.appName)}</span></td>
+                    ${!isFiltered ? `<td><span class="badge badge-info">${escapeHtml4(w.appName)}</span></td>` : ""}
                     <td><code>${escapeHtml4(truncate2(w.workflowId, 22))}</code></td>
                     <td><strong>${escapeHtml4(w.workflowName || "unnamed")}</strong></td>
                     <td>${escapeHtml4(w.queueName || "default")}</td>
@@ -1415,7 +1522,7 @@
                       <a href="#/workflow/${escapeHtml4(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">Inspect \u2197</a>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflow executions recorded across applications.</td></tr>`}
+                `).join("") : `<tr><td colspan="${isFiltered ? "7" : "8"}" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflow executions recorded${isFiltered ? ` for ${escapeHtml4(this.appName)}` : " across applications"}.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1424,8 +1531,10 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <span class="card-title">Connected Executors</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live nodes connected to Relay</span>
+              <span class="card-title">${isFiltered ? `Connected Executors (${escapeHtml4(this.appName)})` : "Connected Executors"}</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">
+                ${isFiltered ? `Live nodes connected for ${escapeHtml4(this.appName)}` : "Live nodes connected to Relay"}
+              </span>
             </div>
             <span class="badge badge-neutral">${allExecutors.length} total</span>
           </div>
@@ -1434,7 +1543,7 @@
               <thead>
                 <tr>
                   <th>Executor ID</th>
-                  <th>Application</th>
+                  ${!isFiltered ? "<th>Application</th>" : ""}
                   <th>Status</th>
                   <th>Hostname</th>
                   <th>Version</th>
@@ -1446,21 +1555,21 @@
                 ${allExecutors.length > 0 ? allExecutors.map((e) => `
                   <tr>
                     <td><code>${escapeHtml4(e.executorId)}</code></td>
-                    <td><span class="badge badge-info">${escapeHtml4(e.appName)}</span></td>
+                    ${!isFiltered ? `<td><span class="badge badge-info">${escapeHtml4(e.appName)}</span></td>` : ""}
                     <td>${renderStatusPill(e.status)}</td>
                     <td>${escapeHtml4(e.hostname || "localhost")}</td>
                     <td><span class="badge">${escapeHtml4(e.appVersion || "v1.0.0")}</span></td>
                     <td>${escapeHtml4(e.language || "unknown")}</td>
                     <td>${formatTimestamp(e.updatedAt)}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No executors currently connected.</td></tr>`}
+                `).join("") : `<tr><td colspan="${isFiltered ? "6" : "7"}" style="text-align:center; color:var(--text-tertiary); padding:24px;">No executors currently connected${isFiltered ? ` for ${escapeHtml4(this.appName)}` : ""}.</td></tr>`}
               </tbody>
             </table>
           </div>
         </div>
       `;
       } catch (err) {
-        this.renderErrorState(el, "Fleet & Applications", err.message);
+        this.renderErrorState(el, this.appName ? `Fleet (${escapeHtml4(this.appName)})` : "Fleet & Applications", err.message);
       }
     }
     // --- SCREEN 2: WORKFLOW SEARCH & LIST ---
@@ -1492,17 +1601,9 @@
             this.workflowAppMap.set(w.workflowId, w.appName);
           }
         });
-        const appSelectOptions = `
-        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
-        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
-      `;
         el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <label class="form-label" for="filter-app" style="margin:0;">App:</label>
-            <select id="filter-app" class="select-sm" data-change="app" aria-label="Filter workflows by application">
-              ${appSelectOptions}
-            </select>
             <input type="text" id="filter-id" class="input-text" placeholder="Search workflows... [/]" data-input="wfTable" aria-label="Search workflows by ID or name">
             <select id="filter-status" class="select-sm" data-change="wfStatus" aria-label="Filter workflows by status">
               <option value="">All Statuses</option>
@@ -1514,7 +1615,7 @@
             </select>
           </div>
           <div>
-            <span class="text-secondary" style="font-size:12px;">Showing ${workflows.length} workflows</span>
+            <span class="text-secondary" style="font-size:12px;">Showing ${workflows.length} workflows${this.appName ? ` (${escapeHtml4(this.appName)})` : ""}</span>
           </div>
         </div>
 
@@ -2013,30 +2114,17 @@
           const list = await this.client.listQueues(this.orgName, this.appName);
           queues = (list || []).map((q) => ({ ...q, appName: this.appName }));
         }
-        const appSelectOptions = `
-        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
-        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
-      `;
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <label class="form-label" for="filter-app-queues" style="margin:0;">App:</label>
-            <select id="filter-app-queues" class="select-sm" data-change="app" aria-label="Filter queues by application">
-              ${appSelectOptions}
-            </select>
-          </div>
-          <div>
-            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-header">
             <div>
               <span class="card-title">Queues</span>
               <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
             </div>
-            <span class="badge badge-neutral">${queues.length} total</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge badge-neutral">${queues.length} total</span>
+              <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
+            </div>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -2103,30 +2191,17 @@
           const list = await this.client.listSchedules(this.orgName, this.appName);
           schedules = (list || []).map((s) => ({ ...s, appName: this.appName }));
         }
-        const appSelectOptions = `
-        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
-        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
-      `;
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <label class="form-label" for="filter-app-schedules" style="margin:0;">App:</label>
-            <select id="filter-app-schedules" class="select-sm" data-change="app" aria-label="Filter schedules by application">
-              ${appSelectOptions}
-            </select>
-          </div>
-          <div>
-            <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-header">
             <div>
               <span class="card-title">Scheduled Jobs</span>
               <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
             </div>
-            <span class="badge badge-neutral">${schedules.length} total</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="badge badge-neutral">${schedules.length} total</span>
+              <button class="btn btn-xs btn-secondary" data-action="refresh">Refresh</button>
+            </div>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -2236,17 +2311,10 @@
           const list = await this.client.listAlertingRules(this.orgName, this.appName);
           rules = (list || []).map((r) => ({ ...r, appName: this.appName }));
         }
-        const appSelectOptions = `
-        <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
-        ${(this.apps || []).map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
-      `;
         el.innerHTML = `
         <div class="toolbar">
           <div class="filter-group">
-            <label class="form-label" for="filter-app-alerts" style="margin:0;">App:</label>
-            <select id="filter-app-alerts" class="select-sm" data-change="app" aria-label="Filter alert rules by application">
-              ${appSelectOptions}
-            </select>
+            <span class="text-secondary" style="font-size:12px;">Active Alert Rules${this.appName ? ` (${escapeHtml4(this.appName)})` : " across all applications"}</span>
           </div>
           <div>
             <button class="btn btn-sm btn-primary" data-action="openCreateAlert">+ New Alert Rule</button>

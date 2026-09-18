@@ -881,21 +881,15 @@ func TestDashboard_FleetWideAndPerSectionFiltering(t *testing.T) {
 	}
 	bundle := string(bundleBytes)
 
-	// Ensure fleet-wide option and per-section filter dropdowns exist
+	// Ensure fleet-wide option and single authoritative title bar filter exist
 	if !strings.Contains(bundle, "All Applications") {
 		t.Errorf("bundle should include 'All Applications' option")
 	}
-	if !strings.Contains(bundle, "filter-app") {
-		t.Errorf("bundle should include workflow filter-app selector")
+	if !strings.Contains(bundle, "header-app-select") {
+		t.Errorf("bundle should include header-app-select in title bar")
 	}
-	if !strings.Contains(bundle, "filter-app-queues") {
-		t.Errorf("bundle should include queues filter-app-queues selector")
-	}
-	if !strings.Contains(bundle, "filter-app-schedules") {
-		t.Errorf("bundle should include schedules filter-app-schedules selector")
-	}
-	if !strings.Contains(bundle, "filter-app-alerts") {
-		t.Errorf("bundle should include alert rules filter-app-alerts selector")
+	if !strings.Contains(bundle, "Show All Applications") {
+		t.Errorf("bundle should include 'Show All Applications' reset button")
 	}
 	if !strings.Contains(bundle, "workflowAppMap") {
 		t.Errorf("bundle should include workflowAppMap for cross-app workflow routing")
