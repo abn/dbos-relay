@@ -985,12 +985,25 @@ table.data-table tr.clickable:hover td {
 .dag-node:focus-visible .node-bg {
   stroke: var(--color-primary);
   stroke-width: 2;
-  filter: drop-shadow(0 2px 6px rgba(37, 99, 235, 0.3));
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.15));
 }
 
 table.data-table tr.clickable:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-dialog,
+  .drawer-panel,
+  .toast {
+    animation: fadeIn 0.15s ease-out;
+    transform: none !important;
+  }
+  .spinner {
+    animation: none;
+    opacity: 0.7;
+  }
 }
 
 /* Loading Spinner */
