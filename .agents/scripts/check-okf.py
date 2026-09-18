@@ -37,6 +37,33 @@ def check_minified_line_citations(path: Path, text: str, errors: list[str]) -> N
                 errors.append(f"{path}: cites line numbers into minified JSON; use JSON pointers instead")
 
 
+MERMAID_BLOCK = re.compile(r"^[ \t]*```mermaid[ \t]*\n(.*?)\n[ \t]*```", re.M | re.S)
+VALID_MERMAID_TYPES = (
+    "flowchart", "graph", "sequenceDiagram", "stateDiagram", "classDiagram",
+    "erDiagram", "gantt", "pie", "gitGraph", "mindmap", "timeline", "quadrantChart"
+)
+
+
+def check_mermaid_blocks(path: Path, text: str, errors: list[str]) -> None:
+    for match in MERMAID_BLOCK.finditer(text):
+        block = match.group(1).strip()
+        if not block:
+            errors.append(f"{path}: empty mermaid diagram block")
+            continue
+        first_line = block.splitlines()[0].strip()
+        if not any(first_line.startswith(t) for t in VALID_MERMAID_TYPES):
+            errors.append(f"{path}: mermaid diagram has unsupported or missing diagram type ({first_line})")
+        for line in block.splitlines():
+            trimmed = line.strip()
+            if "-->|" in trimmed or "---|" in trimmed:
+                pipe_start = trimmed.find("|")
+                pipe_end = trimmed.rfind("|")
+                if pipe_start != -1 and pipe_end > pipe_start:
+                    label = trimmed[pipe_start + 1 : pipe_end]
+                    if ">" in label or "<" in label:
+                        errors.append(f"{path}: unescaped comparator in mermaid edge label ({label.strip()}); use descriptive words")
+
+
 
 def frontmatter(text: str) -> str | None:
     """Return the YAML frontmatter block, or None when there is none."""
@@ -112,6 +139,7 @@ def main() -> int:
             errors.append(f"{path}: contains internal scratch path reference (.agents/brain)")
 
         check_minified_line_citations(path, text, errors)
+        check_mermaid_blocks(path, text, errors)
 
         if rel != "index.md" and meta is not None and "okf_version:" in meta:
             errors.append(f"{path}: only the bundle root may carry okf_version")

@@ -2,6 +2,7 @@ package sitewiki_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -123,5 +124,93 @@ func main() {}
 	}
 	if !strings.Contains(htmlStr, `class="kd">func</span>`) {
 		t.Errorf("missing syntax highlighted func token in:\n%s", htmlStr)
+	}
+}
+
+func TestRenderer_DocsMermaidSyntax(t *testing.T) {
+	docsRoot := "../../../docs"
+	if _, err := os.Stat(docsRoot); err != nil {
+		t.Skipf("docs directory not found: %v", err)
+	}
+
+	diagramCount := 0
+	err := filepath.Walk(docsRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".md") {
+			return err
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		content := string(data)
+		idx := 0
+		for {
+			start := strings.Index(content[idx:], "```mermaid\n")
+			if start == -1 {
+				break
+			}
+			blockStart := idx + start + len("```mermaid\n")
+			end := strings.Index(content[blockStart:], "```")
+			if end == -1 {
+				t.Errorf("%s: unclosed mermaid block", path)
+				break
+			}
+			diagramText := strings.TrimSpace(content[blockStart : blockStart+end])
+			idx = blockStart + end + len("```")
+			diagramCount++
+
+			if diagramText == "" {
+				t.Errorf("%s: empty mermaid diagram block", path)
+				continue
+			}
+
+			firstLine := strings.TrimSpace(strings.Split(diagramText, "\n")[0])
+			validHeaders := []string{"flowchart", "graph", "sequenceDiagram", "stateDiagram", "classDiagram", "erDiagram", "gantt", "pie", "gitGraph", "mindmap", "timeline"}
+			headerOk := false
+			for _, h := range validHeaders {
+				if strings.HasPrefix(firstLine, h) {
+					headerOk = true
+					break
+				}
+			}
+			if !headerOk {
+				t.Errorf("%s: unknown or missing mermaid diagram type: %q", path, firstLine)
+			}
+
+			lines := strings.Split(diagramText, "\n")
+			for lineNo, l := range lines {
+				trimmed := strings.TrimSpace(l)
+				if strings.Contains(trimmed, "-->|") || strings.Contains(trimmed, "---|") {
+					pipeStart := strings.Index(trimmed, "|")
+					pipeEnd := strings.LastIndex(trimmed, "|")
+					if pipeStart != -1 && pipeEnd > pipeStart {
+						edgeText := trimmed[pipeStart+1 : pipeEnd]
+						if strings.Contains(edgeText, ">") || strings.Contains(edgeText, "<") {
+							t.Errorf("%s:%d: unescaped comparator in flowchart edge label: %q", path, lineNo+1, edgeText)
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("failed to scan docs: %v", err)
+	}
+
+	if diagramCount == 0 {
+		t.Errorf("expected to find mermaid diagrams in docs, found 0")
+	}
+
+	// Deep AST validation via mermaid-validator if npx is installed
+	if _, err := exec.LookPath("npx"); err == nil {
+		cmd := exec.Command("npx", "-y", "mermaid-validator", docsRoot)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("mermaid-validator failed:\n%s", string(out))
+		}
 	}
 }

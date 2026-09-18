@@ -134,12 +134,14 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
   });
 </script>
 <script type="module">
-  if (document.querySelector('.mermaid')) {
+  var diagrams = document.querySelectorAll('.mermaid');
+  if (diagrams.length > 0) {
     import('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs')
       .then(async function(m) {
         var mermaid = m.default;
         mermaid.initialize({
           startOnLoad: false,
+          suppressErrorRendering: true,
           theme: 'dark',
           themeVariables: {
             darkMode: true,
@@ -149,7 +151,15 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
             lineColor: '#58a6ff'
           }
         });
-        await mermaid.run();
+        for (var i = 0; i < diagrams.length; i++) {
+          var el = diagrams[i];
+          try {
+            await mermaid.run({ nodes: [el] });
+          } catch (err) {
+            console.warn('Mermaid rendering failed on diagram', i, err);
+            el.classList.add('mermaid-fallback');
+          }
+        }
       })
       .catch(function(err) {
         console.warn('Mermaid runtime deferred:', err);
