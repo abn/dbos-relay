@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/abn/dbos-relay/compare/v0.2.1...v0.3.0) (2026-09-19)
+
+
+### Features
+
+* **site:** add client-side search to documentation wiki ([99060f1](https://github.com/abn/dbos-relay/commit/99060f146edf274db9d6b297b90678ca1b437f30))
+* **site:** automate landing page titlebar sync at build time ([c339d75](https://github.com/abn/dbos-relay/commit/c339d754a35a18a1f7222fa34905d993607610be))
+
+
+### Bug Fixes
+
+* **site:** align repo URL, changelog nav order, and cta style ([69b9b46](https://github.com/abn/dbos-relay/commit/69b9b463598f06897dfe976e281c43fcd5bef1bb))
+* **site:** align titlebar version with latest release ([005b740](https://github.com/abn/dbos-relay/commit/005b7405936e6f38eda660851169ef1bb80881cd))
+
 ## [0.2.1](https://github.com/abn/dbos-relay/compare/v0.2.0...v0.2.1) (2026-09-18)
 
 
