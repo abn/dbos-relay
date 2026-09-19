@@ -50,6 +50,14 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
 	body := p.Body
 	body = stripLeadingH1(body, title)
 
+	changelogActive := ""
+	docsActive := ""
+	if p.Slug == "changelog" {
+		changelogActive = ` class="active"`
+	} else {
+		docsActive = ` class="active"`
+	}
+
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -84,8 +92,9 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
     </div>
     <ul>
       <li><a href="/">Overview</a></li>
-      <li><a href="/wiki/" class="active">Docs</a></li>
-      <li><a href="https://github.com/abn/relay" class="nav-cta" target="_blank" rel="noopener">GitHub ↗</a></li>
+      <li><a href="/wiki/changelog.html"%s>Changelog</a></li>
+      <li><a href="/wiki/"%s>Docs</a></li>
+      <li><a href="https://github.com/abn/dbos-relay" class="nav-cta" target="_blank" rel="noopener">GitHub ↗</a></li>
     </ul>
   </nav>
 </header>
@@ -215,6 +224,8 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
 </body>
 </html>`,
 		template.HTMLEscapeString(title),
+		changelogActive,
+		docsActive,
 		breadcrumb,
 		nav,
 		template.HTMLEscapeString(title),

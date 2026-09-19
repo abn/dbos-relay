@@ -121,15 +121,19 @@ header nav a.active {
   color: var(--ink);
 }
 .nav-cta {
-  background: var(--cobalt);
-  color: #ffffff !important;
+  font-family: var(--mono);
+  font-size: .82rem !important;
+  font-weight: 600 !important;
   padding: 6px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line) !important;
   border-radius: 6px;
-  font-weight: 600;
-  transition: background .15s;
+  color: var(--ink) !important;
+  transition: all .15s;
 }
 .nav-cta:hover {
-  background: #1b5edb;
+  background: var(--bg-raised);
+  border-color: var(--cobalt-hi) !important;
 }
 
 /* Breadcrumb Sub-bar */

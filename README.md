@@ -39,7 +39,7 @@ Run Relay with pure-Go embedded SQLite storage (no PostgreSQL or Docker required
 
 ```bash
 # Download the binary
-curl -fsSL https://github.com/abn/relay/releases/latest/download/relay-linux-amd64 -o relay
+curl -fsSL https://github.com/abn/dbos-relay/releases/latest/download/relay-linux-amd64 -o relay
 chmod +x relay
 
 # Start Relay in embedded mode
