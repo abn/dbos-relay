@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -159,7 +160,29 @@ func (r *Renderer) RenderAll(docsRoot, out string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "search-index.json"), searchIndexJSON, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "search-index.json"), searchIndexJSON, 0o644); err != nil {
+		return err
+	}
+
+	// Synchronize landing page titlebar version if index.html is present in out.
+	_ = r.syncLandingPageVersion(out)
+	return nil
+}
+
+var brandTagRegex = regexp.MustCompile(`<span class="brand-tag">.*?</span>`)
+
+func (r *Renderer) syncLandingPageVersion(out string) error {
+	indexPath := filepath.Join(out, "index.html")
+	data, err := os.ReadFile(indexPath)
+	if err != nil {
+		return nil
+	}
+	expected := fmt.Sprintf(`<span class="brand-tag">v<!-- x-release-please-version -->%s<!-- /x-release-please-version --></span>`, r.Version())
+	updated := brandTagRegex.ReplaceAll(data, []byte(expected))
+	if !bytes.Equal(data, updated) {
+		return os.WriteFile(indexPath, updated, 0o644)
+	}
+	return nil
 }
 
 // load walks the docs tree, building sections and pages.
