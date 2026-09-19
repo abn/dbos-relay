@@ -75,6 +75,13 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
       </a>
       <span class="badge">Docs</span>
     </div>
+    <div class="nav-search">
+      <button type="button" class="nav-search-btn" id="searchBtn" aria-label="Search documentation" aria-keyshortcuts="Control+k Meta+k /">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="nav-search-text">Search docs...</span>
+        <span class="nav-search-kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+      </button>
+    </div>
     <ul>
       <li><a href="/">Overview</a></li>
       <li><a href="/wiki/" class="active">Docs</a></li>
@@ -89,6 +96,10 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
       <span>Menu</span>
     </button>
     <nav class="breadcrumb" aria-label="Breadcrumb">%s</nav>
+    <button type="button" class="mobile-search-btn" id="mobileSearchBtn" aria-label="Search documentation">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <span>Search</span>
+    </button>
   </div>
 </div>
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
@@ -177,6 +188,30 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
       });
   }
 </script>
+<div class="search-modal-backdrop" id="searchBackdrop" aria-hidden="true">
+  <div class="search-modal" role="dialog" aria-modal="true" aria-label="Search documentation">
+    <div class="search-modal-header">
+      <svg class="search-modal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="search" id="searchInput" class="search-input" placeholder="Search docs (guides, architecture, ADRs, protocols)..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button type="button" class="search-close-btn" id="searchCloseBtn" aria-label="Close search">
+        <kbd class="kbd-esc">ESC</kbd>
+      </button>
+    </div>
+    <div class="search-modal-body" id="searchResults"></div>
+    <div class="search-modal-footer">
+      <div class="search-footer-hint">
+        <kbd class="kbd-key">↑</kbd><kbd class="kbd-key">↓</kbd> <span>Navigate</span>
+      </div>
+      <div class="search-footer-hint">
+        <kbd class="kbd-key">↵</kbd> <span>Select</span>
+      </div>
+      <div class="search-footer-hint">
+        <kbd class="kbd-key">ESC</kbd> <span>Close</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/wiki/search.js" defer></script>
 </body>
 </html>`,
 		template.HTMLEscapeString(title),

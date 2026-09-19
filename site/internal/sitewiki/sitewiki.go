@@ -37,8 +37,9 @@ type Page struct {
 	Title   string
 	Type    string
 	Status  string
-	Body    string // rendered HTML body (without H1, which is the title)
-	TOC     []TOCEntry
+	Body         string // rendered HTML body (without H1, which is the title)
+	TOC          []TOCEntry
+	searchChunks []rawSearchChunk
 }
 
 // TOCEntry is a heading in the page body.
@@ -103,7 +104,25 @@ func (r *Renderer) RenderAll(docsRoot, out string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "wiki.css"), css, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "wiki.css"), css, 0o644); err != nil {
+		return err
+	}
+
+	// Write the search client script.
+	searchJS, err := SearchJS()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "search.js"), searchJS, 0o644); err != nil {
+		return err
+	}
+
+	// Write the search index.
+	searchIndexJSON, err := r.SearchIndexJSON()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "search-index.json"), searchIndexJSON, 0o644)
 }
 
 // load walks the docs tree, building sections and pages.
@@ -286,6 +305,8 @@ func (r *Renderer) parsePage(section, slug, file string) (Page, error) {
 	if p.Title == "" {
 		p.Title = h1
 	}
+
+	p.searchChunks = extractSearchChunks(doc, src, p.Title)
 
 	var buf bytes.Buffer
 	if err := r.md.Renderer().Render(&buf, src, doc); err != nil {

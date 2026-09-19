@@ -4,10 +4,15 @@ import (
 	"embed"
 )
 
-//go:embed wiki.css
-var cssFS embed.FS
+//go:embed wiki.css search.js
+var staticFS embed.FS
 
 // CSS returns the wiki stylesheet.
 func CSS() ([]byte, error) {
-	return cssFS.ReadFile("wiki.css")
+	return staticFS.ReadFile("wiki.css")
+}
+
+// SearchJS returns the wiki search script.
+func SearchJS() ([]byte, error) {
+	return staticFS.ReadFile("search.js")
 }

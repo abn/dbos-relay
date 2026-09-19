@@ -32,10 +32,101 @@ func TestRenderer_RenderAll(t *testing.T) {
 		t.Errorf("expected wiki.css at %s", cssPath)
 	}
 
+	// Verify search.js was emitted
+	searchJSPath := filepath.Join(tmpDir, "wiki", "search.js")
+	if _, err := os.Stat(searchJSPath); err != nil {
+		t.Errorf("expected search.js at %s", searchJSPath)
+	}
+
+	// Verify search-index.json was emitted and contains entries
+	searchIndexPath := filepath.Join(tmpDir, "wiki", "search-index.json")
+	if data, err := os.ReadFile(searchIndexPath); err != nil {
+		t.Errorf("expected search-index.json at %s: %v", searchIndexPath, err)
+	} else if len(data) < 100 {
+		t.Errorf("search-index.json is unexpectedly small: %d bytes", len(data))
+	}
+
 	// Verify at least one page was emitted
 	matches, _ := filepath.Glob(filepath.Join(tmpDir, "wiki", "*.html"))
 	if len(matches) == 0 {
 		t.Errorf("expected HTML pages in wiki/ root")
+	} else {
+		content, _ := os.ReadFile(matches[0])
+		if !strings.Contains(string(content), "searchBtn") {
+			t.Errorf("rendered page missing searchBtn")
+		}
+		if !strings.Contains(string(content), "searchBackdrop") {
+			t.Errorf("rendered page missing searchBackdrop")
+		}
+		if !strings.Contains(string(content), `<script src="/wiki/search.js" defer></script>`) {
+			t.Errorf("rendered page missing search.js script tag")
+		}
+	}
+}
+
+func TestRenderer_SearchIndex(t *testing.T) {
+	tmpDocs := t.TempDir()
+	docContent := `---
+type: Concept
+title: Search Index Test
+---
+
+# Search Index Test
+
+Introductory paragraph explaining the concept.
+
+## First Feature
+
+Details about the first feature including keywords like telemetry and coordinator.
+
+## Second Feature
+
+Details about the second feature including lease fencing and postgres.
+`
+	if err := os.WriteFile(filepath.Join(tmpDocs, "test.md"), []byte(docContent), 0o644); err != nil {
+		t.Fatalf("failed to write test doc: %v", err)
+	}
+
+	r, err := sitewiki.New(tmpDocs)
+	if err != nil {
+		t.Fatalf("sitewiki.New failed: %v", err)
+	}
+
+	index := r.BuildSearchIndex()
+	if len(index) < 3 {
+		t.Fatalf("expected at least 3 search entries, got %d", len(index))
+	}
+
+	foundIntro := false
+	foundFirst := false
+	foundSecond := false
+
+	for _, entry := range index {
+		if entry.Title == "Search Index Test" && strings.Contains(entry.Content, "Introductory paragraph") {
+			foundIntro = true
+		}
+		if entry.Title == "First Feature" && strings.Contains(entry.Content, "telemetry") {
+			foundFirst = true
+			if entry.URL != "/wiki/test.html#first-feature" {
+				t.Errorf("expected URL /wiki/test.html#first-feature, got %s", entry.URL)
+			}
+		}
+		if entry.Title == "Second Feature" && strings.Contains(entry.Content, "lease fencing") {
+			foundSecond = true
+			if entry.URL != "/wiki/test.html#second-feature" {
+				t.Errorf("expected URL /wiki/test.html#second-feature, got %s", entry.URL)
+			}
+		}
+	}
+
+	if !foundIntro {
+		t.Errorf("failed to find intro chunk in search index")
+	}
+	if !foundFirst {
+		t.Errorf("failed to find first feature chunk in search index")
+	}
+	if !foundSecond {
+		t.Errorf("failed to find second feature chunk in search index")
 	}
 }
 

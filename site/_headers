@@ -10,5 +10,11 @@
 /wiki/wiki.css
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 
+/wiki/search.js
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/wiki/search-index.json
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
 /*.html
   Cache-Control: public, max-age=3600, stale-while-revalidate=86400
