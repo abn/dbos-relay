@@ -81,7 +81,7 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
         </svg>
         <span>Relay</span>
       </a>
-      <span class="badge">Docs</span>
+      <span class="badge">v%s</span>
     </div>
     <div class="nav-search">
       <button type="button" class="nav-search-btn" id="searchBtn" aria-label="Search documentation" aria-keyshortcuts="Control+k Meta+k /">
@@ -224,6 +224,7 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
 </body>
 </html>`,
 		template.HTMLEscapeString(title),
+		r.Version(),
 		changelogActive,
 		docsActive,
 		breadcrumb,

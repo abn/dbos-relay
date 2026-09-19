@@ -5,6 +5,7 @@ package sitewiki
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -53,6 +54,7 @@ type TOCEntry struct {
 type Renderer struct {
 	md       goldmark.Markdown
 	sections []Section
+	version  string
 }
 
 // New builds a renderer. root is the docs/ directory.
@@ -67,11 +69,46 @@ func New(root string) (*Renderer, error) {
 			),
 		),
 	)
-	r := &Renderer{md: md}
+	r := &Renderer{
+		md:      md,
+		version: readReleaseVersion(root),
+	}
 	if err := r.load(root); err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+// Version returns the release version string.
+func (r *Renderer) Version() string {
+	if r.version != "" {
+		return r.version
+	}
+	return "0.2.1"
+}
+
+func readReleaseVersion(docsRoot string) string {
+	manifestPath := filepath.Join(docsRoot, "..", ".release-please-manifest.json")
+	if data, err := os.ReadFile(manifestPath); err == nil {
+		var m map[string]string
+		if err := json.Unmarshal(data, &m); err == nil {
+			if v, ok := m["."]; ok && v != "" {
+				return v
+			}
+		}
+	}
+	changelogPath := filepath.Join(docsRoot, "changelog.md")
+	if data, err := os.ReadFile(changelogPath); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, l := range lines {
+			if strings.HasPrefix(l, "## [") {
+				if end := strings.Index(l[4:], "]"); end != -1 {
+					return l[4 : 4+end]
+				}
+			}
+		}
+	}
+	return "0.2.1"
 }
 
 // Sections returns the sections in canonical order.
