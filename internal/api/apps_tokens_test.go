@@ -23,20 +23,26 @@ import (
 )
 
 type mockStoreReader struct {
-	getOrgByNameFunc       func(ctx context.Context, name string) (storegen.Organisation, error)
-	getAppByNameFunc       func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error)
-	listAppsByOrgFunc      func(ctx context.Context, orgID pgtype.UUID) ([]storegen.Application, error)
-	upsertAppFunc          func(ctx context.Context, arg storegen.UpsertApplicationParams) (storegen.Application, error)
-	updateAppSettingsFunc  func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error)
-	deleteAppFunc          func(ctx context.Context, arg storegen.DeleteApplicationParams) (storegen.Application, error)
-	listExecutorsByAppFunc func(ctx context.Context, appID pgtype.UUID) ([]storegen.Executor, error)
-	listAPIKeysFunc        func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
-	createAPIKeyFunc       func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
-	revokeAPIKeyFunc       func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
-	upsertOrgFunc          func(ctx context.Context, name string) (storegen.Organisation, error)
-	listAlertRulesFunc     func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
-	createAuditLogFunc     func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
-	listAuditLogsFunc      func(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
+	getOrgByNameFunc        func(ctx context.Context, name string) (storegen.Organisation, error)
+	getAppByNameFunc        func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error)
+	listAppsByOrgFunc       func(ctx context.Context, orgID pgtype.UUID) ([]storegen.Application, error)
+	upsertAppFunc           func(ctx context.Context, arg storegen.UpsertApplicationParams) (storegen.Application, error)
+	updateAppSettingsFunc   func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error)
+	deleteAppFunc           func(ctx context.Context, arg storegen.DeleteApplicationParams) (storegen.Application, error)
+	listExecutorsByAppFunc  func(ctx context.Context, appID pgtype.UUID) ([]storegen.Executor, error)
+	listAPIKeysFunc         func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
+	getAPIKeyByLookupFunc   func(ctx context.Context, lookup string) (storegen.ApiKey, error)
+	touchAPIKeyLastUsedFunc func(ctx context.Context, id pgtype.UUID) error
+	createAPIKeyFunc        func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
+	revokeAPIKeyFunc        func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
+	upsertOrgFunc           func(ctx context.Context, name string) (storegen.Organisation, error)
+	getUserByUsernameFunc   func(ctx context.Context, username string) (storegen.User, error)
+	listAlertRulesFunc      func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
+	createAuditLogFunc      func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
+	listAuditLogsFunc       func(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
+	listAllOrgsFunc         func(ctx context.Context) ([]storegen.Organisation, error)
+	updateOrgFunc           func(ctx context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error)
+	deleteExpiredAuditFunc  func(ctx context.Context, arg storegen.DeleteExpiredAuditLogsParams) (int64, error)
 }
 
 func (m *mockStoreReader) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {
@@ -100,6 +106,9 @@ func (m *mockStoreReader) ListAPIKeys(ctx context.Context, orgID pgtype.UUID) ([
 }
 
 func (m *mockStoreReader) GetAPIKeyByLookup(ctx context.Context, lookup string) (storegen.ApiKey, error) {
+	if m.getAPIKeyByLookupFunc != nil {
+		return m.getAPIKeyByLookupFunc(ctx, lookup)
+	}
 	return storegen.ApiKey{}, nil
 }
 
@@ -115,6 +124,27 @@ func (m *mockStoreReader) RevokeAPIKey(ctx context.Context, arg storegen.RevokeA
 		return m.revokeAPIKeyFunc(ctx, arg)
 	}
 	return storegen.ApiKey{}, errors.New("unexpected RevokeAPIKey")
+}
+
+func (m *mockStoreReader) ListAllOrganisations(ctx context.Context) ([]storegen.Organisation, error) {
+	if m.listAllOrgsFunc != nil {
+		return m.listAllOrgsFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStoreReader) UpdateOrganisation(ctx context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error) {
+	if m.updateOrgFunc != nil {
+		return m.updateOrgFunc(ctx, arg)
+	}
+	return storegen.Organisation{}, errors.New("unexpected UpdateOrganisation")
+}
+
+func (m *mockStoreReader) DeleteExpiredAuditLogs(ctx context.Context, arg storegen.DeleteExpiredAuditLogsParams) (int64, error) {
+	if m.deleteExpiredAuditFunc != nil {
+		return m.deleteExpiredAuditFunc(ctx, arg)
+	}
+	return 0, nil
 }
 
 func (m *mockStoreReader) UpsertOrganisation(ctx context.Context, name string) (storegen.Organisation, error) {
@@ -153,6 +183,9 @@ func (m *mockStoreReader) GetUserBySubject(ctx context.Context, subject string) 
 	return storegen.User{}, nil
 }
 func (m *mockStoreReader) GetUserByUsername(ctx context.Context, username string) (storegen.User, error) {
+	if m.getUserByUsernameFunc != nil {
+		return m.getUserByUsernameFunc(ctx, username)
+	}
 	return storegen.User{}, nil
 }
 func (m *mockStoreReader) GetUserByID(ctx context.Context, id pgtype.UUID) (storegen.User, error) {
@@ -1247,6 +1280,9 @@ func TestWorkflowMutations(t *testing.T) {
 }
 
 func (m *mockStoreReader) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
+	if m.touchAPIKeyLastUsedFunc != nil {
+		return m.touchAPIKeyLastUsedFunc(ctx, id)
+	}
 	return nil
 }
 
@@ -1602,17 +1638,26 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		})
 		srv := api.NewServer(nil, store, nil).WithAuth(true, nil)
 
-		// Limit clamping in ListAuditLogs (when auth is present)
+		// Limits above 1000 are rejected in ListAuditLogs
 		bigLimit := int64(5000)
-		_, err := srv.ListAuditLogs(authCtx, gen.ListAuditLogsRequestObject{
+		bigResp, err := srv.ListAuditLogs(authCtx, gen.ListAuditLogsRequestObject{
 			OrgName: "my-org",
 			Params:  gen.ListAuditLogsParams{Limit: &bigLimit},
 		})
 		if err != nil {
 			t.Fatalf("ListAuditLogs error: %v", err)
 		}
-		if capturedLimit != 1000 {
-			t.Errorf("expected limit clamped to 1000, got %d", capturedLimit)
+		if rej, ok := bigResp.(gen.ListAuditLogsdefaultApplicationProblemPlusJSONResponse); !ok || rej.StatusCode != 400 {
+			t.Errorf("expected 400 rejection for limit 5000, got %+v", bigResp)
+		}
+
+		// Default limit is 100
+		_, err = srv.ListAuditLogs(authCtx, gen.ListAuditLogsRequestObject{OrgName: "my-org"})
+		if err != nil {
+			t.Fatalf("ListAuditLogs error: %v", err)
+		}
+		if capturedLimit != 100 {
+			t.Errorf("expected default limit 100, got %d", capturedLimit)
 		}
 
 		// Mutation recording: CreateRole
@@ -1624,8 +1669,8 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateRole error: %v", err)
 		}
-		if capturedAction != "role:create" {
-			t.Errorf("expected audit action role:create, got %s", capturedAction)
+		if capturedAction != "role.create" {
+			t.Errorf("expected audit action role.create, got %s", capturedAction)
 		}
 
 		// Mutation recording: DeleteRole
@@ -1636,8 +1681,8 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DeleteRole error: %v", err)
 		}
-		if capturedAction != "role:delete" {
-			t.Errorf("expected audit action role:delete, got %s", capturedAction)
+		if capturedAction != "role.delete" {
+			t.Errorf("expected audit action role.delete, got %s", capturedAction)
 		}
 
 		// Mutation recording: GrantRole
@@ -1649,8 +1694,8 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GrantRole error: %v", err)
 		}
-		if capturedAction != "role:grant" {
-			t.Errorf("expected audit action role:grant, got %s", capturedAction)
+		if capturedAction != "role.grant" {
+			t.Errorf("expected audit action role.grant, got %s", capturedAction)
 		}
 
 		// Mutation recording: RemoveMember
@@ -1661,8 +1706,8 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RemoveMember error: %v", err)
 		}
-		if capturedAction != "member:remove" {
-			t.Errorf("expected audit action member:remove, got %s", capturedAction)
+		if capturedAction != "user.remove" {
+			t.Errorf("expected audit action user.remove, got %s", capturedAction)
 		}
 
 		// Mutation recording: RequestDomainClaim
@@ -1673,8 +1718,8 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("RequestDomainClaim error: %v", err)
 		}
-		if capturedAction != "domain_claim:create" {
-			t.Errorf("expected audit action domain_claim:create, got %s", capturedAction)
+		if capturedAction != "domain_claim.create" {
+			t.Errorf("expected audit action domain_claim.create, got %s", capturedAction)
 		}
 
 		// Mutation recording: ReleaseDomainClaim
@@ -1685,8 +1730,8 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReleaseDomainClaim error: %v", err)
 		}
-		if capturedAction != "domain_claim:delete" {
-			t.Errorf("expected audit action domain_claim:delete, got %s", capturedAction)
+		if capturedAction != "domain_claim.delete" {
+			t.Errorf("expected audit action domain_claim.delete, got %s", capturedAction)
 		}
 	})
 

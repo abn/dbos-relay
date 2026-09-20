@@ -68,11 +68,13 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 			return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -81,6 +83,7 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 
 	plain, rec, err := auth.Mint()
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -107,6 +110,7 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 	if callerIdentity != nil && !isCallerAdmin {
 		// Non-admin caller must have application.write to mint tokens
 		if !auth.HasPermission(callerIdentity.Permissions, auth.PermApplicationWrite) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 			return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusForbidden,
 				Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: application.write"),
@@ -116,6 +120,7 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		// App-scoped caller cannot mint unscoped tokens or tokens outside their allowed apps
 		if len(callerIdentity.ApplicationNames) > 0 {
 			if len(appNames) == 0 {
+				s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 				return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 					StatusCode: http.StatusForbidden,
 					Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "App-scoped caller cannot mint unscoped tokens"),
@@ -130,6 +135,7 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 					}
 				}
 				if !found {
+					s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 					return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 						StatusCode: http.StatusForbidden,
 						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant app %q outside caller scope", app)),
@@ -144,6 +150,7 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		} else {
 			for _, perm := range permissions {
 				if !auth.HasPermission(callerIdentity.Permissions, perm) {
+					s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 					return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 						StatusCode: http.StatusForbidden,
 						Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", fmt.Sprintf("Cannot grant permission %q outside caller scope", perm)),
@@ -167,12 +174,14 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 		Permissions:      permissions,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusSuccess, string(gen.AuditTargetTypeToken), request.TokenName, map[string]any{"permissions": permissions, "applications": appNames})
 	return gen.CreateToken201JSONResponse{
 		Token:     plain,
 		TokenName: request.TokenName,
@@ -186,11 +195,13 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 			return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -199,6 +210,7 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 
 	keys, err := s.store.ListAPIKeys(ctx, org.ID)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -215,6 +227,7 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 		}
 	}
 	if !found {
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Token not found", "Token not found"),
@@ -226,11 +239,13 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 		OrganisationID: org.ID,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusSuccess, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 	return gen.DeleteToken204Response{}, nil
 }

@@ -5,6 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## Unreleased
 
+* **Update**: Implemented Conductor audit log parity: taxonomy operation coverage across applications, workflows, schedules, alerting rules, API keys, roles, and organizations with success and failure entries, structured subject and target identity, `operation`/`subject`/`target`/time filters, default limit 100 with 1000 maximum, per-organization retention (default 90 days, configurable 7 to 3650) with hourly expiry purge, and organization rename support. See [Permission model](discovery/authz.md#audit-log).
 * **Update**: Implemented full Conductor metrics parity on `/v1/metrics` via executor aggregate dispatch (`get_workflow_aggregates`, `get_step_aggregates`), covering all workflow and step rate, count, oldest-timestamp, and windowed-max families with clock-aligned minute windows, `applications`/`workflow_names`/`metrics` filters, and `metric.read` permission acceptance. See [Metrics, alerting, and HA peer forwarding](discovery/metrics-alerting.md).
 
 ## 2026-09-18

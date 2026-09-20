@@ -26,6 +26,15 @@ func newSQLiteQueries(db sqliteDBTX) *sqliteQueries {
 	return &sqliteQueries{db: db}
 }
 
+func scanOrganisation(idStr string, name string, retention int64, createdStr string) gen.Organisation {
+	var o gen.Organisation
+	o.ID = textToUUID(idStr)
+	o.Name = name
+	o.AuditLogRetentionDays = int32(retention)
+	o.CreatedAt = textToTimestamptz(sql.NullString{String: createdStr, Valid: true})
+	return o
+}
+
 // ----------------------------------------------------------------------
 // Organisations
 // ----------------------------------------------------------------------
@@ -33,47 +42,41 @@ func newSQLiteQueries(db sqliteDBTX) *sqliteQueries {
 func (q *sqliteQueries) CreateOrganisation(ctx context.Context, name string) (gen.Organisation, error) {
 	id := uuidToText(pgtype.UUID{Valid: false})
 	row := q.db.QueryRowContext(ctx,
-		`INSERT INTO organisations (id, name) VALUES (?, ?) RETURNING id, name, created_at`,
+		`INSERT INTO organisations (id, name) VALUES (?, ?) RETURNING id, name, audit_log_retention_days, created_at`,
 		id, name,
 	)
-	var o gen.Organisation
-	var idStr, createdStr string
-	if err := row.Scan(&idStr, &o.Name, &createdStr); err != nil {
-		return o, mapDBErr(err)
+	var idStr, nameStr, createdStr string
+	var retention int64
+	if err := row.Scan(&idStr, &nameStr, &retention, &createdStr); err != nil {
+		return gen.Organisation{}, mapDBErr(err)
 	}
-	o.ID = textToUUID(idStr)
-	o.CreatedAt = textToTimestamptz(sql.NullString{String: createdStr, Valid: true})
-	return o, nil
+	return scanOrganisation(idStr, nameStr, retention, createdStr), nil
 }
 
 func (q *sqliteQueries) GetOrganisationByName(ctx context.Context, name string) (gen.Organisation, error) {
 	row := q.db.QueryRowContext(ctx,
-		`SELECT id, name, created_at FROM organisations WHERE name = ?`,
+		`SELECT id, name, audit_log_retention_days, created_at FROM organisations WHERE name = ?`,
 		name,
 	)
-	var o gen.Organisation
-	var idStr, createdStr string
-	if err := row.Scan(&idStr, &o.Name, &createdStr); err != nil {
-		return o, mapDBErr(err)
+	var idStr, nameStr, createdStr string
+	var retention int64
+	if err := row.Scan(&idStr, &nameStr, &retention, &createdStr); err != nil {
+		return gen.Organisation{}, mapDBErr(err)
 	}
-	o.ID = textToUUID(idStr)
-	o.CreatedAt = textToTimestamptz(sql.NullString{String: createdStr, Valid: true})
-	return o, nil
+	return scanOrganisation(idStr, nameStr, retention, createdStr), nil
 }
 
 func (q *sqliteQueries) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (gen.Organisation, error) {
 	row := q.db.QueryRowContext(ctx,
-		`SELECT id, name, created_at FROM organisations WHERE id = ?`,
+		`SELECT id, name, audit_log_retention_days, created_at FROM organisations WHERE id = ?`,
 		uuidToText(id),
 	)
-	var o gen.Organisation
-	var idStr, createdStr string
-	if err := row.Scan(&idStr, &o.Name, &createdStr); err != nil {
-		return o, mapDBErr(err)
+	var idStr, nameStr, createdStr string
+	var retention int64
+	if err := row.Scan(&idStr, &nameStr, &retention, &createdStr); err != nil {
+		return gen.Organisation{}, mapDBErr(err)
 	}
-	o.ID = textToUUID(idStr)
-	o.CreatedAt = textToTimestamptz(sql.NullString{String: createdStr, Valid: true})
-	return o, nil
+	return scanOrganisation(idStr, nameStr, retention, createdStr), nil
 }
 
 func (q *sqliteQueries) UpsertOrganisation(ctx context.Context, name string) (gen.Organisation, error) {
@@ -81,17 +84,59 @@ func (q *sqliteQueries) UpsertOrganisation(ctx context.Context, name string) (ge
 	row := q.db.QueryRowContext(ctx,
 		`INSERT INTO organisations (id, name) VALUES (?, ?)
 		 ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-		 RETURNING id, name, created_at`,
+		 RETURNING id, name, audit_log_retention_days, created_at`,
 		id, name,
 	)
-	var o gen.Organisation
-	var idStr, createdStr string
-	if err := row.Scan(&idStr, &o.Name, &createdStr); err != nil {
-		return o, mapDBErr(err)
+	var idStr, nameStr, createdStr string
+	var retention int64
+	if err := row.Scan(&idStr, &nameStr, &retention, &createdStr); err != nil {
+		return gen.Organisation{}, mapDBErr(err)
 	}
-	o.ID = textToUUID(idStr)
-	o.CreatedAt = textToTimestamptz(sql.NullString{String: createdStr, Valid: true})
-	return o, nil
+	return scanOrganisation(idStr, nameStr, retention, createdStr), nil
+}
+
+func (q *sqliteQueries) ListAllOrganisations(ctx context.Context) ([]gen.Organisation, error) {
+	rows, err := q.db.QueryContext(ctx,
+		`SELECT id, name, audit_log_retention_days, created_at FROM organisations ORDER BY name`)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []gen.Organisation
+	for rows.Next() {
+		var idStr, nameStr, createdStr string
+		var retention int64
+		if err := rows.Scan(&idStr, &nameStr, &retention, &createdStr); err != nil {
+			return nil, err
+		}
+		out = append(out, scanOrganisation(idStr, nameStr, retention, createdStr))
+	}
+	return out, mapDBErr(rows.Err())
+}
+
+func (q *sqliteQueries) UpdateOrganisation(ctx context.Context, arg gen.UpdateOrganisationParams) (gen.Organisation, error) {
+	var nameVal *string
+	if arg.Name != nil {
+		nameVal = arg.Name
+	}
+	var retentionVal *int32
+	if arg.AuditLogRetentionDays != nil {
+		retentionVal = arg.AuditLogRetentionDays
+	}
+	row := q.db.QueryRowContext(ctx,
+		`UPDATE organisations SET
+			name = COALESCE(?, name),
+			audit_log_retention_days = COALESCE(?, audit_log_retention_days)
+		 WHERE id = ?
+		 RETURNING id, name, audit_log_retention_days, created_at`,
+		nameVal, retentionVal, uuidToText(arg.ID),
+	)
+	var idStr, nameStr, createdStr string
+	var retention int64
+	if err := row.Scan(&idStr, &nameStr, &retention, &createdStr); err != nil {
+		return gen.Organisation{}, mapDBErr(err)
+	}
+	return scanOrganisation(idStr, nameStr, retention, createdStr), nil
 }
 
 // ----------------------------------------------------------------------
@@ -1298,15 +1343,17 @@ func (q *sqliteQueries) ListAuditLogs(ctx context.Context, arg gen.ListAuditLogs
 		   AND (? IS NULL OR created_at >= ?)
 		   AND (? IS NULL OR created_at <= ?)
 		   AND (? IS NULL OR action = ?)
-		   AND (? IS NULL OR username = ?)
-		   AND (? IS NULL OR json_extract(details, '$.target') = ?)
+		   AND (? IS NULL OR username = ?
+		       OR json_extract(details, '$.subject_display') = ?
+		       OR json_extract(details, '$.subject_id') = ?)
+		   AND (? IS NULL OR json_extract(details, '$.target_id') = ?)
 		 ORDER BY created_at DESC
 		 LIMIT ? OFFSET ?`,
 		uuidToText(arg.OrganisationID),
 		startStr, startStr,
 		endStr, endStr,
 		arg.Operation, arg.Operation,
-		arg.Subject, arg.Subject,
+		arg.Subject, arg.Subject, arg.Subject, arg.Subject,
 		arg.Target, arg.Target,
 		arg.Limit, arg.Offset,
 	)
@@ -1333,6 +1380,22 @@ func (q *sqliteQueries) ListAuditLogs(ctx context.Context, arg gen.ListAuditLogs
 		list = append(list, al)
 	}
 	return list, mapDBErr(rows.Err())
+}
+
+func (q *sqliteQueries) DeleteExpiredAuditLogs(ctx context.Context, arg gen.DeleteExpiredAuditLogsParams) (int64, error) {
+	cutoff := timestamptzToText(arg.Cutoff)
+	res, err := q.db.ExecContext(ctx,
+		`DELETE FROM audit_logs WHERE organisation_id = ? AND created_at < ?`,
+		uuidToText(arg.OrganisationID), cutoff,
+	)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	return n, nil
 }
 
 // ----------------------------------------------------------------------

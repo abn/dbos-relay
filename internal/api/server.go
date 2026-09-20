@@ -52,6 +52,9 @@ type StoreReader interface {
 	CreateAuditLog(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
 	TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error
 	ListAuditLogs(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
+	ListAllOrganisations(ctx context.Context) ([]storegen.Organisation, error)
+	UpdateOrganisation(ctx context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error)
+	DeleteExpiredAuditLogs(ctx context.Context, arg storegen.DeleteExpiredAuditLogsParams) (int64, error)
 }
 
 // Server implements gen.StrictServerInterface.

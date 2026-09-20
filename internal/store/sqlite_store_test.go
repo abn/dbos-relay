@@ -56,8 +56,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if dirty {
 		t.Fatalf("database is dirty after migration")
 	}
-	if v != 5 {
-		t.Fatalf("expected migration version 5, got %d", v)
+	if v != 6 {
+		t.Fatalf("expected migration version 6, got %d", v)
 	}
 
 	// Migrate down 1 step
@@ -68,8 +68,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get migrate version after down: %v", err)
 	}
-	if v != 4 {
-		t.Fatalf("expected migration version 4, got %d", v)
+	if v != 5 {
+		t.Fatalf("expected migration version 5, got %d", v)
 	}
 
 	// Migrate back up
@@ -77,8 +77,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 		t.Fatalf("failed to migrate back up: %v", err)
 	}
 	v, _, _ = s.MigrateVersion(ctx)
-	if v != 5 {
-		t.Fatalf("expected migration version 5, got %d", v)
+	if v != 6 {
+		t.Fatalf("expected migration version 6, got %d", v)
 	}
 }
 
@@ -448,3 +448,115 @@ func TestSQLite_FullCRUDSuite(t *testing.T) {
 		t.Fatalf("delete application failed: %v", err)
 	}
 }
+
+func TestSQLite_AuditFiltersRetentionAndExpiry(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	org, err := s.Queries().CreateOrganisation(ctx, "audit_org")
+	if err != nil {
+		t.Fatalf("create org failed: %v", err)
+	}
+	if org.AuditLogRetentionDays != 90 {
+		t.Fatalf("default retention = %d, want 90", org.AuditLogRetentionDays)
+	}
+
+	seed := func(action, details string) {
+		t.Helper()
+		_, err := s.Queries().CreateAuditLog(ctx, gen.CreateAuditLogParams{
+			OrganisationID: org.ID,
+			Username:       "alice",
+			Action:         action,
+			Details:        []byte(details),
+		})
+		if err != nil {
+			t.Fatalf("seed audit log: %v", err)
+		}
+	}
+	seed("workflow.cancel", `{"status":"success","subject_type":"user","subject_id":"sub:1","subject_display":"alice@example.com","target_type":"workflow","target_id":"wf-1","application_name":"shop"}`)
+	seed("workflow.cancel", `{"status":"failure","subject_type":"api_key","subject_id":"key1","subject_display":"deploy-key","target_type":"workflow","target_id":"wf-2","application_name":"shop"}`)
+	seed("token.revoke", `{"status":"success","subject_type":"user","subject_id":"sub:1","subject_display":"alice","target_type":"token","target_id":"old-key"}`)
+
+	list := func(arg gen.ListAuditLogsParams) []gen.AuditLog {
+		t.Helper()
+		arg.OrganisationID = org.ID
+		if arg.Limit == 0 {
+			arg.Limit = 100
+		}
+		rows, err := s.Queries().ListAuditLogs(ctx, arg)
+		if err != nil {
+			t.Fatalf("list audit logs: %v", err)
+		}
+		return rows
+	}
+
+	if got := list(gen.ListAuditLogsParams{Operation: strPtr("workflow.cancel")}); len(got) != 2 {
+		t.Errorf("operation filter: got %d, want 2", len(got))
+	}
+	if got := list(gen.ListAuditLogsParams{Subject: strPtr("alice@example.com")}); len(got) != 1 {
+		t.Errorf("subject display filter: got %d, want 1", len(got))
+	}
+	if got := list(gen.ListAuditLogsParams{Subject: strPtr("key1")}); len(got) != 1 {
+		t.Errorf("subject id filter: got %d, want 1", len(got))
+	}
+	if got := list(gen.ListAuditLogsParams{Target: strPtr("wf-2")}); len(got) != 1 {
+		t.Errorf("target filter: got %d, want 1", len(got))
+	}
+	if got := list(gen.ListAuditLogsParams{Target: strPtr("shop")}); len(got) != 0 {
+		t.Errorf("target must match target_id, not application_name: got %d, want 0", len(got))
+	}
+	if got := list(gen.ListAuditLogsParams{}); len(got) != 3 {
+		t.Errorf("expected 3 rows, got %d", len(got))
+	} else {
+		seen := map[string]bool{}
+		for _, row := range got {
+			seen[row.Action] = true
+		}
+		if !seen["workflow.cancel"] || !seen["token.revoke"] {
+			t.Errorf("expected workflow.cancel and token.revoke rows, got %+v", got)
+		}
+	}
+	if got := list(gen.ListAuditLogsParams{Limit: 2}); len(got) != 2 {
+		t.Errorf("limit 2: got %d, want 2", len(got))
+	}
+	if got := list(gen.ListAuditLogsParams{Limit: 10, Offset: 2}); len(got) != 1 {
+		t.Errorf("offset 2: got %d, want 1", len(got))
+	}
+	future := pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true}
+	if got := list(gen.ListAuditLogsParams{StartTime: future}); len(got) != 0 {
+		t.Errorf("future startTime: got %d, want 0", len(got))
+	}
+	past := pgtype.Timestamptz{Time: time.Now().UTC().Add(-time.Hour), Valid: true}
+	if got := list(gen.ListAuditLogsParams{EndTime: past}); len(got) != 0 {
+		t.Errorf("past endTime: got %d, want 0", len(got))
+	}
+
+	updated, err := s.Queries().UpdateOrganisation(ctx, gen.UpdateOrganisationParams{
+		ID:                    org.ID,
+		AuditLogRetentionDays: int32Ptr(7),
+	})
+	if err != nil {
+		t.Fatalf("update retention: %v", err)
+	}
+	if updated.AuditLogRetentionDays != 7 {
+		t.Fatalf("retention = %d, want 7", updated.AuditLogRetentionDays)
+	}
+
+	deleted, err := s.Queries().DeleteExpiredAuditLogs(ctx, gen.DeleteExpiredAuditLogsParams{
+		OrganisationID: org.ID,
+		Cutoff:         pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("delete expired: %v", err)
+	}
+	if deleted != 3 {
+		t.Errorf("deleted = %d, want 3", deleted)
+	}
+	if got := list(gen.ListAuditLogsParams{}); len(got) != 0 {
+		t.Errorf("expected empty log after expiry purge, got %d", len(got))
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+func int32Ptr(v int32) *int32 { return &v }

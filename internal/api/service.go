@@ -207,13 +207,13 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(report)
 		})
-		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/needs-attention", AuditMiddleware(server)(AuthMiddleware(server)(needsAttentionHandler)))
+		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/needs-attention", AuthMiddleware(server)(needsAttentionHandler))
 
 		eventsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			server.ServeEvents(w, r)
 		})
-		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/events", AuditMiddleware(server)(AuthMiddleware(server)(eventsHandler)))
-		mux.Handle("GET /v2/orgs/{orgName}/events", AuditMiddleware(server)(AuthMiddleware(server)(eventsHandler)))
+		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/events", AuthMiddleware(server)(eventsHandler))
+		mux.Handle("GET /v2/orgs/{orgName}/events", AuthMiddleware(server)(eventsHandler))
 
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -236,7 +236,6 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		gen.HandlerWithOptions(strictHandler, gen.StdHTTPServerOptions{
 			BaseRouter: mux,
 			Middlewares: []gen.MiddlewareFunc{
-				AuditMiddleware(server),
 				AuthMiddleware(server),
 			},
 			ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {

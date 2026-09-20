@@ -245,13 +245,16 @@ func (s *Server) GetApp(ctx context.Context, request gen.GetAppRequestObject) (g
 // RegisterApp registers a new application or updates an existing one.
 func (s *Server) RegisterApp(ctx context.Context, request gen.RegisterAppRequestObject) (gen.RegisterAppResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
+	privateMode := request.Body != nil && request.Body.PrivateMode != nil && *request.Body.PrivateMode
 	if err := validateOrgName(orgName); err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppCreate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusUnprocessableEntity,
 			Body:       MakeErrorModel(http.StatusUnprocessableEntity, "Validation Error", err.Error()),
 		}, nil
 	}
 	if err := validateAppName(request.AppName); err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppCreate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusUnprocessableEntity,
 			Body:       MakeErrorModel(http.StatusUnprocessableEntity, "Validation Error", err.Error()),
@@ -260,6 +263,7 @@ func (s *Server) RegisterApp(ctx context.Context, request gen.RegisterAppRequest
 
 	org, err := s.store.UpsertOrganisation(ctx, orgName)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppCreate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -273,6 +277,7 @@ func (s *Server) RegisterApp(ctx context.Context, request gen.RegisterAppRequest
 
 	settingsBytes, err := json.Marshal(settings)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppCreate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -285,12 +290,14 @@ func (s *Server) RegisterApp(ctx context.Context, request gen.RegisterAppRequest
 		Settings:       settingsBytes,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppCreate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.RegisterAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppCreate, auditStatusSuccess, string(gen.AuditTargetTypeApplication), request.AppName, map[string]any{"private_mode": privateMode})
 	return gen.RegisterApp204Response{}, nil
 }
 
@@ -301,11 +308,13 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 			return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -318,11 +327,13 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 			return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -354,6 +365,7 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 
 	settingsBytes, err := json.Marshal(settings)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -366,6 +378,7 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 		Settings:       settingsBytes,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -401,6 +414,7 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 		_, _ = s.router.Dispatch(ctx, orgName, request.AppName, retMsg)
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusSuccess, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 	return gen.UpdateApp204Response{}, nil
 }
 
@@ -411,11 +425,13 @@ func (s *Server) DeleteApp(ctx context.Context, request gen.DeleteAppRequestObje
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppDelete, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 			return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppDelete, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -428,17 +444,20 @@ func (s *Server) DeleteApp(ctx context.Context, request gen.DeleteAppRequestObje
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppDelete, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 			return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppDelete, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.DeleteAppdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppDelete, auditStatusSuccess, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 	return gen.DeleteApp204Response{}, nil
 }
 
@@ -556,11 +575,13 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 	org, err := s.store.GetOrganisationByName(ctx, orgName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 			return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -573,11 +594,13 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 			return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Application not found", fmt.Sprintf("application %q not found", request.AppName)),
 			}, nil
 		}
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusServiceUnavailable,
 			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
@@ -585,6 +608,7 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 	}
 
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
@@ -610,6 +634,7 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 	settings.LatestVersion = &request.Body.VersionName
 	settingsBytes, err := json.Marshal(settings)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -622,12 +647,14 @@ func (s *Server) SetLatestAppVersion(ctx context.Context, request gen.SetLatestA
 		Settings:       settingsBytes,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 		return gen.SetLatestAppVersiondefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppSetLatest, auditStatusSuccess, string(gen.AuditTargetTypeApplication), request.AppName, nil)
 	return gen.SetLatestAppVersion204Response{}, nil
 }
 
@@ -972,6 +999,7 @@ func isBlockedDestinationURL(rawURL string) bool {
 func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlertingRuleRequestObject) (gen.CreateAlertingRuleResponseObject, error) {
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 		return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", request.OrgName)),
@@ -983,6 +1011,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 		Name:           request.AppName,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 		return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", request.AppName)),
@@ -996,6 +1025,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 			Name:           *request.Body.ReceivingAppName,
 		})
 		if err != nil {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 			return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusNotFound,
 				Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("receiving application %q not found", *request.Body.ReceivingAppName)),
@@ -1024,6 +1054,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 		case "unresponsiveapplication":
 			ruleType = "UnresponsiveApplication"
 		default:
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 			return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusBadRequest,
 				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", fmt.Sprintf("invalid rule type %q: must be WorkflowFailure, SlowQueue, or UnresponsiveApplication", rt)),
@@ -1039,6 +1070,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 				for _, d := range dests {
 					if dMap, ok := d.(map[string]any); ok {
 						if _, hasSF := dMap["secret_from"]; hasSF {
+							s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 							return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 								StatusCode: http.StatusBadRequest,
 								Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "secret_from is only permitted in operator declarative manifests"),
@@ -1046,6 +1078,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 						}
 						if u, ok := dMap["url"].(string); ok && u != "" {
 							if isBlockedDestinationURL(u) {
+								s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 								return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 									StatusCode: http.StatusBadRequest,
 									Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "destination URL points to a blocked address"),
@@ -1066,12 +1099,14 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 		MinIntervalSecs:        minInterval,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), "", nil)
 		return gen.CreateAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleCreate, auditStatusSuccess, string(gen.AuditTargetTypeAlertingRule), formatUUID(dbRule.ID), nil)
 	return gen.CreateAlertingRule201JSONResponse(mapStoreAlertRuleToAPI(dbRule)), nil
 }
 
@@ -1079,6 +1114,7 @@ func (s *Server) CreateAlertingRule(ctx context.Context, request gen.CreateAlert
 func (s *Server) DeleteAlertingRule(ctx context.Context, request gen.DeleteAlertingRuleRequestObject) (gen.DeleteAlertingRuleResponseObject, error) {
 	org, err := s.store.GetOrganisationByName(ctx, request.OrgName)
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleDelete, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), request.RuleId, nil)
 		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("organisation %q not found", request.OrgName)),
@@ -1090,6 +1126,7 @@ func (s *Server) DeleteAlertingRule(ctx context.Context, request gen.DeleteAlert
 		Name:           request.AppName,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleDelete, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), request.RuleId, nil)
 		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("application %q not found", request.AppName)),
@@ -1098,6 +1135,7 @@ func (s *Server) DeleteAlertingRule(ctx context.Context, request gen.DeleteAlert
 
 	var ruleID pgtype.UUID
 	if err := ruleID.Scan(request.RuleId); err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleDelete, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), request.RuleId, nil)
 		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "invalid rule id format"),
@@ -1109,18 +1147,21 @@ func (s *Server) DeleteAlertingRule(ctx context.Context, request gen.DeleteAlert
 		ApplicationID: app.ID,
 	})
 	if err != nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleDelete, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), request.RuleId, nil)
 		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
 		}, nil
 	}
 	if rows == 0 {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleDelete, auditStatusFailure, string(gen.AuditTargetTypeAlertingRule), request.RuleId, nil)
 		return gen.DeleteAlertingRuledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       MakeErrorModel(http.StatusNotFound, "Not Found", fmt.Sprintf("rule %q not found", request.RuleId)),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAlertRuleDelete, auditStatusSuccess, string(gen.AuditTargetTypeAlertingRule), request.RuleId, nil)
 	return gen.DeleteAlertingRule204Response{}, nil
 }
 

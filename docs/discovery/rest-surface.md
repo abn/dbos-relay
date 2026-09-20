@@ -206,8 +206,9 @@ or are deferred to later compatibility tiers:
 
 3. **Domain claims (`DomainClaim`)**:
    * `requestDomainClaim`, `listDomainClaims`, `releaseDomainClaim`.
-   * These manage DNS and TLS termination on cloud infrastructure; not applicable
-     to self-hosted on-premises Relay deployments.
+   * On DBOS-managed Conductor these manage DNS and TLS termination on
+     cloud infrastructure with vendor approval. On self-hosted Relay they
+     take effect immediately and drive local organization auto-enrollment.
 
 4. **Cloud-specific fields in `UserProfile`**:
    * `isDbosAdmin`, `subscriptionPlan`.

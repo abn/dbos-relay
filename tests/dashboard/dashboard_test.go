@@ -57,6 +57,39 @@ func (s *dashboardTestStore) GetOrganisationByName(_ context.Context, name strin
 	return org, nil
 }
 
+func (s *dashboardTestStore) ListAllOrganisations(_ context.Context) ([]storegen.Organisation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []storegen.Organisation
+	for _, org := range s.orgs {
+		out = append(out, org)
+	}
+	return out, nil
+}
+
+func (s *dashboardTestStore) UpdateOrganisation(_ context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, org := range s.orgs {
+		if org.ID == arg.ID {
+			if arg.Name != nil {
+				delete(s.orgs, name)
+				org.Name = *arg.Name
+			}
+			if arg.AuditLogRetentionDays != nil {
+				org.AuditLogRetentionDays = *arg.AuditLogRetentionDays
+			}
+			s.orgs[org.Name] = org
+			return org, nil
+		}
+	}
+	return storegen.Organisation{}, errors.New("org not found")
+}
+
+func (s *dashboardTestStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.DeleteExpiredAuditLogsParams) (int64, error) {
+	return 0, nil
+}
+
 func (s *dashboardTestStore) GetApplicationByName(_ context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

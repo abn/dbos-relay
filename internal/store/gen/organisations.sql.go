@@ -12,35 +12,105 @@ import (
 )
 
 const createOrganisation = `-- name: CreateOrganisation :one
-INSERT INTO organisations (name) VALUES ($1) RETURNING id, name, created_at
+INSERT INTO organisations (name) VALUES ($1) RETURNING id, name, created_at, audit_log_retention_days
 `
 
 func (q *Queries) CreateOrganisation(ctx context.Context, name string) (Organisation, error) {
 	row := q.db.QueryRow(ctx, createOrganisation, name)
 	var i Organisation
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.AuditLogRetentionDays,
+	)
 	return i, err
 }
 
 const getOrganisationByID = `-- name: GetOrganisationByID :one
-SELECT id, name, created_at FROM organisations WHERE id = $1
+SELECT id, name, created_at, audit_log_retention_days FROM organisations WHERE id = $1
 `
 
 func (q *Queries) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (Organisation, error) {
 	row := q.db.QueryRow(ctx, getOrganisationByID, id)
 	var i Organisation
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.AuditLogRetentionDays,
+	)
 	return i, err
 }
 
 const getOrganisationByName = `-- name: GetOrganisationByName :one
-SELECT id, name, created_at FROM organisations WHERE name = $1
+SELECT id, name, created_at, audit_log_retention_days FROM organisations WHERE name = $1
 `
 
 func (q *Queries) GetOrganisationByName(ctx context.Context, name string) (Organisation, error) {
 	row := q.db.QueryRow(ctx, getOrganisationByName, name)
 	var i Organisation
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.AuditLogRetentionDays,
+	)
+	return i, err
+}
+
+const listAllOrganisations = `-- name: ListAllOrganisations :many
+SELECT id, name, created_at, audit_log_retention_days FROM organisations ORDER BY name
+`
+
+func (q *Queries) ListAllOrganisations(ctx context.Context) ([]Organisation, error) {
+	rows, err := q.db.Query(ctx, listAllOrganisations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Organisation
+	for rows.Next() {
+		var i Organisation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.AuditLogRetentionDays,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateOrganisation = `-- name: UpdateOrganisation :one
+UPDATE organisations SET
+    name = COALESCE($1, name),
+    audit_log_retention_days = COALESCE($2, audit_log_retention_days)
+WHERE id = $3
+RETURNING id, name, created_at, audit_log_retention_days
+`
+
+type UpdateOrganisationParams struct {
+	Name                  *string
+	AuditLogRetentionDays *int32
+	ID                    pgtype.UUID
+}
+
+func (q *Queries) UpdateOrganisation(ctx context.Context, arg UpdateOrganisationParams) (Organisation, error) {
+	row := q.db.QueryRow(ctx, updateOrganisation, arg.Name, arg.AuditLogRetentionDays, arg.ID)
+	var i Organisation
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.AuditLogRetentionDays,
+	)
 	return i, err
 }
 
@@ -49,12 +119,17 @@ INSERT INTO organisations (name)
 VALUES ($1)
 ON CONFLICT (name) DO UPDATE SET
     name = EXCLUDED.name
-RETURNING id, name, created_at
+RETURNING id, name, created_at, audit_log_retention_days
 `
 
 func (q *Queries) UpsertOrganisation(ctx context.Context, name string) (Organisation, error) {
 	row := q.db.QueryRow(ctx, upsertOrganisation, name)
 	var i Organisation
-	err := row.Scan(&i.ID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.AuditLogRetentionDays,
+	)
 	return i, err
 }
