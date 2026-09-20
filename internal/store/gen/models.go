@@ -127,9 +127,10 @@ type Instance struct {
 }
 
 type Organisation struct {
-	ID        pgtype.UUID
-	Name      string
-	CreatedAt pgtype.Timestamptz
+	ID                    pgtype.UUID
+	Name                  string
+	CreatedAt             pgtype.Timestamptz
+	AuditLogRetentionDays int32
 }
 
 type OrganisationMember struct {

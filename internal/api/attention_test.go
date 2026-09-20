@@ -35,6 +35,24 @@ func (m *mockAttentionStore) GetOrganisationByName(ctx context.Context, name str
 	return m.org, nil
 }
 
+func (m *mockAttentionStore) ListAllOrganisations(_ context.Context) ([]storegen.Organisation, error) {
+	return []storegen.Organisation{m.org}, nil
+}
+
+func (m *mockAttentionStore) UpdateOrganisation(_ context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error) {
+	if arg.Name != nil {
+		m.org.Name = *arg.Name
+	}
+	if arg.AuditLogRetentionDays != nil {
+		m.org.AuditLogRetentionDays = *arg.AuditLogRetentionDays
+	}
+	return m.org, nil
+}
+
+func (m *mockAttentionStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.DeleteExpiredAuditLogsParams) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockAttentionStore) GetOrganisationByID(ctx context.Context, id pgtype.UUID) (storegen.Organisation, error) {
 	return m.org, nil
 }

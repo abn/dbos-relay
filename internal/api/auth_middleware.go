@@ -23,7 +23,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if (server == nil || !server.authEnabled) && r.URL.Path != "/v1/metrics" {
 				// No-auth mode: implicit local identity
-				ctx := auth.WithIdentity(r.Context(), &auth.UserIdentity{
+				ctx := StashSourceIP(r.Context(), getRealIPFromHeaders(r.Header.Get("X-Forwarded-For"), r.RemoteAddr))
+				ctx = auth.WithIdentity(ctx, &auth.UserIdentity{
 					Subject:  "local",
 					Username: "local",
 					Email:    "local@local",
@@ -212,6 +213,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 
 				if isJoin {
 					if identity.IsAPIKey {
+						recordMiddlewareDenial(r, server, identity)
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API keys cannot join organisations"})
 						return
 					}
@@ -219,6 +221,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 				} else if identity.IsAPIKey {
 					// API Key org check
 					if org.ID != identity.OrgID {
+						recordMiddlewareDenial(r, server, identity)
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key does not belong to this organisation"})
 						return
 					}
@@ -226,6 +229,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 
 					// App-scoped keys cannot access org-level routes (routes where appName is empty)
 					if len(identity.ApplicationNames) > 0 && targetAppName == "" {
+						recordMiddlewareDenial(r, server, identity)
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key is scoped to specific applications and cannot access organization-level resources"})
 						return
 					}
@@ -236,6 +240,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						Username:       identity.Username,
 					})
 					if err != nil {
+						recordMiddlewareDenial(r, server, identity)
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "User is not a member of this organisation"})
 						return
 					}
@@ -268,6 +273,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 								}
 							}
 							if !allowed {
+								recordMiddlewareDenial(r, server, identity)
 								problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "API key does not have access to this application"})
 								return
 							}
@@ -277,6 +283,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					if targetAppName == "" {
 						if !identity.IsAPIKey {
 							if !identity.IsAdmin && identity.Role != auth.RoleAdmin && identity.Role != auth.RoleOperator {
+								recordMiddlewareDenial(r, server, identity)
 								problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Organisation-level resources require admin or operator role"})
 								return
 							}
@@ -293,6 +300,7 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 
 					hasPerm := auth.HasPermission(identity.Permissions, reqPerm)
 					if !hasPerm && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
+						recordMiddlewareDenial(r, server, identity)
 						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + reqPerm})
 						return
 					}
@@ -322,7 +330,8 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 				}
 			}
 
-			ctx := auth.WithIdentity(r.Context(), identity)
+			ctx := StashSourceIP(r.Context(), getRealIPFromHeaders(r.Header.Get("X-Forwarded-For"), r.RemoteAddr))
+			ctx = auth.WithIdentity(ctx, identity)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

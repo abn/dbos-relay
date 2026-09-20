@@ -241,6 +241,41 @@ func (m *memoryStore) UpsertOrganisation(_ context.Context, name string) (storeg
 	return org, nil
 }
 
+func (m *memoryStore) ListAllOrganisations(_ context.Context) ([]storegen.Organisation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []storegen.Organisation
+	for _, org := range m.orgs {
+		out = append(out, org)
+	}
+	return out, nil
+}
+
+func (m *memoryStore) UpdateOrganisation(_ context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for name, org := range m.orgs {
+		if org.ID == arg.ID {
+			delete(m.orgs, name)
+			delete(m.orgsByID, org.ID)
+			if arg.Name != nil {
+				org.Name = *arg.Name
+			}
+			if arg.AuditLogRetentionDays != nil {
+				org.AuditLogRetentionDays = *arg.AuditLogRetentionDays
+			}
+			m.orgs[org.Name] = org
+			m.orgsByID[org.ID] = org
+			return org, nil
+		}
+	}
+	return storegen.Organisation{}, fmt.Errorf("org not found: %w", pgx.ErrNoRows)
+}
+
+func (m *memoryStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.DeleteExpiredAuditLogsParams) (int64, error) {
+	return 0, nil
+}
+
 func (m *memoryStore) GetApplicationByName(_ context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -645,11 +680,47 @@ func (m *memoryStore) ListAuditLogs(_ context.Context, arg storegen.ListAuditLog
 	defer m.mu.Unlock()
 	var res []storegen.AuditLog
 	for _, entry := range m.auditLogs {
-		if entry.OrganisationID == arg.OrganisationID {
-			res = append(res, entry)
+		if entry.OrganisationID != arg.OrganisationID {
+			continue
 		}
+		if arg.Operation != nil && entry.Action != *arg.Operation {
+			continue
+		}
+		if arg.Subject != nil && !matchAuditSubject(entry, *arg.Subject) {
+			continue
+		}
+		if arg.Target != nil && !matchAuditTarget(entry, *arg.Target) {
+			continue
+		}
+		res = append(res, entry)
+	}
+	if arg.Offset > 0 && int(arg.Offset) < len(res) {
+		res = res[arg.Offset:]
+	}
+	if arg.Limit > 0 && int(arg.Limit) < len(res) {
+		res = res[:arg.Limit]
 	}
 	return res, nil
+}
+
+func matchAuditSubject(entry storegen.AuditLog, subject string) bool {
+	if entry.Username == subject {
+		return true
+	}
+	var details map[string]any
+	if err := json.Unmarshal(entry.Details, &details); err != nil {
+		return false
+	}
+	return details["subject_display"] == subject || details["subject_id"] == subject
+}
+
+func matchAuditTarget(entry storegen.AuditLog, target string) bool {
+	var details map[string]any
+	if err := json.Unmarshal(entry.Details, &details); err != nil {
+		return false
+	}
+	tID, _ := details["target_id"].(string)
+	return tID != "" && tID == target
 }
 
 func formatUUID(u pgtype.UUID) string {

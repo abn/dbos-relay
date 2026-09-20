@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,6 +77,22 @@ func TestMigrateCLIIntegration(t *testing.T) {
 	})
 
 	t.Run("migrate down and force", func(t *testing.T) {
+		// Read the current schema version so the round-trip below
+		// stays valid as migrations are added.
+		cmdVer := newMigrateCommand()
+		bufVer := new(bytes.Buffer)
+		cmdVer.SetOut(bufVer)
+		cmdVer.SetErr(bufVer)
+		cmdVer.SetArgs([]string{"status", "--database-url", dbURL})
+
+		if err := cmdVer.Execute(); err != nil {
+			t.Fatalf("migrate status failed: %v", err)
+		}
+		var current int
+		if _, err := fmt.Sscanf(bufVer.String(), "version=%d dirty=false", &current); err != nil || current < 1 {
+			t.Fatalf("unexpected status output: %q", bufVer.String())
+		}
+
 		cmdDown := newMigrateCommand()
 		bufDown := new(bytes.Buffer)
 		cmdDown.SetOut(bufDown)
@@ -89,13 +107,13 @@ func TestMigrateCLIIntegration(t *testing.T) {
 		bufForce := new(bytes.Buffer)
 		cmdForce.SetOut(bufForce)
 		cmdForce.SetErr(bufForce)
-		cmdForce.SetArgs([]string{"force", "--version", "4", "--confirm", "--database-url", dbURL})
+		cmdForce.SetArgs([]string{"force", "--version", strconv.Itoa(current - 1), "--confirm", "--database-url", dbURL})
 
 		if err := cmdForce.Execute(); err != nil {
 			t.Fatalf("migrate force failed: %v", err)
 		}
 
-		// Re-apply migration up to restore clean schema version 5
+		// Re-apply migration up to restore the clean schema version
 		cmdUp := newMigrateCommand()
 		bufUp := new(bytes.Buffer)
 		cmdUp.SetOut(bufUp)
@@ -106,7 +124,7 @@ func TestMigrateCLIIntegration(t *testing.T) {
 			t.Fatalf("migrate up after force failed: %v", err)
 		}
 
-		// Verify status now shows version 5 dirty false
+		// Verify status now shows the restored version dirty false
 		cmdStatus := newMigrateCommand()
 		bufStatus := new(bytes.Buffer)
 		cmdStatus.SetOut(bufStatus)
@@ -116,8 +134,8 @@ func TestMigrateCLIIntegration(t *testing.T) {
 		if err := cmdStatus.Execute(); err != nil {
 			t.Fatalf("migrate status after force failed: %v", err)
 		}
-		if !strings.Contains(bufStatus.String(), "version=5 dirty=false") {
-			t.Fatalf("expected version=5 dirty=false, got: %s", bufStatus.String())
+		if want := fmt.Sprintf("version=%d dirty=false", current); !strings.Contains(bufStatus.String(), want) {
+			t.Fatalf("expected %s, got: %s", want, bufStatus.String())
 		}
 	})
 

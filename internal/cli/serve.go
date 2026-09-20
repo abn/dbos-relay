@@ -123,6 +123,10 @@ func newServeCommand() *cobra.Command {
 			stopAlerts := alertEvaluator.Start(ctx, 15*time.Second)
 			defer stopAlerts()
 
+			auditSweeper := api.NewAuditRetentionSweeper(s.Queries(), logger)
+			stopAuditSweep := auditSweeper.Start(ctx, 0)
+			defer stopAuditSweep()
+
 			port := 8090
 			if _, pStr, err := net.SplitHostPort(cfg.ListenAddr); err == nil {
 				if p, err := strconv.Atoi(pStr); err == nil {

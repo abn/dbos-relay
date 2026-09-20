@@ -32,23 +32,27 @@ func (s *Server) CancelWorkflow(ctx context.Context, request gen.CancelWorkflowR
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowCancel, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	cancelRes, ok := res.(*protocol.CancelWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowCancel, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if cancelRes.ErrorMessage != nil && *cancelRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowCancel, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.CancelWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *cancelRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowCancel, auditStatusSuccess, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 	return gen.CancelWorkflow204Response{}, nil
 }
 
@@ -56,7 +60,13 @@ func (s *Server) CancelWorkflow(ctx context.Context, request gen.CancelWorkflowR
 func (s *Server) BulkCancelWorkflows(ctx context.Context, request gen.BulkCancelWorkflowsRequestObject) (gen.BulkCancelWorkflowsResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 
+	bulkIDs := []string{}
+	if request.Body != nil && request.Body.WorkflowIds != nil {
+		bulkIDs = request.Body.WorkflowIds
+	}
+
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkCancel, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
@@ -80,23 +90,27 @@ func (s *Server) BulkCancelWorkflows(ctx context.Context, request gen.BulkCancel
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkCancel, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	cancelRes, ok := res.(*protocol.CancelWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkCancel, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if cancelRes.ErrorMessage != nil && *cancelRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkCancel, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkCancelWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *cancelRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkCancel, auditStatusSuccess, "", "", map[string]any{"workflow_ids": bulkIDs})
 	return gen.BulkCancelWorkflows204Response{}, nil
 }
 
@@ -121,23 +135,27 @@ func (s *Server) ResumeWorkflow(ctx context.Context, request gen.ResumeWorkflowR
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowResume, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	resumeRes, ok := res.(*protocol.ResumeWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowResume, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if resumeRes.ErrorMessage != nil && *resumeRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowResume, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *resumeRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowResume, auditStatusSuccess, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 	return gen.ResumeWorkflow204Response{}, nil
 }
 
@@ -145,7 +163,13 @@ func (s *Server) ResumeWorkflow(ctx context.Context, request gen.ResumeWorkflowR
 func (s *Server) BulkResumeWorkflows(ctx context.Context, request gen.BulkResumeWorkflowsRequestObject) (gen.BulkResumeWorkflowsResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 
+	bulkIDs := []string{}
+	if request.Body != nil && request.Body.WorkflowIds != nil {
+		bulkIDs = request.Body.WorkflowIds
+	}
+
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkResume, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
@@ -164,23 +188,27 @@ func (s *Server) BulkResumeWorkflows(ctx context.Context, request gen.BulkResume
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkResume, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	resumeRes, ok := res.(*protocol.ResumeWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkResume, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if resumeRes.ErrorMessage != nil && *resumeRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkResume, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *resumeRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkResume, auditStatusSuccess, "", "", map[string]any{"workflow_ids": bulkIDs})
 	return gen.BulkResumeWorkflows204Response{}, nil
 }
 
@@ -205,23 +233,27 @@ func (s *Server) DeleteWorkflow(ctx context.Context, request gen.DeleteWorkflowR
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowDelete, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	delRes, ok := res.(*protocol.DeleteWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowDelete, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if delRes.ErrorMessage != nil && *delRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowDelete, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.DeleteWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *delRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowDelete, auditStatusSuccess, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 	return gen.DeleteWorkflow204Response{}, nil
 }
 
@@ -229,7 +261,13 @@ func (s *Server) DeleteWorkflow(ctx context.Context, request gen.DeleteWorkflowR
 func (s *Server) BulkDeleteWorkflows(ctx context.Context, request gen.BulkDeleteWorkflowsRequestObject) (gen.BulkDeleteWorkflowsResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 
+	bulkIDs := []string{}
+	if request.Body != nil && request.Body.WorkflowIds != nil {
+		bulkIDs = request.Body.WorkflowIds
+	}
+
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkDelete, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
@@ -253,23 +291,27 @@ func (s *Server) BulkDeleteWorkflows(ctx context.Context, request gen.BulkDelete
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkDelete, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	delRes, ok := res.(*protocol.DeleteWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkDelete, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if delRes.ErrorMessage != nil && *delRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkDelete, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkDeleteWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *delRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkDelete, auditStatusSuccess, "", "", map[string]any{"workflow_ids": bulkIDs})
 	return gen.BulkDeleteWorkflows204Response{}, nil
 }
 
@@ -316,6 +358,7 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowFork, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
@@ -325,12 +368,14 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 	}
 	forkRes, ok := res.(*protocol.ForkWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowFork, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if forkRes.ErrorMessage != nil && *forkRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowFork, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
 		return gen.ForkWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *forkRes.ErrorMessage),
@@ -340,6 +385,7 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 		resultID = *forkRes.NewWorkflowID
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowFork, auditStatusSuccess, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, map[string]any{"new_workflow_id": resultID})
 	response := gen.ForkWorkflow201JSONResponse{
 		Body: gen.ForkWorkflowOutputBody{
 			WorkflowId: resultID,
@@ -356,7 +402,13 @@ func (s *Server) ForkWorkflow(ctx context.Context, request gen.ForkWorkflowReque
 func (s *Server) BulkForkWorkflowsFromFailure(ctx context.Context, request gen.BulkForkWorkflowsFromFailureRequestObject) (gen.BulkForkWorkflowsFromFailureResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 
+	bulkIDs := []string{}
+	if request.Body != nil && request.Body.WorkflowIds != nil {
+		bulkIDs = request.Body.WorkflowIds
+	}
+
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowForkFail, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
@@ -396,22 +448,26 @@ func (s *Server) BulkForkWorkflowsFromFailure(ctx context.Context, request gen.B
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowForkFail, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	forkRes, ok := res.(*protocol.ForkFromFailureResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowForkFail, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if forkRes.ErrorMessage != nil && *forkRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowForkFail, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
 		return gen.BulkForkWorkflowsFromFailuredefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *forkRes.ErrorMessage),
 		}, nil
 	}
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowForkFail, auditStatusSuccess, "", "", map[string]any{"workflow_ids": bulkIDs, "forked_workflow_ids": forkRes.ForkedWorkflowIDs})
 	forkedIDs := forkRes.ForkedWorkflowIDs
 	if forkedIDs == nil {
 		forkedIDs = []string{}
@@ -427,6 +483,7 @@ func (s *Server) ImportWorkflow(ctx context.Context, request gen.ImportWorkflowR
 	orgName := normalizeOrg(request.OrgName)
 
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowImport, auditStatusFailure, "", "", nil)
 		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
@@ -444,22 +501,26 @@ func (s *Server) ImportWorkflow(ctx context.Context, request gen.ImportWorkflowR
 	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
 	if err != nil {
 		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowImport, auditStatusFailure, "", "", nil)
 		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
 	}
 
 	importRes, ok := res.(*protocol.ImportWorkflowResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowImport, auditStatusFailure, "", "", nil)
 		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
 		}, nil
 	}
 	if importRes.ErrorMessage != nil && *importRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowImport, auditStatusFailure, "", "", nil)
 		return gen.ImportWorkflowdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *importRes.ErrorMessage),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowImport, auditStatusSuccess, "", "", nil)
 	return gen.ImportWorkflow201Response{}, nil
 }

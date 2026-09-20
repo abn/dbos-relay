@@ -25,6 +25,7 @@ type Querier interface {
 	DeleteApplication(ctx context.Context, arg DeleteApplicationParams) (Application, error)
 	DeleteDomainClaim(ctx context.Context, arg DeleteDomainClaimParams) (DomainClaim, error)
 	DeleteExecutor(ctx context.Context, arg DeleteExecutorParams) error
+	DeleteExpiredAuditLogs(ctx context.Context, arg DeleteExpiredAuditLogsParams) (int64, error)
 	DeleteInstance(ctx context.Context, id pgtype.UUID) error
 	DeleteRole(ctx context.Context, arg DeleteRoleParams) (Role, error)
 	DeleteStaleInstances(ctx context.Context, heartbeatAt pgtype.Timestamptz) (int64, error)
@@ -50,6 +51,7 @@ type Querier interface {
 	ListAPIKeys(ctx context.Context, organisationID pgtype.UUID) ([]ApiKey, error)
 	ListAlertingRulesByApplication(ctx context.Context, applicationID pgtype.UUID) ([]AlertingRule, error)
 	ListAllApplications(ctx context.Context) ([]Application, error)
+	ListAllOrganisations(ctx context.Context) ([]Organisation, error)
 	ListApplicationVersionsDistinct(ctx context.Context, applicationID pgtype.UUID) ([]ListApplicationVersionsDistinctRow, error)
 	ListApplicationsByOrganisation(ctx context.Context, organisationID pgtype.UUID) ([]Application, error)
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
@@ -71,6 +73,7 @@ type Querier interface {
 	TouchAlertRuleLastFiredAtomic(ctx context.Context, arg TouchAlertRuleLastFiredAtomicParams) (AlertingRule, error)
 	TouchExecutorLastSeen(ctx context.Context, arg TouchExecutorLastSeenParams) error
 	UpdateApplicationSettings(ctx context.Context, arg UpdateApplicationSettingsParams) (Application, error)
+	UpdateOrganisation(ctx context.Context, arg UpdateOrganisationParams) (Organisation, error)
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (Application, error)
 	UpsertExecutor(ctx context.Context, arg UpsertExecutorParams) (Executor, error)
 	UpsertInstance(ctx context.Context, arg UpsertInstanceParams) (Instance, error)

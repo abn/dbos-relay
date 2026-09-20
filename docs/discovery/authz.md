@@ -63,9 +63,9 @@ All specifications in this document are derived from permitted sources:
 Summary of permissions, default roles, application scoping, and key format
 confirmed from public documentation and client source:
 
-1. **Permission list**: `application.read`, `application.write`, and
-   `websocket.connect` form the grantable permission catalog exposed by
-   `GET /v2/orgs/{orgName}/permissions`.
+1. **Permission list**: `application.read`, `application.write`,
+   `websocket.connect`, and `metric.read` form the grantable permission
+   catalog exposed by `GET /v2/orgs/{orgName}/permissions`.
 2. **Default roles**: `admin`, `operator`, and `viewer` (read-only), with
    `admin` also represented as a user profile attribute (`isDbosAdmin`).
 3. **Key scoping**: Keys are scoped by organization, optionally restricted to
@@ -85,6 +85,7 @@ organization.
 | `application.read` | Application | Read-only inspection of applications, workflows, execution steps, workflow events, notifications, streams, queues, schedules, metrics, alerting rules, and autoscaling policies. Backs `dbosctl app list`, `dbosctl workflow list`, `dbosctl queue list`, and dashboard monitoring. |
 | `application.write` | Application | Mutations on application resources: registering apps, deleting apps, updating settings, cancelling workflows, resuming workflows, forking workflows, importing workflows, bulk operations (bulk-cancel, bulk-delete, bulk-resume, bulk-fork), schedule management (pause, resume, trigger, backfill), alerting rule creation and deletion, autoscaling policy modification. |
 | `websocket.connect` | Application | Establishing executor WebSocket connections to the control plane at `/websocket/{appName}/{apiKey}`. Required by runtime worker processes. |
+| `metric.read` | Application | Reading application metrics, including the Prometheus-compatible `/v1/metrics` scrape endpoint. Accepted alongside `application.read` on that endpoint. |
 
 ### Catalog endpoint
 
@@ -94,7 +95,7 @@ The permission catalog is fetched via:
 * Auth requirement: Not OAuth-gated (`x-dbos-requires-oauth: false`). Served in
   both authenticated and no-auth modes.
 * Response: JSON array of strings (`[]string`), containing the supported
-  grantable permissions: `["application.read", "application.write", "websocket.connect"]`.
+  grantable permissions: `["application.read", "application.write", "websocket.connect", "metric.read"]`.
 
 ## 3. Role hierarchy and structure
 
@@ -117,9 +118,9 @@ Defined in `openapi-3.1.json`:
 
 | Role name | `isGlobal` | Permissions granted | Purpose |
 | --- | --- | --- | --- |
-| `admin` | `true` | `application.read`, `application.write`, `websocket.connect`, plus organization administrative actions | Full administrative access. Can manage members, roles, domain claims, and API keys. Users with global administrative rights carry `isDbosAdmin: true` in `UserProfile`. |
-| `operator` | `true` | `application.read`, `application.write`, `websocket.connect` | Operational lifecycle management. Can run migrations, register apps, cancel/resume/fork workflows, manage schedules and queues, without organization membership management. |
-| `viewer` | `true` | `application.read` | Read-only inspection across applications, workflows, queues, schedules, and metrics. Cannot alter operational state or connect executors. |
+| `admin` | `true` | `application.read`, `application.write`, `websocket.connect`, `metric.read`, plus organization administrative actions | Full administrative access. Can manage members, roles, domain claims, and API keys. Users with global administrative rights carry `isDbosAdmin: true` in `UserProfile`. |
+| `operator` | `true` | `application.read`, `application.write`, `websocket.connect`, `metric.read` | Operational lifecycle management. Can run migrations, register apps, cancel/resume/fork workflows, manage schedules and queues, without organization membership management. |
+| `viewer` | `true` | `application.read`, `metric.read` | Read-only inspection across applications, workflows, queues, schedules, and metrics. Cannot alter operational state or connect executors. |
 
 ### Role assignment and execution context
 
@@ -253,9 +254,44 @@ self-hosted local deployments where no OIDC identity provider is configured.
 5. **Permissions route available**:
    * `GET /v2/orgs/{orgName}/permissions` is not OAuth-gated.
    * In no-auth mode, it responds with status `200 OK` and the standard
-     permission catalog (`["application.read", "application.write", "websocket.connect"]`).
+     permission catalog (`["application.read", "application.write", "websocket.connect", "metric.read"]`).
 6. **Local identity resolution**:
    * `dbosctl whoami` inspects the profile's auth setting (`AuthNone`).
    * Because `/v2/users/me` is not registered, `dbosctl whoami` directly renders
      the static identity without making a network request:
      `{"name": "local", "orgName": "local"}` (`whoami.go:37-41, 61-94`).
+
+## Audit log
+
+Relay records an audit entry for every mutating operation in the Conductor
+taxonomy (`https://docs.dbos.dev/production/audit-logs`): application
+registration, update, deletion, and latest-version changes; workflow cancel,
+resume, fork, fork-from-failure, delete, import, and bulk operations;
+schedule pause, resume, trigger, and backfill; alerting rule creation and
+deletion; API key creation and revocation; role creation, deletion, and
+grants; organization updates; and user joins and removals. Reads are never
+audited. Each entry records success or failure, so denied and invalid
+requests appear alongside completed mutations, except where the
+organization itself cannot be resolved (there is no scope to record
+under) and except join-secret generation, which has no upstream operation
+and is not recorded.
+
+Entries store a details envelope with the subject (`subject_type` of `user`
+or `api_key`, stable `subject_id`, and human-readable `subject_display`
+preserved after deletion), the target (`target_type` and `target_id`,
+omitted for bulk operations), the caller IP, and operation-specific
+context (`application_name`, `workflow_ids`, `permissions`,
+`applications`, `role_name`, `new_name`, `audit_log_retention_days`,
+`private_mode`). Listing (`GET /v2/orgs/{orgName}/audit-logs`) accepts
+`startTime`, `endTime`, `operation` (exact match), `subject` (matched
+against display name, stable id, and legacy username column), and `target`
+(exact target id) filters with
+`limit` (default 100, maximum 1000, larger values rejected) and `offset`
+paging, newest first.
+
+Retention defaults to 90 days and is configurable per organization between
+7 and 3650 days via `PATCH /v2/orgs/{orgName}` (`audit_log_retention_days`;
+`new_name` renames the organization). A PATCH changing nothing returns 204
+without recording an entry. Expired entries are purged hourly.
+Domain-claim mutations are recorded under `domain_claim.create` and
+`domain_claim.delete`, a Relay extension outside the upstream taxonomy.

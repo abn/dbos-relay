@@ -139,6 +139,7 @@ func (s *Server) PauseSchedule(ctx context.Context, request gen.PauseScheduleReq
 	respMsg, err := s.router.Dispatch(ctx, request.OrgName, request.AppName, req)
 	if err != nil {
 		status, errModel := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpSchedulePause, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.PauseScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -147,6 +148,7 @@ func (s *Server) PauseSchedule(ctx context.Context, request gen.PauseScheduleReq
 
 	resp, ok := respMsg.(*protocol.PauseScheduleResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpSchedulePause, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.PauseScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
@@ -155,6 +157,7 @@ func (s *Server) PauseSchedule(ctx context.Context, request gen.PauseScheduleReq
 
 	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
 		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpSchedulePause, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.PauseScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -162,12 +165,14 @@ func (s *Server) PauseSchedule(ctx context.Context, request gen.PauseScheduleReq
 	}
 
 	if !resp.Success {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpSchedulePause, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.PauseScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Schedule Pause Failed", "failed to pause schedule"),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpSchedulePause, auditStatusSuccess, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 	return gen.PauseSchedule204Response{}, nil
 }
 
@@ -184,6 +189,7 @@ func (s *Server) ResumeSchedule(ctx context.Context, request gen.ResumeScheduleR
 	respMsg, err := s.router.Dispatch(ctx, request.OrgName, request.AppName, req)
 	if err != nil {
 		status, errModel := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleResume, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.ResumeScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -192,6 +198,7 @@ func (s *Server) ResumeSchedule(ctx context.Context, request gen.ResumeScheduleR
 
 	resp, ok := respMsg.(*protocol.ResumeScheduleResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleResume, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.ResumeScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
@@ -200,6 +207,7 @@ func (s *Server) ResumeSchedule(ctx context.Context, request gen.ResumeScheduleR
 
 	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
 		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleResume, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.ResumeScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -207,12 +215,14 @@ func (s *Server) ResumeSchedule(ctx context.Context, request gen.ResumeScheduleR
 	}
 
 	if !resp.Success {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleResume, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.ResumeScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Schedule Resume Failed", "failed to resume schedule"),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleResume, auditStatusSuccess, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 	return gen.ResumeSchedule204Response{}, nil
 }
 
@@ -229,6 +239,7 @@ func (s *Server) TriggerSchedule(ctx context.Context, request gen.TriggerSchedul
 	respMsg, err := s.router.Dispatch(ctx, request.OrgName, request.AppName, req)
 	if err != nil {
 		status, errModel := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleTrigger, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.TriggerScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -237,6 +248,7 @@ func (s *Server) TriggerSchedule(ctx context.Context, request gen.TriggerSchedul
 
 	resp, ok := respMsg.(*protocol.TriggerScheduleResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleTrigger, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.TriggerScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
@@ -245,6 +257,7 @@ func (s *Server) TriggerSchedule(ctx context.Context, request gen.TriggerSchedul
 
 	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
 		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleTrigger, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.TriggerScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -256,12 +269,14 @@ func (s *Server) TriggerSchedule(ctx context.Context, request gen.TriggerSchedul
 		wfID = *resp.WorkflowID
 	}
 	if wfID == "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleTrigger, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.TriggerScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Trigger Schedule Failed", "no workflow id returned for triggered schedule"),
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleTrigger, auditStatusSuccess, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 	loc := fmt.Sprintf("/v2/orgs/%s/apps/%s/workflows/%s", request.OrgName, request.AppName, wfID)
 	return gen.TriggerSchedule201JSONResponse{
 		Body: gen.TriggerOutputBody{
@@ -276,6 +291,7 @@ func (s *Server) TriggerSchedule(ctx context.Context, request gen.TriggerSchedul
 // BackfillSchedule triggers backfill workflow runs for a schedule across a time window.
 func (s *Server) BackfillSchedule(ctx context.Context, request gen.BackfillScheduleRequestObject) (gen.BackfillScheduleResponseObject, error) {
 	if request.Body == nil {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleBackfill, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Invalid Request", "request body is required"),
@@ -295,6 +311,7 @@ func (s *Server) BackfillSchedule(ctx context.Context, request gen.BackfillSched
 	respMsg, err := s.router.Dispatch(ctx, request.OrgName, request.AppName, req)
 	if err != nil {
 		status, errModel := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleBackfill, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
@@ -303,6 +320,7 @@ func (s *Server) BackfillSchedule(ctx context.Context, request gen.BackfillSched
 
 	resp, ok := respMsg.(*protocol.BackfillScheduleResponse)
 	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleBackfill, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
@@ -311,12 +329,14 @@ func (s *Server) BackfillSchedule(ctx context.Context, request gen.BackfillSched
 
 	if resp.ErrorMessage != nil && *resp.ErrorMessage != "" {
 		status, errModel := handleEnvelopeError(resp.ErrorMessage)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleBackfill, auditStatusFailure, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 		return gen.BackfillScheduledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: status,
 			Body:       errModel,
 		}, nil
 	}
 
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpScheduleBackfill, auditStatusSuccess, string(gen.AuditTargetTypeSchedule), request.ScheduleName, nil)
 	ids := resp.WorkflowIDs
 	if ids == nil {
 		ids = []string{}

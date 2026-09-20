@@ -63,6 +63,35 @@ func (m *inMemoryStore) UpsertOrganisation(_ context.Context, name string) (stor
 	return org, nil
 }
 
+func (m *inMemoryStore) ListAllOrganisations(_ context.Context) ([]storegen.Organisation, error) {
+	var out []storegen.Organisation
+	for _, org := range m.orgs {
+		out = append(out, org)
+	}
+	return out, nil
+}
+
+func (m *inMemoryStore) UpdateOrganisation(_ context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error) {
+	for name, org := range m.orgs {
+		if org.ID == arg.ID {
+			delete(m.orgs, name)
+			if arg.Name != nil {
+				org.Name = *arg.Name
+			}
+			if arg.AuditLogRetentionDays != nil {
+				org.AuditLogRetentionDays = *arg.AuditLogRetentionDays
+			}
+			m.orgs[org.Name] = org
+			return org, nil
+		}
+	}
+	return storegen.Organisation{}, fmt.Errorf("org not found")
+}
+
+func (m *inMemoryStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.DeleteExpiredAuditLogsParams) (int64, error) {
+	return 0, nil
+}
+
 func (m *inMemoryStore) GetApplicationByName(_ context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 	if app, ok := m.apps[arg.Name]; ok {
 		return app, nil

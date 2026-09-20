@@ -150,6 +150,25 @@ func (q *Queries) DeleteDomainClaim(ctx context.Context, arg DeleteDomainClaimPa
 	return i, err
 }
 
+const deleteExpiredAuditLogs = `-- name: DeleteExpiredAuditLogs :execrows
+DELETE FROM audit_logs
+WHERE organisation_id = $1
+AND created_at < $2
+`
+
+type DeleteExpiredAuditLogsParams struct {
+	OrganisationID pgtype.UUID
+	Cutoff         pgtype.Timestamptz
+}
+
+func (q *Queries) DeleteExpiredAuditLogs(ctx context.Context, arg DeleteExpiredAuditLogsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredAuditLogs, arg.OrganisationID, arg.Cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteRole = `-- name: DeleteRole :one
 DELETE FROM roles
 WHERE organisation_id = $1 AND name = $2 AND is_global = false
@@ -341,8 +360,10 @@ WHERE organisation_id = $1
 AND ($2::timestamptz IS NULL OR created_at >= $2)
 AND ($3::timestamptz IS NULL OR created_at <= $3)
 AND ($4::text IS NULL OR action = $4)
-AND ($5::text IS NULL OR username = $5)
-AND ($6::text IS NULL OR details->>'target' = $6)
+AND ($5::text IS NULL OR username = $5
+    OR details->>'subject_display' = $5
+    OR details->>'subject_id' = $5)
+AND ($6::text IS NULL OR details->>'target_id' = $6)
 ORDER BY created_at DESC
 LIMIT $8::bigint OFFSET $7::bigint
 `
