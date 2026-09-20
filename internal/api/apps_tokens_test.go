@@ -825,8 +825,8 @@ func TestTokensAndPermissions(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected ListPermissions200JSONResponse, got %T", resp)
 		}
-		if len(perms) != 3 {
-			t.Fatalf("expected 3 permissions, got %d", len(perms))
+		if len(perms) != 4 {
+			t.Fatalf("expected 4 permissions, got %d", len(perms))
 		}
 	})
 }

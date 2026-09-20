@@ -194,7 +194,9 @@ func newServeCommand() *cobra.Command {
 			mux.Handle("/", dashHandler)
 			mux.Handle("/websocket/", h)
 			mux.Handle("/internal/v1/forward/", forwardHandler)
-			mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metrics.NewHandler(s.Queries())))
+			metricsHandler := metrics.NewHandlerWithDispatcher(s.Queries(), h)
+			metricsHandler.SetLogger(logger)
+			mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metricsHandler))
 
 			loggedHandler := loggingMiddleware(logger, mux)
 
