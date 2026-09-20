@@ -6,6 +6,7 @@ const (
 	PermApplicationRead  = "application.read"
 	PermApplicationWrite = "application.write"
 	PermWebsocketConnect = "websocket.connect"
+	PermMetricRead       = "metric.read"
 
 	// Standard global roles.
 	RoleAdmin    = "admin"
@@ -19,6 +20,7 @@ func CatalogPermissions() []string {
 		PermApplicationRead,
 		PermApplicationWrite,
 		PermWebsocketConnect,
+		PermMetricRead,
 	}
 }
 
@@ -26,9 +28,9 @@ func CatalogPermissions() []string {
 func RolePermissions(role string) []string {
 	switch role {
 	case RoleAdmin, RoleOperator:
-		return []string{PermApplicationRead, PermApplicationWrite, PermWebsocketConnect}
+		return []string{PermApplicationRead, PermApplicationWrite, PermWebsocketConnect, PermMetricRead}
 	case RoleViewer:
-		return []string{PermApplicationRead}
+		return []string{PermApplicationRead, PermMetricRead}
 	default:
 		return []string{PermApplicationRead}
 	}

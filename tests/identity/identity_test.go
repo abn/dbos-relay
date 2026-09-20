@@ -190,13 +190,7 @@ func newMemoryStore() *memoryStore {
 	}
 	// Seed global roles
 	for _, rName := range []string{auth.RoleAdmin, auth.RoleOperator, auth.RoleViewer} {
-		var perms []string
-		switch rName {
-		case auth.RoleAdmin, auth.RoleOperator:
-			perms = []string{auth.PermApplicationRead, auth.PermApplicationWrite, auth.PermWebsocketConnect}
-		case auth.RoleViewer:
-			perms = []string{auth.PermApplicationRead}
-		}
+		perms := auth.RolePermissions(rName)
 		m.roles["global:"+rName] = storegen.Role{
 			ID:          pgtype.UUID{Bytes: [16]byte{0, 0, 0, byte(len(m.roles) + 1)}, Valid: true},
 			Name:        rName,

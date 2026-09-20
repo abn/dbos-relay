@@ -3,6 +3,10 @@
 This log tracks the evolution of the knowledge base and architectural capabilities:
 page additions, deprecations, and structural refactors.
 
+## Unreleased
+
+* **Update**: Implemented full Conductor metrics parity on `/v1/metrics` via executor aggregate dispatch (`get_workflow_aggregates`, `get_step_aggregates`), covering all workflow and step rate, count, oldest-timestamp, and windowed-max families with clock-aligned minute windows, `applications`/`workflow_names`/`metrics` filters, and `metric.read` permission acceptance. See [Metrics, alerting, and HA peer forwarding](discovery/metrics-alerting.md).
+
 ## 2026-09-18
 
 * **Creation**: Added software [Changelog](changelog.md) managed by Release Please in `docs/` and rendered on the documentation site, reserving it in the OKF bundle validator.
