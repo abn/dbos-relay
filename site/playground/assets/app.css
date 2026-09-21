@@ -160,6 +160,18 @@ table.data-table,
   border-color: rgba(63, 185, 80, 0.25);
 }
 
+.badge-danger {
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+  border-color: rgba(248, 81, 73, 0.25);
+}
+
+.badge-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-color: rgba(210, 153, 34, 0.25);
+}
+
 .badge-neutral {
   background: var(--bg-surface-raised);
   color: var(--text-tertiary);

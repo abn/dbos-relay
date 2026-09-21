@@ -16,6 +16,11 @@ import type {
   TokenCreated,
   ApiKey,
   WorkflowSearchQuery,
+  UpdateAppInput,
+  AutoscalePolicy,
+  QueueAutoscale,
+  AuditLogEntry,
+  AuditLogQuery,
 } from "./types.js";
 
 export class ApiClient {
@@ -286,6 +291,67 @@ export class ApiClient {
     await this.request(
       `/v2/orgs/${encodeURIComponent(orgName)}/tokens/${encodeURIComponent(name)}`,
       { method: "DELETE" }
+    );
+  }
+
+  // Application settings (retention, timeouts, private mode)
+  async updateApp(orgName: string, appName: string, input: UpdateAppInput): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }
+    );
+  }
+
+  // Autoscaling policies and recommendations
+  async getAutoscalingPolicy(orgName: string, appName: string): Promise<{ policy: AutoscalePolicy }> {
+    return this.request<{ policy: AutoscalePolicy }>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscaling-policy`
+    );
+  }
+
+  async setAutoscalingPolicy(
+    orgName: string,
+    appName: string,
+    policy: AutoscalePolicy
+  ): Promise<{ policy: AutoscalePolicy }> {
+    return this.request<{ policy: AutoscalePolicy }>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscaling-policy`,
+      {
+        method: "PUT",
+        body: JSON.stringify(policy),
+      }
+    );
+  }
+
+  async deleteAutoscalingPolicy(orgName: string, appName: string): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscaling-policy`,
+      { method: "DELETE" }
+    );
+  }
+
+  async getAutoscale(orgName: string, appName: string): Promise<QueueAutoscale[]> {
+    return this.request<QueueAutoscale[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscale`
+    );
+  }
+
+  // Audit log
+  async listAuditLogs(orgName: string, query: AuditLogQuery = {}): Promise<AuditLogEntry[]> {
+    const params = new URLSearchParams();
+    if (query.startTime) params.set("startTime", query.startTime);
+    if (query.endTime) params.set("endTime", query.endTime);
+    if (query.operation) params.set("operation", query.operation);
+    if (query.subject) params.set("subject", query.subject);
+    if (query.target) params.set("target", query.target);
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return this.request<AuditLogEntry[]>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/audit-logs${qs ? `?${qs}` : ""}`
     );
   }
 
