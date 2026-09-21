@@ -108,12 +108,12 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 	}
 
 	if callerIdentity != nil && !isCallerAdmin {
-		// Non-admin caller must have application.write to mint tokens
-		if !auth.HasPermission(callerIdentity.Permissions, auth.PermApplicationWrite) {
+		// Non-admin caller must have token.write to mint tokens
+		if !auth.HasPermission(callerIdentity.Permissions, auth.PermTokenWrite) {
 			s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 			return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 				StatusCode: http.StatusForbidden,
-				Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: application.write"),
+				Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: token.write"),
 			}, nil
 		}
 

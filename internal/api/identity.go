@@ -38,6 +38,20 @@ func isAdmin(ctx context.Context) bool {
 	return identity.Role == auth.RoleAdmin
 }
 
+// requireOrgWrite reports whether the caller may perform organization
+// management. The bootstrap admin always passes; everyone else needs the
+// organization.write permission.
+func requireOrgWrite(ctx context.Context) bool {
+	if isAdmin(ctx) {
+		return true
+	}
+	identity, ok := auth.IdentityFromContext(ctx)
+	if !ok || identity == nil {
+		return false
+	}
+	return auth.HasPermission(identity.Permissions, auth.PermOrgWrite)
+}
+
 func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserRequestObject) (gen.GetCurrentUserResponseObject, error) {
 	identity, ok := auth.IdentityFromContext(ctx)
 	if !ok || identity == nil {
@@ -56,7 +70,10 @@ func (s *Server) handleGetCurrentUser(ctx context.Context, _ gen.GetCurrentUserR
 		}
 		perms := identity.Permissions
 		if len(perms) == 0 {
-			perms = auth.CatalogPermissions()
+			// Empty-permission keys inherit the viewer read set. This is
+			// the pre-catalog default narrowed to reads; full access
+			// requires explicit grants.
+			perms = auth.RolePermissions(auth.RoleViewer)
 		}
 
 		orgName := identity.OrgName
@@ -238,8 +255,8 @@ func (s *Server) handleUpdateOrg(ctx context.Context, request gen.UpdateOrgReque
 		}
 	}
 
-	if !isAdmin(ctx) {
-		return fail(request.OrgName, "Admin role required", http.StatusForbidden, "Forbidden"), nil
+	if !requireOrgWrite(ctx) {
+		return fail(request.OrgName, "Missing required permission: organization.write", http.StatusForbidden, "Forbidden"), nil
 	}
 
 	var newName *string
@@ -455,11 +472,11 @@ func (s *Server) handleListMembers(ctx context.Context, request gen.ListMembersR
 }
 
 func (s *Server) handleRemoveMember(ctx context.Context, request gen.RemoveMemberRequestObject) (gen.RemoveMemberResponseObject, error) {
-	if !isAdmin(ctx) {
+	if !requireOrgWrite(ctx) {
 		s.auditOperation(ctx, request.OrgName, "", auditOpUserRemove, auditStatusFailure, string(gen.AuditTargetTypeUser), request.Username, nil)
 		return gen.RemoveMemberdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
-			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: organization.write"),
 		}, nil
 	}
 
@@ -503,11 +520,11 @@ func (s *Server) handleRemoveMember(ctx context.Context, request gen.RemoveMembe
 }
 
 func (s *Server) handleGrantRole(ctx context.Context, request gen.GrantRoleRequestObject) (gen.GrantRoleResponseObject, error) {
-	if !isAdmin(ctx) {
+	if !requireOrgWrite(ctx) {
 		s.auditOperation(ctx, request.OrgName, "", auditOpRoleGrant, auditStatusFailure, string(gen.AuditTargetTypeUser), request.Username, map[string]any{"role_name": request.RoleName})
 		return gen.GrantRoledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
-			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: organization.write"),
 		}, nil
 	}
 
@@ -576,11 +593,11 @@ func (s *Server) handleListRoles(ctx context.Context, request gen.ListRolesReque
 }
 
 func (s *Server) handleCreateRole(ctx context.Context, request gen.CreateRoleRequestObject) (gen.CreateRoleResponseObject, error) {
-	if !isAdmin(ctx) {
+	if !requireOrgWrite(ctx) {
 		s.auditOperation(ctx, request.OrgName, "", auditOpRoleCreate, auditStatusFailure, string(gen.AuditTargetTypeRole), roleNameForAudit(request.Body), nil)
 		return gen.CreateRoledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
-			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: organization.write"),
 		}, nil
 	}
 
@@ -642,11 +659,11 @@ func (s *Server) handleCreateRole(ctx context.Context, request gen.CreateRoleReq
 }
 
 func (s *Server) handleDeleteRole(ctx context.Context, request gen.DeleteRoleRequestObject) (gen.DeleteRoleResponseObject, error) {
-	if !isAdmin(ctx) {
+	if !requireOrgWrite(ctx) {
 		s.auditOperation(ctx, request.OrgName, "", auditOpRoleDelete, auditStatusFailure, string(gen.AuditTargetTypeRole), request.RoleName, nil)
 		return gen.DeleteRoledefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
-			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: organization.write"),
 		}, nil
 	}
 
@@ -718,11 +735,11 @@ func (s *Server) handleListDomainClaims(ctx context.Context, request gen.ListDom
 }
 
 func (s *Server) handleRequestDomainClaim(ctx context.Context, request gen.RequestDomainClaimRequestObject) (gen.RequestDomainClaimResponseObject, error) {
-	if !isAdmin(ctx) {
+	if !requireOrgWrite(ctx) {
 		s.auditOperation(ctx, request.OrgName, "", auditOpDomainClaimCreate, auditStatusFailure, string(gen.AuditTargetTypeDomainClaim), domainForAudit(request.Body), nil)
 		return gen.RequestDomainClaimdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
-			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: organization.write"),
 		}, nil
 	}
 
@@ -773,11 +790,11 @@ func (s *Server) handleRequestDomainClaim(ctx context.Context, request gen.Reque
 }
 
 func (s *Server) handleReleaseDomainClaim(ctx context.Context, request gen.ReleaseDomainClaimRequestObject) (gen.ReleaseDomainClaimResponseObject, error) {
-	if !isAdmin(ctx) {
+	if !requireOrgWrite(ctx) {
 		s.auditOperation(ctx, request.OrgName, "", auditOpDomainClaimDelete, auditStatusFailure, string(gen.AuditTargetTypeDomainClaim), request.Domain, nil)
 		return gen.ReleaseDomainClaimdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusForbidden,
-			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Admin role required"),
+			Body:       MakeErrorModel(http.StatusForbidden, "Forbidden", "Missing required permission: organization.write"),
 		}, nil
 	}
 

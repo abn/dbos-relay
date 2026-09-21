@@ -734,13 +734,13 @@ func TestTokensAndPermissions(t *testing.T) {
 		}
 		srv := api.NewServer(nil, store, nil)
 
-		// Context with an app-scoped caller that has application.write for app-1 only
+		// Context with an app-scoped caller that can mint tokens for app-1 only
 		restrictedCtx := auth.WithIdentity(ctx, &auth.UserIdentity{
 			Subject:          "user-restricted",
 			IsAdmin:          false,
 			Role:             auth.RoleOperator,
 			ApplicationNames: []string{"app-1"},
-			Permissions:      []string{auth.PermApplicationWrite, auth.PermApplicationRead},
+			Permissions:      []string{auth.PermTokenWrite, auth.PermApplicationRead},
 		})
 
 		// 1. App-scoped caller cannot mint unscoped tokens (empty appNames)
@@ -858,8 +858,14 @@ func TestTokensAndPermissions(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected ListPermissions200JSONResponse, got %T", resp)
 		}
-		if len(perms) != 4 {
-			t.Fatalf("expected 4 permissions, got %d", len(perms))
+		want := auth.CatalogPermissions()
+		if len(perms) != len(want) {
+			t.Fatalf("expected %d permissions, got %d: %v", len(want), len(perms), []string(perms))
+		}
+		for i := range want {
+			if perms[i] != want[i] {
+				t.Fatalf("perm[%d] = %q, want %q (full: %v)", i, perms[i], want[i], []string(perms))
+			}
 		}
 	})
 }

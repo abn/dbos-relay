@@ -16,6 +16,74 @@ import (
 	storegen "github.com/abn/relay/internal/store/gen"
 )
 
+// hasMetricsSuffix reports whether path is a per-app metrics route of the
+// form .../apps/{app}/metrics, tolerating a trailing slash.
+func hasMetricsSuffix(path string) bool {
+	trimmed := strings.TrimSuffix(path, "/")
+	segs := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(segs) < 6 || segs[0] != "v2" || segs[1] != "orgs" {
+		return false
+	}
+	// Expect v2/orgs/{org}/apps/{app}/metrics exactly.
+	return segs[3] == "apps" && segs[5] == "metrics" && len(segs) == 6
+}
+
+// orgLevelRequiredPerm maps an organization-level route (no app name) to
+// the permission it exercises, or "" when the route needs no permission
+// check here. Application registry routes keep application.read/write,
+// token routes keep token.read/write, and the permissions catalog stays
+// open (auth-only); join is genuinely open subject to its secret while
+// secrets POST is restricted at the handler (handleGenerateSecret);
+// everything else under an org requires the organization permissions.
+func orgLevelRequiredPerm(method, path string) string {
+	trimmed := strings.TrimSuffix(path, "/")
+	segs := strings.Split(strings.Trim(trimmed, "/"), "/")
+	if len(segs) < 3 || segs[0] != "v2" || segs[1] != "orgs" {
+		return ""
+	}
+	rest := segs[2:]
+	if len(rest) == 1 {
+		if method == http.MethodGet {
+			return auth.PermOrgRead
+		}
+		return auth.PermOrgWrite
+	}
+	switch rest[1] {
+	case "apps":
+		if method == http.MethodGet {
+			return auth.PermApplicationRead
+		}
+		return auth.PermApplicationWrite
+	case "tokens":
+		if method == http.MethodGet {
+			return auth.PermTokenRead
+		}
+		return auth.PermTokenWrite
+	case "permissions":
+		// Open catalog: any authenticated caller may list grantable
+		// permissions.
+		return ""
+	case "join":
+		// Genuinely open subject to the join secret; API keys are
+		// rejected explicitly in the middleware.
+		return ""
+	case "secrets":
+		// Restricted at the handler by requireOrgWrite
+		// (handleGenerateSecret); no middleware permission check.
+		return ""
+	case "audit-logs", "members", "roles", "domain-claims":
+		if method == http.MethodGet {
+			return auth.PermOrgRead
+		}
+		return auth.PermOrgWrite
+	default:
+		if method == http.MethodGet {
+			return auth.PermOrgRead
+		}
+		return auth.PermOrgWrite
+	}
+}
+
 // AuthMiddleware creates an HTTP middleware that extracts and validates bearer tokens,
 // and enforces tenant and application scoping based on the request path.
 func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
@@ -280,32 +348,55 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 						}
 					}
 
-					if targetAppName == "" {
-						if !identity.IsAPIKey {
-							if !identity.IsAdmin && identity.Role != auth.RoleAdmin && identity.Role != auth.RoleOperator {
-								recordMiddlewareDenial(r, server, identity)
-								problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Organisation-level resources require admin or operator role"})
-								return
-							}
+					if targetAppName == "" && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
+						// Organization-level routes require the permission
+						// the route exercises. Application and token routes
+						// keep their own permissions; org management,
+						// membership, roles, and audit logs require the
+						// organization permissions. This applies to API keys
+						// as well as OIDC users. The bootstrap admin role
+						// always passes.
+						required := orgLevelRequiredPerm(r.Method, r.URL.Path)
+						if required != "" && !auth.HasPermission(identity.Permissions, required) {
+							recordMiddlewareDenial(r, server, identity)
+							problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + required})
+							return
 						}
-					}
+						// Gate 1 is the verdict for org-level routes; the
+						// app-permission check below applies to app-scoped
+						// routes only.
+					} else if targetAppName != "" {
+						// Check permissions
+						reqPerm := ""
+						if r.Method == http.MethodGet {
+							reqPerm = auth.PermApplicationRead
+						} else {
+							reqPerm = auth.PermApplicationWrite
+						}
 
-					// Check permissions
-					reqPerm := ""
-					if r.Method == http.MethodGet {
-						reqPerm = auth.PermApplicationRead
-					} else {
-						reqPerm = auth.PermApplicationWrite
-					}
+						// Metric reads accept metric.read or application.read,
+						// matching the scrape endpoint.
+						metricsPass := false
+						if r.Method == http.MethodGet && hasMetricsSuffix(r.URL.Path) {
+							reqPerm = auth.PermMetricRead
+							metricsPass = auth.HasPermission(identity.Permissions, auth.PermMetricRead) || auth.HasPermission(identity.Permissions, auth.PermApplicationRead)
+						}
 
-					hasPerm := auth.HasPermission(identity.Permissions, reqPerm)
-					if !hasPerm && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
-						recordMiddlewareDenial(r, server, identity)
-						problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + reqPerm})
-						return
+						hasPerm := metricsPass || auth.HasPermission(identity.Permissions, reqPerm)
+						// The role-name bypass below is deliberate: the admin
+						// role is the bootstrap superuser and always passes,
+						// while everyone else is judged on permissions.
+						if !hasPerm && !identity.IsAdmin && identity.Role != auth.RoleAdmin {
+							recordMiddlewareDenial(r, server, identity)
+							problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Missing required permission: " + reqPerm})
+							return
+						}
 					}
 				}
 			} else {
+				// Global endpoints require admin privileges. This branch
+				// stays unaudited: the paths carry no org scope to record
+				// under and never map to a taxonomy operation.
 				if r.URL.Path != "/v2/users/me" && r.URL.Path != "/v1/metrics" && !identity.IsAdmin {
 					problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Global endpoints require admin privileges"})
 					return
