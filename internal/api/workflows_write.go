@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -9,7 +10,52 @@ import (
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/protocol"
+	"github.com/abn/relay/internal/store"
+	storegen "github.com/abn/relay/internal/store/gen"
 )
+
+// resumeVersionBlocked enforces the upstream rule that resume requires a
+// healthy executor running the application's latest version, not merely
+// any healthy executor. It reports the latest version and whether resume
+// must be refused. When no latest version is recorded, or when the store
+// cannot answer, there is no constraint to enforce and dispatch proceeds;
+// the dispatch itself then reports missing applications or executors.
+func (s *Server) resumeVersionBlocked(ctx context.Context, orgName, appName string) (string, bool) {
+	if s.store == nil {
+		return "", false
+	}
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		return "", false
+	}
+	app, err := s.store.GetApplicationByName(ctx, storegen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           appName,
+	})
+	if err != nil {
+		return "", false
+	}
+	var settings appSettings
+	if len(app.Settings) > 0 {
+		if err := json.Unmarshal(app.Settings, &settings); err != nil {
+			s.logger.Debug("ignoring corrupt application settings for resume guard", "app", appName, "error", err)
+		}
+	}
+	if settings.LatestVersion == nil || *settings.LatestVersion == "" {
+		return "", false
+	}
+	latest := *settings.LatestVersion
+	execs, err := s.store.ListExecutorsByApplication(ctx, app.ID)
+	if err != nil {
+		return "", false
+	}
+	for _, exec := range execs {
+		if store.IsLiveStatus(exec.Status) && exec.ApplicationVersion == latest {
+			return "", false
+		}
+	}
+	return latest, true
+}
 
 // CancelWorkflow cancels a running workflow.
 func (s *Server) CancelWorkflow(ctx context.Context, request gen.CancelWorkflowRequestObject) (gen.CancelWorkflowResponseObject, error) {
@@ -118,6 +164,14 @@ func (s *Server) BulkCancelWorkflows(ctx context.Context, request gen.BulkCancel
 func (s *Server) ResumeWorkflow(ctx context.Context, request gen.ResumeWorkflowRequestObject) (gen.ResumeWorkflowResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 
+	if latest, blocked := s.resumeVersionBlocked(ctx, orgName, request.AppName); blocked {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowResume, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
+		return gen.ResumeWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "no executor running latest application version "+latest+" is connected"),
+		}, nil
+	}
+
 	var queueName *string
 	if request.Body != nil {
 		queueName = request.Body.QueueName
@@ -173,6 +227,14 @@ func (s *Server) BulkResumeWorkflows(ctx context.Context, request gen.BulkResume
 		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusBadRequest,
 			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "Missing request body"),
+		}, nil
+	}
+
+	if latest, blocked := s.resumeVersionBlocked(ctx, orgName, request.AppName); blocked {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowBulkResume, auditStatusFailure, "", "", map[string]any{"workflow_ids": bulkIDs})
+		return gen.BulkResumeWorkflowsdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "no executor running latest application version "+latest+" is connected"),
 		}, nil
 	}
 
