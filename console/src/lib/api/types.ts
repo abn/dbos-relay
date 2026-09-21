@@ -221,6 +221,17 @@ export interface MetricsQuery {
   metrics?: string[];
 }
 
+export interface Role {
+  name: string;
+  isGlobal: boolean;
+  permissions: string[];
+}
+
+export interface OrgMembers {
+  orgName: string;
+  users: Record<string, Role>;
+}
+
 export type ApiKey = Token;
 
 export interface WorkflowSearchQuery {

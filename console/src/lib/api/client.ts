@@ -22,6 +22,8 @@ import type {
   AuditLogEntry,
   AuditLogQuery,
   MetricsQuery,
+  OrgMembers,
+  Role,
 } from "./types.js";
 
 export class ApiClient {
@@ -376,6 +378,47 @@ export class ApiClient {
       throw err;
     }
     return response.text();
+  }
+
+  // Roles & Members
+  async listRoles(orgName: string): Promise<Role[]> {
+    return this.request<Role[]>(`/v2/orgs/${encodeURIComponent(orgName)}/roles`);
+  }
+
+  async createRole(orgName: string, name: string, permissions: string[]): Promise<{ name: string; permissions: string[] }> {
+    return this.request<{ name: string; permissions: string[] }>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/roles`,
+      { method: "POST", body: JSON.stringify({ name, permissions }) }
+    );
+  }
+
+  async deleteRole(orgName: string, roleName: string): Promise<void> {
+    await this.request<void>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/roles/${encodeURIComponent(roleName)}`,
+      { method: "DELETE" }
+    );
+  }
+
+  async listMembers(orgName: string): Promise<OrgMembers> {
+    return this.request<OrgMembers>(`/v2/orgs/${encodeURIComponent(orgName)}/members`);
+  }
+
+  async grantMemberRole(orgName: string, username: string, roleName: string): Promise<void> {
+    await this.request<void>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/members/${encodeURIComponent(username)}/roles/${encodeURIComponent(roleName)}`,
+      { method: "PUT" }
+    );
+  }
+
+  async removeMember(orgName: string, username: string): Promise<void> {
+    await this.request<void>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/members/${encodeURIComponent(username)}`,
+      { method: "DELETE" }
+    );
+  }
+
+  async listPermissions(orgName: string): Promise<string[]> {
+    return this.request<string[]>(`/v2/orgs/${encodeURIComponent(orgName)}/permissions`);
   }
 
   // Server-Sent Events (SSE) Stream URL
