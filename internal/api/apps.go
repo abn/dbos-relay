@@ -57,6 +57,28 @@ func normalizeOrg(orgName string) string {
 	return orgName
 }
 
+// validateAppSettingsPatch rejects nonsensical retention and timeout
+// values before they persist: negative retention rows and time
+// thresholds, negative global timeouts, and non-positive executor
+// timeouts. Explicit rejection beats the old silent behavior, where a
+// stored zero was quietly coerced to the default on read. Nil fields are
+// untouched and always valid.
+func validateAppSettingsPatch(body *gen.UpdateAppJSONRequestBody) error {
+	if body.GcRowsThreshold != nil && *body.GcRowsThreshold < 0 {
+		return fmt.Errorf("gcRowsThreshold must not be negative")
+	}
+	if body.GcTimeThresholdMs != nil && *body.GcTimeThresholdMs < 0 {
+		return fmt.Errorf("gcTimeThresholdMs must not be negative")
+	}
+	if body.GlobalTimeoutMs != nil && *body.GlobalTimeoutMs < 0 {
+		return fmt.Errorf("globalTimeoutMs must not be negative")
+	}
+	if body.ExecutorTimeoutSecs != nil && *body.ExecutorTimeoutSecs <= 0 {
+		return fmt.Errorf("executorTimeoutSecs must be positive")
+	}
+	return nil
+}
+
 func mapApplication(app storegen.Application, orgID pgtype.UUID, lang *string) gen.Application {
 	var s appSettings
 	if len(app.Settings) > 0 {
@@ -346,6 +368,13 @@ func (s *Server) UpdateApp(ctx context.Context, request gen.UpdateAppRequestObje
 	}
 
 	if request.Body != nil {
+		if err := validateAppSettingsPatch(request.Body); err != nil {
+			s.auditOperation(ctx, request.OrgName, request.AppName, auditOpAppUpdate, auditStatusFailure, string(gen.AuditTargetTypeApplication), request.AppName, nil)
+			return gen.UpdateAppdefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusBadRequest,
+				Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", err.Error()),
+			}, nil
+		}
 		if request.Body.PrivateMode != nil {
 			settings.PrivateMode = *request.Body.PrivateMode
 		}
