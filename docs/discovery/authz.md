@@ -281,7 +281,10 @@ registration, update, deletion, and latest-version changes; workflow cancel,
 resume, fork, fork-from-failure, delete, import, and bulk operations;
 schedule pause, resume, trigger, and backfill; alerting rule creation and
 deletion; API key creation and revocation; role creation, deletion, and
-grants; organization updates; and user joins and removals. Reads are never
+grants; organization updates; user joins and removals; and autoscaling
+policy setting and deletion (recorded as `autoscaling_policy.set` and
+`autoscaling_policy.delete`, Relay-chosen names because the upstream
+taxonomy publishes no strings for them). Reads are never
 audited. Each entry records success or failure, so denied and invalid
 requests appear alongside completed mutations, except where the
 organization itself cannot be resolved (there is no scope to record

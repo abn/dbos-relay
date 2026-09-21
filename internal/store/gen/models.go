@@ -96,6 +96,15 @@ type AuditLog struct {
 	CreatedAt      pgtype.Timestamptz
 }
 
+type AutoscalingPolicy struct {
+	ApplicationID   pgtype.UUID
+	Queue           string
+	MaxOldVersions  *int64
+	MaxExecutorsOld *int64
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
 type DomainClaim struct {
 	ID             pgtype.UUID
 	OrganisationID pgtype.UUID

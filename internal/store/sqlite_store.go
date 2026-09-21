@@ -201,6 +201,7 @@ func (b *sqliteBackend) Truncate(ctx context.Context) error {
 		"organisation_members",
 		"users",
 		"alerting_rules",
+		"autoscaling_policies",
 		"api_keys",
 		"executors",
 		"instances",

@@ -29,6 +29,9 @@ type StoreReader interface {
 	GetAlertingRule(ctx context.Context, arg storegen.GetAlertingRuleParams) (storegen.AlertingRule, error)
 	ListAlertingRulesByApplication(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
 	DeleteAlertingRule(ctx context.Context, arg storegen.DeleteAlertingRuleParams) (int64, error)
+	GetAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (storegen.AutoscalingPolicy, error)
+	UpsertAutoscalingPolicy(ctx context.Context, arg storegen.UpsertAutoscalingPolicyParams) (storegen.AutoscalingPolicy, error)
+	DeleteAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (int64, error)
 
 	// Identity store queries
 	CreateUser(ctx context.Context, arg storegen.CreateUserParams) (storegen.User, error)

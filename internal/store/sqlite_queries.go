@@ -880,6 +880,68 @@ func (q *sqliteQueries) DeleteAlertingRule(ctx context.Context, arg gen.DeleteAl
 	return n, nil
 }
 
+// ----------------------------------------------------------------------
+// Autoscaling Policies
+// ----------------------------------------------------------------------
+
+func (q *sqliteQueries) UpsertAutoscalingPolicy(ctx context.Context, arg gen.UpsertAutoscalingPolicyParams) (gen.AutoscalingPolicy, error) {
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	row := q.db.QueryRowContext(ctx,
+		`INSERT INTO autoscaling_policies (application_id, queue, max_old_versions, max_executors_old, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (application_id) DO UPDATE SET
+		   queue = EXCLUDED.queue,
+		   max_old_versions = EXCLUDED.max_old_versions,
+		   max_executors_old = EXCLUDED.max_executors_old,
+		   updated_at = EXCLUDED.updated_at
+		 RETURNING application_id, queue, max_old_versions, max_executors_old, created_at, updated_at`,
+		uuidToText(arg.ApplicationID), arg.Queue, arg.MaxOldVersions, arg.MaxExecutorsOld, nowStr, nowStr,
+	)
+	return scanAutoscalingPolicy(row)
+}
+
+func (q *sqliteQueries) GetAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (gen.AutoscalingPolicy, error) {
+	row := q.db.QueryRowContext(ctx,
+		`SELECT application_id, queue, max_old_versions, max_executors_old, created_at, updated_at
+		 FROM autoscaling_policies WHERE application_id = ?`,
+		uuidToText(applicationID),
+	)
+	return scanAutoscalingPolicy(row)
+}
+
+func (q *sqliteQueries) DeleteAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (int64, error) {
+	res, err := q.db.ExecContext(ctx,
+		`DELETE FROM autoscaling_policies WHERE application_id = ?`,
+		uuidToText(applicationID),
+	)
+	if err != nil {
+		return 0, mapDBErr(err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+func scanAutoscalingPolicy(row *sql.Row) (gen.AutoscalingPolicy, error) {
+	var p gen.AutoscalingPolicy
+	var appStr, createdStr, updatedStr string
+	var maxOld, maxExec sql.NullInt64
+	if err := row.Scan(&appStr, &p.Queue, &maxOld, &maxExec, &createdStr, &updatedStr); err != nil {
+		return p, mapDBErr(err)
+	}
+	p.ApplicationID = textToUUID(appStr)
+	if maxOld.Valid {
+		v := maxOld.Int64
+		p.MaxOldVersions = &v
+	}
+	if maxExec.Valid {
+		v := maxExec.Int64
+		p.MaxExecutorsOld = &v
+	}
+	p.CreatedAt = textToTimestamptz(sql.NullString{String: createdStr, Valid: true})
+	p.UpdatedAt = textToTimestamptz(sql.NullString{String: updatedStr, Valid: true})
+	return p, nil
+}
+
 func (q *sqliteQueries) TouchAlertRuleLastFired(ctx context.Context, id pgtype.UUID) error {
 	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := q.db.ExecContext(ctx,

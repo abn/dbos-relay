@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api"
@@ -50,6 +51,18 @@ func (m *mockAttentionStore) UpdateOrganisation(_ context.Context, arg storegen.
 }
 
 func (m *mockAttentionStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.DeleteExpiredAuditLogsParams) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAttentionStore) GetAutoscalingPolicy(_ context.Context, _ pgtype.UUID) (storegen.AutoscalingPolicy, error) {
+	return storegen.AutoscalingPolicy{}, pgx.ErrNoRows
+}
+
+func (m *mockAttentionStore) UpsertAutoscalingPolicy(_ context.Context, arg storegen.UpsertAutoscalingPolicyParams) (storegen.AutoscalingPolicy, error) {
+	return storegen.AutoscalingPolicy{ApplicationID: arg.ApplicationID, Queue: arg.Queue}, nil
+}
+
+func (m *mockAttentionStore) DeleteAutoscalingPolicy(_ context.Context, _ pgtype.UUID) (int64, error) {
 	return 0, nil
 }
 
