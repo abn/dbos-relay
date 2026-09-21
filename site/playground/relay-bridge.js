@@ -44,6 +44,16 @@
     alerts: [
       { id: "rule-1", name: "High Error Rate", appName: "ecommerce-checkout", metric: "workflow_failure_rate", condition: "gt", threshold: 5, status: "ACTIVE" }
     ],
+    roles: [
+      { name: "admin", isGlobal: true, permissions: ["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"] },
+      { name: "operator", isGlobal: true, permissions: ["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"] },
+      { name: "viewer", isGlobal: true, permissions: ["application.read", "metric.read", "organization.read", "token.read"] },
+      { name: "deploy-operator", isGlobal: false, permissions: ["application.read", "application.write", "websocket.connect"] }
+    ],
+    members: {
+      "alice@example.com": "admin",
+      "bob@example.com": "viewer"
+    },
     keys: [
       { id: "key-1", tokenName: "dev-local-key", name: "dev-local-key", prefix: "dbos_sec_dev", createdAt: "2026-09-18T18:00:00Z", permissions: ["*"], appIds: ["*"], appNames: ["*"] }
     ],
@@ -633,6 +643,79 @@
         return live.has(line.split(" ")[2] || "");
       });
       return new Response(lines.join("\n") + "\n", { status: 200, headers: { "Content-Type": "text/plain; version=0.0.4" } });
+    }
+
+    // 19. Roles and members (in-memory playground directory)
+    if (path.match(/^\/v2\/orgs\/[^/]+\/permissions$/)) {
+      return new Response(JSON.stringify([
+        "application.read", "application.write", "websocket.connect", "metric.read",
+        "organization.read", "organization.write", "token.read", "token.write"
+      ]), { status: 200, headers: jsonHeaders });
+    }
+    if (path.match(/^\/v2\/orgs\/[^/]+\/roles$/)) {
+      if (method === "POST") {
+        let body = {};
+        try { if (init && init.body) body = JSON.parse(init.body); } catch (_) {}
+        const name = (body.name || "").trim();
+        if (name.length < 3 || name.length > 30) {
+          return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "Role name must be between 3 and 30 characters" }), { status: 400, headers: jsonHeaders });
+        }
+        if (state.roles.some(r => r.name === name)) {
+          return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "Role already exists" }), { status: 400, headers: jsonHeaders });
+        }
+        const role = { name: name, isGlobal: false, permissions: body.permissions || [] };
+        state.roles.push(role);
+        pushAudit("role.create", "success", { type: "role", id: name });
+        return new Response(JSON.stringify({ name: role.name, permissions: role.permissions }), { status: 201, headers: jsonHeaders });
+      }
+      return new Response(JSON.stringify(state.roles), { status: 200, headers: jsonHeaders });
+    }
+    const delRoleMatch = path.match(/^\/v2\/orgs\/[^/]+\/roles\/([^/]+)$/);
+    if (delRoleMatch && method === "DELETE") {
+      const name = decodeURIComponent(delRoleMatch[1]);
+      const role = state.roles.find(r => r.name === name);
+      if (!role) {
+        return new Response(JSON.stringify({ title: "Internal Server Error", status: 500, detail: "role not found" }), { status: 500, headers: jsonHeaders });
+      }
+      if (role.isGlobal) {
+        return new Response(JSON.stringify({ title: "Forbidden", status: 403, detail: "Cannot delete built-in global role" }), { status: 403, headers: jsonHeaders });
+      }
+      state.roles = state.roles.filter(r => r.name !== name);
+      pushAudit("role.delete", "success", { type: "role", id: name });
+      return new Response(null, { status: 204 });
+    }
+    if (path.match(/^\/v2\/orgs\/[^/]+\/members$/)) {
+      const users = {};
+      for (const [username, roleName] of Object.entries(state.members)) {
+        const role = state.roles.find(r => r.name === roleName) || { name: roleName, isGlobal: false, permissions: [] };
+        users[username] = role;
+      }
+      const org = path.split("/")[3] || "default";
+      return new Response(JSON.stringify({ orgName: org, users: users }), { status: 200, headers: jsonHeaders });
+    }
+    const grantMatch = path.match(/^\/v2\/orgs\/[^/]+\/members\/([^/]+)\/roles\/([^/]+)$/);
+    if (grantMatch && method === "PUT") {
+      const username = decodeURIComponent(grantMatch[1]);
+      const roleName = decodeURIComponent(grantMatch[2]);
+      if (!state.members[username]) {
+        return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "user not found" }), { status: 404, headers: jsonHeaders });
+      }
+      if (!state.roles.some(r => r.name === roleName)) {
+        return new Response(JSON.stringify({ title: "Internal Server Error", status: 500, detail: "role not found" }), { status: 500, headers: jsonHeaders });
+      }
+      state.members[username] = roleName;
+      pushAudit("role.grant", "success", { type: "user", id: username });
+      return new Response(null, { status: 204 });
+    }
+    const delMemberMatch = path.match(/^\/v2\/orgs\/[^/]+\/members\/([^/]+)$/);
+    if (delMemberMatch && method === "DELETE") {
+      const username = decodeURIComponent(delMemberMatch[1]);
+      if (!state.members[username]) {
+        return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "user not found" }), { status: 404, headers: jsonHeaders });
+      }
+      delete state.members[username];
+      pushAudit("user.remove", "success", { type: "user", id: username });
+      return new Response(JSON.stringify({ name: username }), { status: 200, headers: jsonHeaders });
     }
 
     return nativeFetch(input, init);

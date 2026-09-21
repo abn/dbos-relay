@@ -275,6 +275,40 @@
       }
       return response.text();
     }
+    // Roles & Members
+    async listRoles(orgName) {
+      return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/roles`);
+    }
+    async createRole(orgName, name, permissions) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/roles`,
+        { method: "POST", body: JSON.stringify({ name, permissions }) }
+      );
+    }
+    async deleteRole(orgName, roleName) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/roles/${encodeURIComponent(roleName)}`,
+        { method: "DELETE" }
+      );
+    }
+    async listMembers(orgName) {
+      return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/members`);
+    }
+    async grantMemberRole(orgName, username, roleName) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/members/${encodeURIComponent(username)}/roles/${encodeURIComponent(roleName)}`,
+        { method: "PUT" }
+      );
+    }
+    async removeMember(orgName, username) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/members/${encodeURIComponent(username)}`,
+        { method: "DELETE" }
+      );
+    }
+    async listPermissions(orgName) {
+      return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/permissions`);
+    }
     // Server-Sent Events (SSE) Stream URL
     getEventsUrl(orgName, appName) {
       const base = appName ? `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/events` : `/v2/orgs/${encodeURIComponent(orgName)}/events`;
@@ -1219,6 +1253,7 @@
         { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
         { id: "metrics", label: "Metrics", icon: `<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>` },
         { id: "keys", label: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` },
+        { id: "roles", label: "Roles", icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>` },
         { id: "autoscaling", label: "Autoscaling", icon: `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>` },
         { id: "settings", label: "Settings", icon: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>` },
         { id: "audit", label: "Audit Log", icon: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>` }
@@ -1348,6 +1383,8 @@
           return "Metrics";
         case "keys":
           return "API Keys";
+        case "roles":
+          return `Roles: ${this.orgName}`;
         case "autoscaling":
           return this.appName ? `Autoscaling: ${this.appName}` : "Autoscaling";
         case "settings":
@@ -1408,6 +1445,9 @@
           break;
         case "keys":
           await this.renderKeysScreen(el, silent);
+          break;
+        case "roles":
+          await this.renderRolesScreen(el, silent);
           break;
         case "autoscaling":
           await this.renderAutoscalingScreen(el, silent);
@@ -2849,6 +2889,194 @@
         }
       });
     }
+    // --- SCREEN: ROLES & MEMBERS ---
+    async renderRolesScreen(el, silent = false) {
+      if (!silent) {
+        el.innerHTML = `<div class="loading-spinner">Loading roles...</div>`;
+      }
+      try {
+        const [roles, members, permissions] = await Promise.all([
+          this.client.listRoles(this.orgName),
+          this.client.listMembers(this.orgName),
+          this.client.listPermissions(this.orgName).catch(() => [])
+        ]);
+        this.rolePermissions = permissions || [];
+        const roleList = roles || [];
+        const users = members && members.users || {};
+        const memberRows = Object.entries(users);
+        el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <span class="text-secondary" style="font-size:12px;">Organization Roles (${escapeHtml4(this.orgName)})</span>
+          </div>
+          <div>
+            <button class="btn btn-sm btn-primary" data-action="openCreateRole">+ New Role</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div><span class="card-title">Roles</span>
+          <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${roleList.length} roles</span></div></div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Actions</th></tr></thead>
+              <tbody>
+                ${roleList.length > 0 ? roleList.map((r) => `
+                  <tr>
+                    <td><strong>${escapeHtml4(r.name)}</strong></td>
+                    <td>${r.isGlobal ? `<span class="badge badge-neutral">built-in</span>` : `<span class="badge badge-info">custom</span>`}</td>
+                    <td><code>${escapeHtml4((r.permissions || []).join(", "))}</code></td>
+                    <td>${r.isGlobal ? `<span class="text-secondary" style="font-size:11px;">cannot delete</span>` : `<button class="btn btn-xs btn-danger" data-delete-role='${escapeHtml4(r.name)}'>Delete</button>`}</td>
+                  </tr>`).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--text-tertiary);">No roles found.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div><span class="card-title">Members</span>
+          <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${memberRows.length} members</span></div></div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>User</th><th>Current Role</th><th>Grant Role</th><th>Actions</th></tr></thead>
+              <tbody>
+                ${memberRows.length > 0 ? memberRows.map(([username, role]) => `
+                  <tr>
+                    <td><strong>${escapeHtml4(username)}</strong></td>
+                    <td>${role ? `<code>${escapeHtml4(role.name)}</code>` : `<span class="text-secondary">none</span>`}</td>
+                    <td>
+                      <select class="select-sm" data-grant-select="${escapeHtml4(username)}" aria-label="Grant role to ${escapeHtml4(username)}">
+                        ${roleList.map((r) => `<option value="${escapeHtml4(r.name)}"${role && role.name === r.name ? " selected" : ""}>${escapeHtml4(r.name)}</option>`).join("")}
+                      </select>
+                      <button class="btn btn-xs btn-secondary" data-grant-role='${escapeHtml4(username)}' style="margin-left:6px;">Apply</button>
+                    </td>
+                    <td><button class="btn btn-xs btn-danger" data-remove-member='${escapeHtml4(username)}'>Remove</button></td>
+                  </tr>`).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--text-tertiary);">No members found.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      } catch (err) {
+        if (this.isAuthError(err)) {
+          this.renderAuthRequired(el, "load roles");
+          return;
+        }
+        this.renderErrorState(el, `Roles (${escapeHtml4(this.orgName)})`, err.message);
+      }
+    }
+    openCreateRoleModal() {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      const catalog = this.rolePermissions && this.rolePermissions.length > 0 ? this.rolePermissions : ["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"];
+      root.innerHTML = `
+      <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="modal-role-title">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span id="modal-role-title">Create Custom Role</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="form-field">
+              <label class="form-label" for="new-role-name">Role Name (3-30 characters)</label>
+              <input type="text" id="new-role-name" class="input-text" placeholder="e.g. deploy-operator">
+            </div>
+            <div class="form-field">
+              <span class="form-label">Permissions</span>
+              ${catalog.map((p) => `
+                <label style="display:block; font-size:13px; margin:4px 0;">
+                  <input type="checkbox" data-role-permission value="${escapeHtml4(p)}"> <code>${escapeHtml4(p)}</code>
+                </label>`).join("")}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Cancel</button>
+            <button class="btn btn-sm btn-primary" data-action="submitCreateRole">Create Role</button>
+          </div>
+        </div>
+      </div>
+    `;
+      const nameInput = document.getElementById("new-role-name");
+      if (nameInput) nameInput.focus();
+    }
+    async submitCreateRole() {
+      const nameEl = document.getElementById("new-role-name");
+      const name = nameEl ? nameEl.value.trim() : "";
+      if (name.length < 3 || name.length > 30) {
+        this.showToast("Role name must be between 3 and 30 characters", "error");
+        return;
+      }
+      const permissions = [...document.querySelectorAll("[data-role-permission]:checked")].map((cb) => cb.value);
+      try {
+        await this.client.createRole(this.orgName, name, permissions);
+        this.closeModal();
+        this.showToast(`Role "${name}" created`, "success");
+        this.renderContentView();
+      } catch (err) {
+        this.showToast(`Failed to create role: ${err.message}`, "error");
+      }
+    }
+    async deleteRole(name) {
+      this.showConfirm({
+        title: "Delete Role",
+        message: `Are you sure you want to delete role "${name}"?`,
+        consequence: "Members holding this role lose its permissions immediately.",
+        details: [
+          { label: "Role", value: name },
+          { label: "Organization", value: this.orgName }
+        ],
+        confirmText: "Delete Role",
+        confirmClass: "btn-danger",
+        onConfirm: async () => {
+          try {
+            await this.client.deleteRole(this.orgName, name);
+            this.showToast(`Role "${name}" deleted`, "success");
+            this.renderContentView();
+          } catch (err) {
+            this.showToast(`Failed to delete role: ${err.message}`, "error");
+          }
+        }
+      });
+    }
+    async grantMemberRole(username) {
+      const select = document.querySelector(`[data-grant-select="${CSS.escape(username)}"]`);
+      const roleName = select ? select.value : "";
+      if (!roleName) {
+        this.showToast("Select a role to grant", "error");
+        return;
+      }
+      try {
+        await this.client.grantMemberRole(this.orgName, username, roleName);
+        this.showToast(`Granted "${roleName}" to ${username}`, "success");
+        this.renderContentView();
+      } catch (err) {
+        this.showToast(`Failed to grant role: ${err.message}`, "error");
+      }
+    }
+    async removeMember(username) {
+      this.showConfirm({
+        title: "Remove Member",
+        message: `Are you sure you want to remove ${username} from this organization?`,
+        consequence: "The user loses all access to this organization immediately.",
+        details: [
+          { label: "User", value: username },
+          { label: "Organization", value: this.orgName }
+        ],
+        confirmText: "Remove Member",
+        confirmClass: "btn-danger",
+        onConfirm: async () => {
+          try {
+            await this.client.removeMember(this.orgName, username);
+            this.showToast(`${username} removed`, "success");
+            this.renderContentView();
+          } catch (err) {
+            this.showToast(`Failed to remove member: ${err.message}`, "error");
+          }
+        }
+      });
+    }
     // --- SCREEN 8: APPLICATION SETTINGS (retention, timeouts, private mode) ---
     async renderSettingsScreen(el, silent = false) {
       if (!silent) {
@@ -3711,6 +3939,11 @@
     else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ""), target.dataset.ruleApp);
     else if (target.dataset.action === "openCreateKey") window.app.openCreateKeyModal();
     else if (target.dataset.action === "submitCreateKey") window.app.submitCreateKey();
+    else if (target.dataset.action === "openCreateRole") window.app.openCreateRoleModal();
+    else if (target.dataset.action === "submitCreateRole") window.app.submitCreateRole();
+    else if (target.dataset.deleteRole) window.app.deleteRole(target.dataset.deleteRole.replace(/'/g, ""));
+    else if (target.dataset.grantRole) window.app.grantMemberRole(target.dataset.grantRole.replace(/'/g, ""));
+    else if (target.dataset.removeMember) window.app.removeMember(target.dataset.removeMember.replace(/'/g, ""));
     else if (target.dataset.action === "submitAppSettings") window.app.submitAppSettings();
     else if (target.dataset.action === "submitAutoscalingPolicy") window.app.submitAutoscalingPolicy();
     else if (target.dataset.action === "deleteAutoscalingPolicy") window.app.deleteAutoscalingPolicy();

@@ -19,7 +19,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ## Navigation & Global Shell
 
-- [ ] **Sidebar Navigation**: Verify that the sidebar contains links for Fleet & Apps, Workflows, Queues, Schedules, Alert Rules, Metrics, API Keys, Autoscaling, Settings, and Audit Log. Clicking each navigation item switches the active view route without full-page reloads.
+- [ ] **Sidebar Navigation**: Verify that the sidebar contains links for Fleet & Apps, Workflows, Queues, Schedules, Alert Rules, Metrics, API Keys, Roles, Autoscaling, Settings, and Audit Log. Clicking each navigation item switches the active view route without full-page reloads.
 - [ ] **Brand Identity**: Confirm the Relay branding and version badge render correctly in the sidebar header.
 - [ ] **Top Header & Application Selector**: Verify the application dropdown selector correctly lists registered applications. Switching applications updates the active application context across all dashboard views.
 - [ ] **Refresh Control**: Clicking the refresh button reloads data for the current active view.
@@ -122,7 +122,17 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 8. Autoscaling Tab
+## 8. Roles Tab
+
+- [ ] **Roles Table**: Verify rows show role name, built-in versus custom badge, and permission list. Built-in roles offer no delete action.
+- [ ] **Create Role**: Open the creation dialog, enter a name and permissions, submit, and verify the success toast and the new row. Enter a too-short name and verify the inline rejection with no request sent.
+- [ ] **Delete Role**: Delete a custom role, confirm the prompt, and verify the row disappears. Attempting a built-in delete is not offered.
+- [ ] **Members & Grants**: Verify members show current roles. Change a grant selection, apply, and verify the success toast and the updated role. Remove a member with confirm.
+- [ ] **Forbidden Mutations**: With a key lacking `organization.write`, verify failed mutations surface the server refusal in a toast instead of failing silently.
+
+---
+
+## 9. Autoscaling Tab
 
 - [ ] **Policy Form**: Select an application, verify the policy queue dropdown lists only eligible queues (existing, unpartitioned, worker concurrency set) and disables the rest. Set rollout caps and save; verify the success toast and that the form reflects the stored policy on reload.
 - [ ] **Validation**: Click save without selecting a queue and verify the inline error. Enter a negative rollout cap and verify rejection.
@@ -131,7 +141,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 9. Application Settings Tab
+## 10. Application Settings Tab
 
 - [ ] **Settings Form**: Select an application and verify retention rows, retention hours, global timeout hours, executor timeout seconds, and the private mode checkbox reflect the stored values.
 - [ ] **Save Round-Trip**: Change a threshold, save, and verify the success toast and the persisted value on reload. Blank fields leave current values unchanged.
@@ -139,7 +149,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 10. Audit Log Tab
+## 11. Audit Log Tab
 
 - [ ] **Entries Table**: Verify rows show time, operation, success/failure status pills, subject with type, target with type (or "-" when absent), and source IP, newest first.
 - [ ] **Filters**: Enter an operation, subject, or target filter, apply, and verify the request carries the filters and the table narrows. Clear restores the unfiltered list.
@@ -148,7 +158,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 11. Metrics Tab
+## 12. Metrics Tab
 
 - [ ] **Summary Cards**: Verify the success/failed rates, enqueued, pending, and executor cards reflect the `/v1/metrics` scrape.
 - [ ] **Family Sections**: Verify workflow rates, queue depth, latency maxima, executors, and step rates render per-series rows with share bars.
@@ -157,7 +167,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 12. Theme Toggle & Accessibility
+## 13. Theme Toggle & Accessibility
 
 - [ ] **Theme Persistence**: Verify toggling between dark and light themes updates UI colors across all screens and correctly persists selection across browser sessions via `localStorage`.
 - [ ] **Responsive Layout**: Verify sidebar and content areas resize gracefully across standard desktop viewports.

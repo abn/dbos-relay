@@ -678,6 +678,25 @@ func TestDashboard_MetricsViewBundle(t *testing.T) {
 	}
 }
 
+func TestDashboard_RolesViewBundle(t *testing.T) {
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+	for _, marker := range []string{
+		"renderRolesScreen",
+		"openCreateRoleModal",
+		"grantMemberRole",
+		"listMembers",
+		"data-grant-role",
+	} {
+		if !strings.Contains(bundle, marker) {
+			t.Errorf("bundle should include roles view marker %q", marker)
+		}
+	}
+}
+
 func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
 	clientBytes, err := os.ReadFile("../../console/src/lib/api/client.ts")
 	if err != nil {
