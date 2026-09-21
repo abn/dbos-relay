@@ -326,31 +326,11 @@ func triggerRelayFork(t *testing.T, appName, originalWorkflowID, appVersion stri
 		t.Fatalf("failed to marshal fork request: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		t.Fatalf("failed to create fork request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := getAPIKey(); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to dispatch fork via Relay API: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("fork via Relay API returned status %d: %s", resp.StatusCode, string(b))
-	}
-
+	respBody := postMutation(t, "fork", url, bodyBytes, http.StatusCreated, http.StatusOK)
 	var res struct {
 		WorkflowID string `json:"workflowId"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := json.Unmarshal(respBody, &res); err != nil {
 		t.Fatalf("failed to decode fork response: %v", err)
 	}
 	if res.WorkflowID == "" {
@@ -371,31 +351,11 @@ func triggerRelayRestart(t *testing.T, appName, originalWorkflowID, appVersion s
 		t.Fatalf("failed to marshal restart request: %v", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		t.Fatalf("failed to create restart request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := getAPIKey(); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to dispatch restart via Relay API: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("restart via Relay API returned status %d: %s", resp.StatusCode, string(b))
-	}
-
+	respBody := postMutation(t, "restart", url, bodyBytes, http.StatusCreated, http.StatusOK)
 	var res struct {
 		WorkflowID string `json:"workflowId"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := json.Unmarshal(respBody, &res); err != nil {
 		t.Fatalf("failed to decode restart response: %v", err)
 	}
 	if res.WorkflowID == "" {
@@ -448,90 +408,77 @@ func getFullWorkflowViaAPI(t *testing.T, appName, wfID string) *gen.Workflow {
 
 func cancelWorkflowViaAPI(t *testing.T, appName, wfID string) {
 	t.Helper()
-	cancelWorkflowViaAPIWithRetry(t, appName, wfID)
+	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/cancel", relayBaseURL, orgName, appName, wfID)
+	postMutation(t, "cancel", url, []byte(`{}`), http.StatusOK, http.StatusNoContent)
+}
+
+// postMutation polls a mutating Relay API call until it lands or the
+// deadline expires. Cold data-plane init pressure can fail the first
+// attempts with 5xx, so transport errors and 5xx/429/408 retry; other 4xx
+// fail fast since they indicate a bad request, not pressure.
+func postMutation(t *testing.T, op, url string, body []byte, okStatuses ...int) []byte {
+	t.Helper()
+	ok := func(code int) bool {
+		for _, want := range okStatuses {
+			if code == want {
+				return true
+			}
+		}
+		return false
+	}
+	retryable := func(code int) bool {
+		return code >= 500 || code == http.StatusTooManyRequests || code == http.StatusRequestTimeout
+	}
+	deadline := time.Now().Add(90 * time.Second)
+	var lastErr string
+	for attempts := 0; ; attempts++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("failed to create %s request: %v", op, err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if key := getAPIKey(); key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err == nil {
+			respBody, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if ok(resp.StatusCode) {
+				if attempts > 0 {
+					t.Logf("%s landed after %d retries", op, attempts)
+				}
+				return respBody
+			}
+			if !retryable(resp.StatusCode) {
+				t.Fatalf("%s via Relay API returned status %d: %s", op, resp.StatusCode, string(respBody))
+			}
+			lastErr = fmt.Sprintf("status %d: %s", resp.StatusCode, string(respBody))
+		} else {
+			lastErr = err.Error()
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("%s via Relay API failed after polling: %s", op, lastErr)
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // cancelWorkflowViaAPIWithRetry polls the offline cancel until it lands
 // or the deadline expires. The first data-plane use per application pays
 // client pool creation, schema verification, and ping on the critical
 // path, so a single-shot assertion turns transient init pressure into a
-// fatal 503. 5xx and transport errors retry; 4xx fails fast.
+// fatal 503. Kept as a named wrapper for call-site readability.
 func cancelWorkflowViaAPIWithRetry(t *testing.T, appName, wfID string) {
 	t.Helper()
-	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/cancel", relayBaseURL, orgName, appName, wfID)
-	deadline := time.Now().Add(90 * time.Second)
-	var lastErr string
-	for attempts := 0; ; attempts++ {
-		req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{}`))
-		if err != nil {
-			t.Fatalf("failed to create cancel request: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if key := getAPIKey(); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
-		if err == nil {
-			body, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
-				if attempts > 0 {
-					t.Logf("offline cancel landed after %d retries", attempts)
-				}
-				return
-			}
-			if resp.StatusCode < 500 {
-				t.Fatalf("cancel via Relay API returned status %d: %s", resp.StatusCode, string(body))
-			}
-			lastErr = fmt.Sprintf("status %d: %s", resp.StatusCode, string(body))
-		} else {
-			lastErr = err.Error()
-		}
-		if !time.Now().Before(deadline) {
-			t.Fatalf("cancel via Relay API failed after polling: %s", lastErr)
-		}
-		time.Sleep(2 * time.Second)
-	}
+	cancelWorkflowViaAPI(t, appName, wfID)
 }
 
 func resumeWorkflowViaAPI(t *testing.T, appName, wfID string) {
 	t.Helper()
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/resume", relayBaseURL, orgName, appName, wfID)
-	deadline := time.Now().Add(90 * time.Second)
-	var lastErr string
-	for attempts := 0; ; attempts++ {
-		req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{"queueName":"_dbos_internal_queue"}`))
-		if err != nil {
-			t.Fatalf("failed to create resume request: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if key := getAPIKey(); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
-		if err == nil {
-			body, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
-				if attempts > 0 {
-					t.Logf("offline resume landed after %d retries", attempts)
-				}
-				return
-			}
-			if resp.StatusCode < 500 {
-				t.Fatalf("resume via Relay API returned status %d: %s", resp.StatusCode, string(body))
-			}
-			lastErr = fmt.Sprintf("status %d: %s", resp.StatusCode, string(body))
-		} else {
-			lastErr = err.Error()
-		}
-		if !time.Now().Before(deadline) {
-			t.Fatalf("resume via Relay API failed after polling: %s", lastErr)
-		}
-		time.Sleep(2 * time.Second)
-	}
+	postMutation(t, "resume", url, []byte(`{"queueName":"_dbos_internal_queue"}`), http.StatusOK, http.StatusNoContent)
 }
 
 func getWorkflowViaAPI(t *testing.T, appName, wfID string) (string, string) {
