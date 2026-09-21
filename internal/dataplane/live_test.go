@@ -54,6 +54,11 @@ func TestLiveDatabase_SDKClientDataPlane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to run live workflow: %v", err)
 	}
+	// Wait for completion: RunWorkflow only hands back a handle, so
+	// asserting SUCCESS below would otherwise race the workflow.
+	if _, err := handle.GetResult(); err != nil {
+		t.Fatalf("live workflow failed: %v", err)
+	}
 	wfID := handle.GetWorkflowID()
 
 	// 2. Initialize Relay SDKClient pointing to the same system database
