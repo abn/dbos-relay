@@ -673,6 +673,123 @@ func TestApplicationManagement(t *testing.T) {
 	})
 }
 
+func TestUpdateAppValidation(t *testing.T) {
+	ctx := context.Background()
+	orgID := makeUUID(40)
+	appID := makeUUID(41)
+
+	newServer := func(t *testing.T, updated *bool, auditDetails *[]byte) *api.Server {
+		t.Helper()
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAppByNameFunc: func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name, Settings: []byte(`{}`)}, nil
+			},
+			updateAppSettingsFunc: func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error) {
+				*updated = true
+				return storegen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name, Settings: arg.Settings}, nil
+			},
+			createAuditLogFunc: func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) {
+				*auditDetails = arg.Details
+				return storegen.AuditLog{}, nil
+			},
+		}
+		return api.NewServer(nil, store, nil)
+	}
+
+	patch := func(srv *api.Server, body *gen.UpdateAppJSONRequestBody) (any, error) {
+		return srv.UpdateApp(ctx, gen.UpdateAppRequestObject{OrgName: "my-org", AppName: "my-app", Body: body})
+	}
+
+	neg := int64(-1)
+	zero := int64(0)
+	pos := int64(300)
+
+	cases := []struct {
+		name string
+		body *gen.UpdateAppJSONRequestBody
+	}{
+		{"negative rows", &gen.UpdateAppJSONRequestBody{GcRowsThreshold: &neg}},
+		{"negative time threshold", &gen.UpdateAppJSONRequestBody{GcTimeThresholdMs: &neg}},
+		{"negative global timeout", &gen.UpdateAppJSONRequestBody{GlobalTimeoutMs: &neg}},
+		{"zero executor timeout", &gen.UpdateAppJSONRequestBody{ExecutorTimeoutSecs: &zero}},
+		{"negative executor timeout", &gen.UpdateAppJSONRequestBody{ExecutorTimeoutSecs: &neg}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name+" rejected", func(t *testing.T) {
+			var updated bool
+			var details []byte
+			resp, err := patch(newServer(t, &updated, &details), tc.body)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			rej, ok := resp.(gen.UpdateAppdefaultApplicationProblemPlusJSONResponse)
+			if !ok || rej.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %+v", resp)
+			}
+			if updated {
+				t.Error("rejected patch must not reach the store")
+			}
+			if !strings.Contains(string(details), `"status":"failure"`) {
+				t.Errorf("expected failure audit entry, got %s", string(details))
+			}
+		})
+	}
+
+	t.Run("valid values stored", func(t *testing.T) {
+		var updated bool
+		var details []byte
+		rows := int64(100)
+		resp, err := patch(newServer(t, &updated, &details), &gen.UpdateAppJSONRequestBody{
+			GcRowsThreshold:     &rows,
+			ExecutorTimeoutSecs: &pos,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := resp.(gen.UpdateApp204Response); !ok {
+			t.Fatalf("expected 204, got %+v", resp)
+		}
+		if !updated {
+			t.Error("valid patch must reach the store")
+		}
+	})
+
+	t.Run("zero retention accepted", func(t *testing.T) {
+		var updated bool
+		var details []byte
+		resp, err := patch(newServer(t, &updated, &details), &gen.UpdateAppJSONRequestBody{
+			GcRowsThreshold:   &zero,
+			GcTimeThresholdMs: &zero,
+			GlobalTimeoutMs:   &zero,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := resp.(gen.UpdateApp204Response); !ok {
+			t.Fatalf("expected 204, got %+v", resp)
+		}
+		if !updated {
+			t.Error("zero retention patch must reach the store")
+		}
+	})
+
+	t.Run("nil body untouched", func(t *testing.T) {
+		var updated bool
+		var details []byte
+		resp, err := patch(newServer(t, &updated, &details), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := resp.(gen.UpdateApp204Response); !ok {
+			t.Fatalf("expected 204, got %+v", resp)
+		}
+	})
+}
+
 func TestTokensAndPermissions(t *testing.T) {
 	ctx := context.Background()
 	orgID := makeUUID(30)

@@ -29,6 +29,21 @@ Only completed workflows (`SUCCESS`, `ERROR`, `CANCELLED`,
 delayed workflows are never touched. Deleting a workflow's history also
 deletes its steps, inputs, outputs, messages, events, and streams.
 
+## Value bounds
+
+The server rejects nonsense thresholds with `400 Bad Request` (and
+records a failure audit entry):
+
+* Retention rows, retention time, and global timeout must not be
+  negative. Zero is allowed and means keep nothing: a zero time
+  threshold dispatches a cutoff of now, deleting all completed history.
+* The executor timeout must be positive. The server rejects zero and
+  negative values explicitly instead of silently falling back to the
+  default on read.
+
+The dashboard blocks negative numbers client-side before sending; a
+zero executor timeout is rejected by the server with a failure entry.
+
 ## Shared system databases
 
 When multiple applications share one system database, retention applies to
