@@ -89,7 +89,7 @@ func New(store any, cfg *config.Config, logger *slog.Logger) *Hub {
 		leaseDuration:    60 * time.Second,
 		handshakeTimeout: 5 * time.Second,
 		readLimit:        32 * 1024 * 1024,
-		pingInterval:     20 * time.Second,
+		pingInterval:     10 * time.Second,
 		pongTimeout:      25 * time.Second,
 		ctx:              ctx,
 		cancel:           cancel,
