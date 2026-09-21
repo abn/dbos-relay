@@ -123,6 +123,21 @@ jobs:
         run: |
           make verify-sdk
 
+      - name: Collect Relay and Postgres Logs
+        if: always()
+        run: |
+          mkdir -p /tmp/verify-logs
+          podman logs deploy-relay-1 > /tmp/verify-logs/relay.log 2>&1 || true
+          podman logs deploy-postgres-1 > /tmp/verify-logs/postgres.log 2>&1 || true
+
+      - name: Upload Verify Logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: verify-sdk-logs
+          path: /tmp/verify-logs/
+          retention-days: 7
+
       - name: Tear Down SDK Apps Stack
         if: always()
         run: |

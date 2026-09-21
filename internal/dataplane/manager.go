@@ -183,7 +183,14 @@ func (m *DefaultManager) getOrInitClient(appID pgtype.UUID) (Client, AppConfig, 
 	if err != nil {
 		m.mu.Lock()
 		m.lastInitErr[appID] = time.Now()
+		logger := m.logger
 		m.mu.Unlock()
+		if logger != nil {
+			logger.Warn("failed lazy data-plane client initialization",
+				"applicationID", fmt.Sprintf("%x", cfg.ApplicationID.Bytes),
+				"error", err,
+			)
+		}
 		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: %w", err)
 	}
 
