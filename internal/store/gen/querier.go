@@ -23,6 +23,7 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAlertingRule(ctx context.Context, arg DeleteAlertingRuleParams) (int64, error)
 	DeleteApplication(ctx context.Context, arg DeleteApplicationParams) (Application, error)
+	DeleteAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (int64, error)
 	DeleteDomainClaim(ctx context.Context, arg DeleteDomainClaimParams) (DomainClaim, error)
 	DeleteExecutor(ctx context.Context, arg DeleteExecutorParams) error
 	DeleteExpiredAuditLogs(ctx context.Context, arg DeleteExpiredAuditLogsParams) (int64, error)
@@ -34,6 +35,7 @@ type Querier interface {
 	GetAlertingRule(ctx context.Context, arg GetAlertingRuleParams) (AlertingRule, error)
 	GetApplicationByID(ctx context.Context, id pgtype.UUID) (Application, error)
 	GetApplicationByName(ctx context.Context, arg GetApplicationByNameParams) (Application, error)
+	GetAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (AutoscalingPolicy, error)
 	GetDomainClaim(ctx context.Context, domain string) (DomainClaim, error)
 	GetExecutorByID(ctx context.Context, arg GetExecutorByIDParams) (Executor, error)
 	GetExecutorCountsGrouped(ctx context.Context) ([]GetExecutorCountsGroupedRow, error)
@@ -75,6 +77,7 @@ type Querier interface {
 	UpdateApplicationSettings(ctx context.Context, arg UpdateApplicationSettingsParams) (Application, error)
 	UpdateOrganisation(ctx context.Context, arg UpdateOrganisationParams) (Organisation, error)
 	UpsertApplication(ctx context.Context, arg UpsertApplicationParams) (Application, error)
+	UpsertAutoscalingPolicy(ctx context.Context, arg UpsertAutoscalingPolicyParams) (AutoscalingPolicy, error)
 	UpsertExecutor(ctx context.Context, arg UpsertExecutorParams) (Executor, error)
 	UpsertInstance(ctx context.Context, arg UpsertInstanceParams) (Instance, error)
 	UpsertMemberRole(ctx context.Context, arg UpsertMemberRoleParams) (OrganisationMember, error)

@@ -47,6 +47,12 @@ const (
 	auditOpOrgUpdate          = "organization.update"
 	auditOpUserJoin           = "user.join"
 	auditOpUserRemove         = "user.remove"
+	// Autoscaling policy writes are recorded because the upstream
+	// autoscaling guide states policy changes appear in the audit log,
+	// even though the audit taxonomy page lists no operation strings
+	// for them. These names are Relay's choice, documented as such.
+	auditOpAutoscalingSet    = "autoscaling_policy.set"
+	auditOpAutoscalingDelete = "autoscaling_policy.delete"
 	// Join-secret generation has no upstream taxonomy operation either.
 	// It is recorded as a Relay extension like domain claims.
 	auditOpSecretGenerate = "secret.generate"
@@ -309,6 +315,13 @@ func auditDeniedOp(method, path string, identity *auth.UserIdentity) (op, appNam
 			}
 			if len(rest) == 2 && method == "DELETE" {
 				return auditOpAlertRuleDelete, app, string(gen.AuditTargetTypeAlertingRule), rest[1], true
+			}
+		case "autoscaling-policy":
+			if len(rest) == 1 && method == "PUT" {
+				return auditOpAutoscalingSet, app, string(gen.AuditTargetTypeApplication), app, true
+			}
+			if len(rest) == 1 && method == "DELETE" {
+				return auditOpAutoscalingDelete, app, string(gen.AuditTargetTypeApplication), app, true
 			}
 		}
 	}

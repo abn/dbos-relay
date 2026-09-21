@@ -23,26 +23,29 @@ import (
 )
 
 type mockStoreReader struct {
-	getOrgByNameFunc        func(ctx context.Context, name string) (storegen.Organisation, error)
-	getAppByNameFunc        func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error)
-	listAppsByOrgFunc       func(ctx context.Context, orgID pgtype.UUID) ([]storegen.Application, error)
-	upsertAppFunc           func(ctx context.Context, arg storegen.UpsertApplicationParams) (storegen.Application, error)
-	updateAppSettingsFunc   func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error)
-	deleteAppFunc           func(ctx context.Context, arg storegen.DeleteApplicationParams) (storegen.Application, error)
-	listExecutorsByAppFunc  func(ctx context.Context, appID pgtype.UUID) ([]storegen.Executor, error)
-	listAPIKeysFunc         func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
-	getAPIKeyByLookupFunc   func(ctx context.Context, lookup string) (storegen.ApiKey, error)
-	touchAPIKeyLastUsedFunc func(ctx context.Context, id pgtype.UUID) error
-	createAPIKeyFunc        func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
-	revokeAPIKeyFunc        func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
-	upsertOrgFunc           func(ctx context.Context, name string) (storegen.Organisation, error)
-	getUserByUsernameFunc   func(ctx context.Context, username string) (storegen.User, error)
-	listAlertRulesFunc      func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
-	createAuditLogFunc      func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
-	listAuditLogsFunc       func(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
-	listAllOrgsFunc         func(ctx context.Context) ([]storegen.Organisation, error)
-	updateOrgFunc           func(ctx context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error)
-	deleteExpiredAuditFunc  func(ctx context.Context, arg storegen.DeleteExpiredAuditLogsParams) (int64, error)
+	getOrgByNameFunc            func(ctx context.Context, name string) (storegen.Organisation, error)
+	getAppByNameFunc            func(ctx context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error)
+	listAppsByOrgFunc           func(ctx context.Context, orgID pgtype.UUID) ([]storegen.Application, error)
+	upsertAppFunc               func(ctx context.Context, arg storegen.UpsertApplicationParams) (storegen.Application, error)
+	updateAppSettingsFunc       func(ctx context.Context, arg storegen.UpdateApplicationSettingsParams) (storegen.Application, error)
+	deleteAppFunc               func(ctx context.Context, arg storegen.DeleteApplicationParams) (storegen.Application, error)
+	listExecutorsByAppFunc      func(ctx context.Context, appID pgtype.UUID) ([]storegen.Executor, error)
+	listAPIKeysFunc             func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
+	getAPIKeyByLookupFunc       func(ctx context.Context, lookup string) (storegen.ApiKey, error)
+	touchAPIKeyLastUsedFunc     func(ctx context.Context, id pgtype.UUID) error
+	createAPIKeyFunc            func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
+	revokeAPIKeyFunc            func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
+	upsertOrgFunc               func(ctx context.Context, name string) (storegen.Organisation, error)
+	getUserByUsernameFunc       func(ctx context.Context, username string) (storegen.User, error)
+	listAlertRulesFunc          func(ctx context.Context, applicationID pgtype.UUID) ([]storegen.AlertingRule, error)
+	createAuditLogFunc          func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error)
+	listAuditLogsFunc           func(ctx context.Context, arg storegen.ListAuditLogsParams) ([]storegen.AuditLog, error)
+	listAllOrgsFunc             func(ctx context.Context) ([]storegen.Organisation, error)
+	updateOrgFunc               func(ctx context.Context, arg storegen.UpdateOrganisationParams) (storegen.Organisation, error)
+	deleteExpiredAuditFunc      func(ctx context.Context, arg storegen.DeleteExpiredAuditLogsParams) (int64, error)
+	getAutoscalingPolicyFunc    func(ctx context.Context, applicationID pgtype.UUID) (storegen.AutoscalingPolicy, error)
+	upsertAutoscalingPolicyFunc func(ctx context.Context, arg storegen.UpsertAutoscalingPolicyParams) (storegen.AutoscalingPolicy, error)
+	deleteAutoscalingPolicyFunc func(ctx context.Context, applicationID pgtype.UUID) (int64, error)
 }
 
 func (m *mockStoreReader) GetOrganisationByName(ctx context.Context, name string) (storegen.Organisation, error) {
@@ -152,6 +155,27 @@ func (m *mockStoreReader) UpsertOrganisation(ctx context.Context, name string) (
 		return m.upsertOrgFunc(ctx, name)
 	}
 	return storegen.Organisation{}, errors.New("unexpected UpsertOrganisation")
+}
+
+func (m *mockStoreReader) GetAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (storegen.AutoscalingPolicy, error) {
+	if m.getAutoscalingPolicyFunc != nil {
+		return m.getAutoscalingPolicyFunc(ctx, applicationID)
+	}
+	return storegen.AutoscalingPolicy{}, pgx.ErrNoRows
+}
+
+func (m *mockStoreReader) UpsertAutoscalingPolicy(ctx context.Context, arg storegen.UpsertAutoscalingPolicyParams) (storegen.AutoscalingPolicy, error) {
+	if m.upsertAutoscalingPolicyFunc != nil {
+		return m.upsertAutoscalingPolicyFunc(ctx, arg)
+	}
+	return storegen.AutoscalingPolicy{}, errors.New("unexpected UpsertAutoscalingPolicy")
+}
+
+func (m *mockStoreReader) DeleteAutoscalingPolicy(ctx context.Context, applicationID pgtype.UUID) (int64, error) {
+	if m.deleteAutoscalingPolicyFunc != nil {
+		return m.deleteAutoscalingPolicyFunc(ctx, applicationID)
+	}
+	return 0, nil
 }
 
 func (m *mockStoreReader) CreateAlertingRule(ctx context.Context, arg storegen.CreateAlertingRuleParams) (storegen.AlertingRule, error) {

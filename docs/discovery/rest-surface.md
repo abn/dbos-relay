@@ -53,11 +53,11 @@ own Postgres database.
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/alerting-rules` | `listAlertingRules` | Relay store | No | N/A |
 | `POST` | `/v2/orgs/{orgName}/apps/{appName}/alerting-rules` | `createAlertingRule` | Relay store | No | N/A |
 | `DELETE` | `/v2/orgs/{orgName}/apps/{appName}/alerting-rules/{ruleId}` | `deleteAlertingRule` | Relay store | No | N/A |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/autoscale` | `getAutoscale` | Not implemented (Tier 5) | No | N/A |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/autoscale/versions/{version}` | `getAutoscaleVersion` | Not implemented (Tier 5) | No | N/A |
-| `DELETE` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `deleteAutoscalingPolicy` | Not implemented (Tier 5) | No | N/A |
-| `GET` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `getAutoscalingPolicy` | Not implemented (Tier 5) | No | N/A |
-| `PUT` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `setAutoscalingPolicy` | Not implemented (Tier 5) | No | N/A |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/autoscale` | `getAutoscale` | Relay store (policy) + executor dispatch (`get_queue`, `list_queued_workflows`) | No | `ListQueuesRequest`, `ListWorkflowsRequest` |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/autoscale/versions/{version}` | `getAutoscaleVersion` | Relay store (policy) + executor dispatch (`get_queue`, `list_queued_workflows`) | No | `ListQueuesRequest`, `ListWorkflowsRequest` |
+| `DELETE` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `deleteAutoscalingPolicy` | Relay store | No | N/A |
+| `GET` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `getAutoscalingPolicy` | Relay store | No | N/A |
+| `PUT` | `/v2/orgs/{orgName}/apps/{appName}/autoscaling-policy` | `setAutoscalingPolicy` | Relay store, validated via executor dispatch (`get_queue`) | No | `GetQueueRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/executors` | `listExecutors` | Relay store | No | N/A |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/metrics` | `listMetrics` | Relay store | No | N/A |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/queues` | `listQueues` | Executor dispatch | No | `ListQueuesRequest` |
@@ -200,9 +200,11 @@ or are deferred to later compatibility tiers:
 
 2. **Autoscaling policies and recommendations (`AutoscalePolicy`, `QueueAutoscale`, `RolloutPolicy`)**:
    * `QueueAutoscale` computes recommended replica counts for external scalers (KEDA).
-   * Deferred to Tier 5 (Scale), as standalone self-hosted deployments rely on
-     external container orchestrators or fixed executor processes.
-   * Relay returns 404 Problem Details when reading autoscale recommendations or policies for an application (and 400 on attempts to write an autoscaling policy), matching upstream behaviour when no policy is configured.
+   * Implemented per [ADR 0012](../adr/0012-autoscaling-policy-support.md):
+     policies are stored per application in Relay's database, validated
+     against a running executor on write, and recommendations are computed
+     from executor-reported queue definitions and backlog counts.
+   * Relay returns 404 Problem Details when reading autoscale recommendations or policies for an application with no stored policy.
 
 3. **Domain claims (`DomainClaim`)**:
    * `requestDomainClaim`, `listDomainClaims`, `releaseDomainClaim`.

@@ -31,9 +31,10 @@ status: draft
 
 - Cloud platform features such as application deployment or database
   provisioning. They are not part of the API surface being matched.
-- Application autoscaling policies and dynamic container scale-out. Workload
-  autoscaling is the responsibility of the underlying container orchestrator
-  (such as Kubernetes or ECS) rather than the metadata control plane.
+- Dynamic container scale-out. The control-plane half of autoscaling
+  (policies and recommendations, see [ADR 0012](../adr/0012-autoscaling-policy-support.md))
+  is in scope; actuating replica counts remains the responsibility of the
+  underlying container orchestrator (such as Kubernetes or ECS).
 - Multi-organisation tenancy beyond what the specification's organisation
   model requires.
 - Day-one parity on every alerting, retention, and audit endpoint. These

@@ -56,8 +56,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if dirty {
 		t.Fatalf("database is dirty after migration")
 	}
-	if v != 7 {
-		t.Fatalf("expected migration version 7, got %d", v)
+	if v != 8 {
+		t.Fatalf("expected migration version 8, got %d", v)
 	}
 
 	// Migrate down 1 step
@@ -68,8 +68,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get migrate version after down: %v", err)
 	}
-	if v != 6 {
-		t.Fatalf("expected migration version 6, got %d", v)
+	if v != 7 {
+		t.Fatalf("expected migration version 7, got %d", v)
 	}
 
 	// Migrate back up
@@ -77,8 +77,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 		t.Fatalf("failed to migrate back up: %v", err)
 	}
 	v, _, _ = s.MigrateVersion(ctx)
-	if v != 7 {
-		t.Fatalf("expected migration version 7, got %d", v)
+	if v != 8 {
+		t.Fatalf("expected migration version 8, got %d", v)
 	}
 }
 
@@ -554,6 +554,63 @@ func TestSQLite_AuditFiltersRetentionAndExpiry(t *testing.T) {
 	}
 	if got := list(gen.ListAuditLogsParams{}); len(got) != 0 {
 		t.Errorf("expected empty log after expiry purge, got %d", len(got))
+	}
+}
+
+func TestSQLite_AutoscalingPolicies(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	org, err := s.Queries().CreateOrganisation(ctx, "scale_org")
+	if err != nil {
+		t.Fatalf("create org failed: %v", err)
+	}
+	app, err := s.Queries().CreateApplication(ctx, gen.CreateApplicationParams{
+		OrganisationID: org.ID,
+		Name:           "scale_app",
+		Settings:       []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	if _, err := s.Queries().GetAutoscalingPolicy(ctx, app.ID); err == nil {
+		t.Fatal("expected error for missing policy")
+	}
+
+	maxOld := int64(2)
+	stored, err := s.Queries().UpsertAutoscalingPolicy(ctx, gen.UpsertAutoscalingPolicyParams{
+		ApplicationID: app.ID, Queue: "orders", MaxOldVersions: &maxOld,
+	})
+	if err != nil {
+		t.Fatalf("upsert failed: %v", err)
+	}
+	if stored.Queue != "orders" || stored.MaxOldVersions == nil || *stored.MaxOldVersions != 2 || stored.MaxExecutorsOld != nil {
+		t.Fatalf("unexpected policy: %+v", stored)
+	}
+
+	fetched, err := s.Queries().GetAutoscalingPolicy(ctx, app.ID)
+	if err != nil || fetched.Queue != "orders" {
+		t.Fatalf("get failed: %+v, %v", fetched, err)
+	}
+
+	maxExec := int64(1)
+	updated, err := s.Queries().UpsertAutoscalingPolicy(ctx, gen.UpsertAutoscalingPolicyParams{
+		ApplicationID: app.ID, Queue: "shipments", MaxExecutorsOld: &maxExec,
+	})
+	if err != nil {
+		t.Fatalf("re-upsert failed: %v", err)
+	}
+	if updated.Queue != "shipments" || updated.MaxOldVersions != nil || updated.MaxExecutorsOld == nil {
+		t.Fatalf("upsert must replace the policy row: %+v", updated)
+	}
+
+	deleted, err := s.Queries().DeleteAutoscalingPolicy(ctx, app.ID)
+	if err != nil || deleted != 1 {
+		t.Fatalf("delete failed: count=%d, err=%v", deleted, err)
+	}
+	if _, err := s.Queries().GetAutoscalingPolicy(ctx, app.ID); err == nil {
+		t.Fatal("expected error after delete")
 	}
 }
 

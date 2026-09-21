@@ -276,6 +276,18 @@ func (m *memoryStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.Delet
 	return 0, nil
 }
 
+func (m *memoryStore) GetAutoscalingPolicy(_ context.Context, _ pgtype.UUID) (storegen.AutoscalingPolicy, error) {
+	return storegen.AutoscalingPolicy{}, pgx.ErrNoRows
+}
+
+func (m *memoryStore) UpsertAutoscalingPolicy(_ context.Context, arg storegen.UpsertAutoscalingPolicyParams) (storegen.AutoscalingPolicy, error) {
+	return storegen.AutoscalingPolicy{ApplicationID: arg.ApplicationID, Queue: arg.Queue}, nil
+}
+
+func (m *memoryStore) DeleteAutoscalingPolicy(_ context.Context, _ pgtype.UUID) (int64, error) {
+	return 0, nil
+}
+
 func (m *memoryStore) GetApplicationByName(_ context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
