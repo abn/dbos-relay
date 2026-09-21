@@ -105,6 +105,7 @@ services:
     working_dir: /app
     volumes:
       - ../examples/python:/app:z
+      - uv-cache:/root/.cache/uv
     environment:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
@@ -113,6 +114,7 @@ services:
       ROLE: primary
       CHAOS_SLEEP_SECS: "1800"
       HTTP_PORT: 8081
+      UV_CACHE_DIR: /root/.cache/uv
     ports:
       - "8081:8081"
     depends_on:
@@ -128,6 +130,7 @@ services:
     working_dir: /app
     volumes:
       - ../examples/python:/app:z
+      - uv-cache:/root/.cache/uv
     environment:
       RELAY_URL: ws://relay:8090
       RELAY_API_KEY: ${RELAY_API_KEY}
@@ -135,6 +138,7 @@ services:
       DBOS_SYSTEM_DATABASE_URL: postgres://relay:relay@postgres:5432/relay_python?sslmode=disable
       ROLE: secondary
       HTTP_PORT: 8084
+      UV_CACHE_DIR: /root/.cache/uv
     ports:
       - "8084:8084"
     depends_on:
@@ -232,3 +236,6 @@ services:
         condition: service_healthy
     command: ["java", "-jar", "/app/target/dbos-java-sample-1.0.0.jar"]
     restart: "no"
+
+volumes:
+  uv-cache:
