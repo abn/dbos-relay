@@ -101,12 +101,22 @@ function startHttpServer(): void {
 async function main(): Promise<void> {
   if (role === "secondary") {
     await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Migrate-once leader: only the primary runs system-database DDL.
+    // Concurrent migrators deadlock in DDL under load, and the SDK
+    // swallows the error and starts half-migrated. Secondaries verify
+    // the schema instead; the launch retry loop below absorbs the
+    // window while the primary migrates. Name and URL are explicit
+    // because setConfig bypasses dbos-config.yaml entirely.
+    DBOS.setConfig({ name: appName, systemDatabaseUrl: dbURL, runMigrations: false });
   }
 
   startHttpServer();
 
+  // Secondaries may wait out a slow first migration: verify fails fast
+  // until the primary finishes, so they get a larger attempt budget.
+  const maxAttempts = role === "secondary" ? 60 : 15;
   let launched = false;
-  for (let attempt = 1; attempt <= 15; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await DBOS.launch({
         conductorKey: apiKey,
@@ -115,7 +125,7 @@ async function main(): Promise<void> {
       launched = true;
       break;
     } catch (err) {
-      console.warn(`Attempt ${attempt}/15 to launch DBOS failed: ${err}. Retrying in 1s...`);
+      console.warn(`Attempt ${attempt}/${maxAttempts} to launch DBOS failed: ${err}. Retrying in 1s...`);
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
