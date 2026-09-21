@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.3.0](https://github.com/abn/dbos-relay/compare/v0.2.1...v0.3.0) (2026-09-21)
+
+
+### Features
+
+* **audit:** Conductor audit log parity ([b6485e0](https://github.com/abn/dbos-relay/commit/b6485e050be15f68d16f8f047298dc2f41c35557))
+* **auth:** full Conductor permission catalog ([66f3db1](https://github.com/abn/dbos-relay/commit/66f3db1cd1d38757b7e5b18d000f19cbfd22a6c1))
+* **autoscale:** Conductor autoscaling parity ([aa53b6b](https://github.com/abn/dbos-relay/commit/aa53b6bd12bf2bd397a4cd06a8457127a7f21b57))
+* **dashboard:** add metrics explorer view ([42d3390](https://github.com/abn/dbos-relay/commit/42d33902d1fba348279f06ca06aead0d9ed71eb5))
+* **dashboard:** add roles management view ([0d8f6d2](https://github.com/abn/dbos-relay/commit/0d8f6d2495a197aed95dde4f273224389d0811f0))
+* **dashboard:** settings, autoscaling, and audit views ([be9002a](https://github.com/abn/dbos-relay/commit/be9002a351e17f9bd6a40116608c60f07f5aebab))
+* **dev:** real dbosctl device login parity ([352e223](https://github.com/abn/dbos-relay/commit/352e22387c587f421387b0a482fb457cbc0a3057))
+* **metrics:** workflow and step metrics parity ([738cd49](https://github.com/abn/dbos-relay/commit/738cd49d9d61137ffc953473f08b808beaed3bd1))
+* **retention:** resume guard and search proof ([021a54f](https://github.com/abn/dbos-relay/commit/021a54fe7648fb65555766d8a7d99b0f2639d08f))
+* **site:** add client-side search to documentation wiki ([99060f1](https://github.com/abn/dbos-relay/commit/99060f146edf274db9d6b297b90678ca1b437f30))
+* **site:** automate landing page titlebar sync at build time ([c339d75](https://github.com/abn/dbos-relay/commit/c339d754a35a18a1f7222fa34905d993607610be))
+
+
+### Bug Fixes
+
+* **api:** validate UpdateApp values ([895d1e5](https://github.com/abn/dbos-relay/commit/895d1e5c123800f2d559e59753146bdce68e049b))
+* **cli:** retry database open on startup ([a5043e8](https://github.com/abn/dbos-relay/commit/a5043e81653df4c6586a9f9b0718a6e1149ae662))
+* **dashboard:** fingerprint asset filenames ([18bbbc4](https://github.com/abn/dbos-relay/commit/18bbbc45e8d1e1b72e66a7a71891a0abcb053a58))
+* **dataplane-test:** wait for live workflow result ([6f2266a](https://github.com/abn/dbos-relay/commit/6f2266aaab7833c6c40fc73f69a9a66b5ab2d83c))
+* **hub:** decouple lease touch from ping loop ([9324375](https://github.com/abn/dbos-relay/commit/93243754602bc6134f958b21db78bbff5d670125))
+* **playground:** mock new dashboard views in bridge ([bb93eb3](https://github.com/abn/dbos-relay/commit/bb93eb36597dc7678d7617e79a3b0ce9b55b13de))
+* **site:** align repo URL, changelog nav order, and cta style ([69b9b46](https://github.com/abn/dbos-relay/commit/69b9b463598f06897dfe976e281c43fcd5bef1bb))
+* **site:** align titlebar version with latest release ([005b740](https://github.com/abn/dbos-relay/commit/005b7405936e6f38eda660851169ef1bb80881cd))
+* **verify:** bound DEAD detection inside the chaos deadline ([03c6871](https://github.com/abn/dbos-relay/commit/03c6871b1e929675c474ad410702850b9d5fc4d7))
+* **verify:** close leaked SDK client pools ([b4b9757](https://github.com/abn/dbos-relay/commit/b4b97573e7cdaa156a07edf62955c3dee68d5c1f))
+* **verify:** correct heartbeat docs ([765f2ca](https://github.com/abn/dbos-relay/commit/765f2ca17ad25196d404b8cad0b2e3ec799c2f4e))
+* **verify:** cover lazy init warning ([198cf7b](https://github.com/abn/dbos-relay/commit/198cf7bd92b7e8a1e325b05da22e834919ce38eb))
+* **verify:** diagnose data-plane flakes ([ed9a10a](https://github.com/abn/dbos-relay/commit/ed9a10a98051b80639ceccbf8ec6e63d4477e01d))
+* **verify:** retry offline cancel and resume ([48317e3](https://github.com/abn/dbos-relay/commit/48317e3c70f8c04108891fb6d7dada2e4d9ffb04))
+* **verify:** serialize TypeScript sample migrations ([05d6a6c](https://github.com/abn/dbos-relay/commit/05d6a6c4be17670ab3a2c243baf7dd9a0e9a2ccd))
+* **verify:** shared mutation retry helper ([a741180](https://github.com/abn/dbos-relay/commit/a741180fcaa17d338203b31716cb474c5dbc97e1))
+* **verify:** stabilize Python sample startup ([f777af2](https://github.com/abn/dbos-relay/commit/f777af2b50f3ddb4612dfd379e9c334b98c1a275))
+
 ## [0.2.1](https://github.com/abn/dbos-relay/compare/v0.2.0...v0.2.1) (2026-09-18)
 
 
