@@ -154,6 +154,67 @@ export interface TokenCreated {
   tokenName: string;
 }
 
+export interface UpdateAppInput {
+  privateMode?: boolean;
+  executorTimeoutSecs?: number;
+  gcRowsThreshold?: number;
+  gcTimeThresholdMs?: number;
+  globalTimeoutMs?: number;
+}
+
+export interface RolloutPolicy {
+  maxOldApplicationVersions?: number | null;
+  maxExecutorsForOldApplicationVersions?: number | null;
+}
+
+export interface AutoscalePolicy {
+  queue: string;
+  rollout?: RolloutPolicy | null;
+}
+
+export interface QueueAutoscale {
+  applicationVersion: string;
+  isLatest: boolean;
+  desiredExecutors: number;
+  queueName: string;
+  queueDepth: number;
+  observedAt: number;
+}
+
+export type AuditSubjectType = "user" | "api_key";
+
+export type AuditTargetType =
+  | "application"
+  | "workflow"
+  | "schedule"
+  | "alerting_rule"
+  | "token"
+  | "role"
+  | "user"
+  | "organization"
+  | "domain_claim";
+
+export interface AuditLogEntry {
+  id: string;
+  emitTime: string;
+  operation: string;
+  status: "success" | "failure";
+  subject: { id: string; display: string; type: AuditSubjectType };
+  target?: { id: string; type: AuditTargetType } | null;
+  sourceIp: string;
+  details?: Record<string, unknown> | null;
+}
+
+export interface AuditLogQuery {
+  startTime?: string;
+  endTime?: string;
+  operation?: string;
+  subject?: string;
+  target?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export type ApiKey = Token;
 
 export interface WorkflowSearchQuery {

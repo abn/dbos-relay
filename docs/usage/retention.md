@@ -42,10 +42,10 @@ is configured on.
 
 ## Dashboard status
 
-Retention is managed through the API and `dbosctl`; the web dashboard has
-no retention page yet. Executor timeout, retention thresholds, and global
-timeout are visible on the application through `GET
-/v2/orgs/{orgName}/apps/{appName}`.
+Retention is managed through the API, `dbosctl`, and the dashboard
+Settings view (per-application retention rows and hours, global timeout,
+executor timeout, and private mode). The Settings form sends only filled
+fields; blank fields leave current values unchanged.
 
 ## Verification status
 

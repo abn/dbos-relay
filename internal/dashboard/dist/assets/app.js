@@ -203,6 +203,57 @@
         { method: "DELETE" }
       );
     }
+    // Application settings (retention, timeouts, private mode)
+    async updateApp(orgName, appName, input) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(input)
+        }
+      );
+    }
+    // Autoscaling policies and recommendations
+    async getAutoscalingPolicy(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscaling-policy`
+      );
+    }
+    async setAutoscalingPolicy(orgName, appName, policy) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscaling-policy`,
+        {
+          method: "PUT",
+          body: JSON.stringify(policy)
+        }
+      );
+    }
+    async deleteAutoscalingPolicy(orgName, appName) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscaling-policy`,
+        { method: "DELETE" }
+      );
+    }
+    async getAutoscale(orgName, appName) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/autoscale`
+      );
+    }
+    // Audit log
+    async listAuditLogs(orgName, query = {}) {
+      const params = new URLSearchParams();
+      if (query.startTime) params.set("startTime", query.startTime);
+      if (query.endTime) params.set("endTime", query.endTime);
+      if (query.operation) params.set("operation", query.operation);
+      if (query.subject) params.set("subject", query.subject);
+      if (query.target) params.set("target", query.target);
+      if (query.limit !== void 0) params.set("limit", String(query.limit));
+      if (query.offset !== void 0) params.set("offset", String(query.offset));
+      const qs = params.toString();
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/audit-logs${qs ? `?${qs}` : ""}`
+      );
+    }
     // Server-Sent Events (SSE) Stream URL
     getEventsUrl(orgName, appName) {
       const base = appName ? `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/events` : `/v2/orgs/${encodeURIComponent(orgName)}/events`;
@@ -677,6 +728,7 @@
       this.isPanningDag = false;
       this.panStartX = 0;
       this.panStartY = 0;
+      this.auditFilters = { operation: "", subject: "", target: "", startTime: "", endTime: "", limit: 100, offset: 0 };
       window.selectStep = (encodedStepJson) => {
         try {
           let step;
@@ -1143,7 +1195,10 @@
         { id: "queues", label: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
         { id: "schedules", label: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
         { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
-        { id: "keys", label: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` }
+        { id: "keys", label: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` },
+        { id: "autoscaling", label: "Autoscaling", icon: `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>` },
+        { id: "settings", label: "Settings", icon: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>` },
+        { id: "audit", label: "Audit Log", icon: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>` }
       ];
       return `
       <aside class="sidebar ${this.mobileNavOpen ? "mobile-open" : ""} ${this.sidebarFolded ? "folded" : ""}">
@@ -1217,13 +1272,14 @@
           <h1 class="header-title" title="${escapeHtml4(this.getRouteTitle())}">${escapeHtml4(this.getRouteTitle())}</h1>
         </div>
         <div class="header-right">
+          ${this.currentRoute === "audit" || this.currentRoute === "keys" ? "" : `
           <div class="selector-group">
             <label class="form-label" for="header-app-select" style="margin:0;">App:</label>
             <select id="header-app-select" class="select-sm" data-change="app" aria-label="Active application">
               <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
               ${this.apps.map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
             </select>
-          </div>
+          </div>`}
           <div class="selector-group">
             <span class="poll-indicator" title="Live telemetry refresh">
               <span class="poll-dot ${this.pollInterval === "stream" || this.pollInterval > 0 ? "active" : ""}"></span>
@@ -1267,6 +1323,12 @@
           return this.appName ? `Alert Rules: ${this.appName}` : "Alerting Rules";
         case "keys":
           return "API Keys";
+        case "autoscaling":
+          return this.appName ? `Autoscaling: ${this.appName}` : "Autoscaling";
+        case "settings":
+          return this.appName ? `Settings: ${this.appName}` : "Settings";
+        case "audit":
+          return `Audit Log: ${this.orgName}`;
         default:
           return "Relay Dashboard";
       }
@@ -1318,6 +1380,15 @@
           break;
         case "keys":
           await this.renderKeysScreen(el, silent);
+          break;
+        case "autoscaling":
+          await this.renderAutoscalingScreen(el, silent);
+          break;
+        case "settings":
+          await this.renderSettingsScreen(el, silent);
+          break;
+        case "audit":
+          await this.renderAuditScreen(el, silent);
           break;
         default:
           el.innerHTML = `<div class="card"><div class="card-body">Select a view from the sidebar.</div></div>`;
@@ -2750,6 +2821,381 @@
         }
       });
     }
+    // --- SCREEN 8: APPLICATION SETTINGS (retention, timeouts, private mode) ---
+    async renderSettingsScreen(el, silent = false) {
+      if (!silent) {
+        el.innerHTML = `<div class="loading-spinner">Loading application settings...</div>`;
+      }
+      if (!this.appName) {
+        el.innerHTML = `
+        <div class="card"><div class="card-body" style="text-align:center; color:var(--text-tertiary); padding:24px;">
+          Select an application above to view and edit its settings.
+        </div></div>`;
+        return;
+      }
+      try {
+        const app = await this.client.getApplication(this.orgName, this.appName);
+        const msToHours = (ms) => ms === null || ms === void 0 ? "" : String(ms / 36e5);
+        el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <span class="text-secondary" style="font-size:12px;">Application Settings</span>
+          </div>
+          <div>
+            <button class="btn btn-sm btn-primary" data-action="submitAppSettings">Save Settings</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Retention & Timeouts</span>
+              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Blank leaves the current value unchanged</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-field">
+              <label class="form-label" for="set-gc-rows">Retention: completed workflows kept</label>
+              <input type="number" id="set-gc-rows" class="input-text" min="0" placeholder="Unset (keep all)" value="${app.gcRowsThreshold ?? ""}">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="set-gc-hours">Retention: history age (hours after completion)</label>
+              <input type="number" id="set-gc-hours" class="input-text" min="0" step="any" placeholder="Unset (keep all)" value="${msToHours(app.gcTimeThresholdMs)}">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="set-global-hours">Global workflow timeout (hours after creation; overdue workflows are cancelled)</label>
+              <input type="number" id="set-global-hours" class="input-text" min="0" step="any" placeholder="Unset (no timeout)" value="${msToHours(app.globalTimeoutMs)}">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="set-exec-timeout">Executor timeout (seconds before an idle executor is considered gone)</label>
+              <input type="number" id="set-exec-timeout" class="input-text" min="1" value="${app.executorTimeoutSecs ?? ""}">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="set-private-mode">
+                <input type="checkbox" id="set-private-mode" ${app.privateMode ? "checked" : ""} style="margin-right:8px;">Private mode (executors omit workflow inputs, outputs, and events)
+              </label>
+            </div>
+          </div>
+        </div>
+      `;
+      } catch (err) {
+        if (this.isAuthError(err)) {
+          this.renderAuthRequired(el, "load application settings");
+          return;
+        }
+        this.renderErrorState(el, `Settings (${escapeHtml4(this.appName)})`, err.message);
+      }
+    }
+    async submitAppSettings() {
+      const readNum = (id) => {
+        const raw = document.getElementById(id).value.trim();
+        if (raw === "") return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? n : NaN;
+      };
+      const gcRows = readNum("set-gc-rows");
+      const gcHours = readNum("set-gc-hours");
+      const globalHours = readNum("set-global-hours");
+      const execTimeout = readNum("set-exec-timeout");
+      for (const [label, v] of [["retention rows", gcRows], ["retention hours", gcHours], ["global timeout", globalHours], ["executor timeout", execTimeout]]) {
+        if (Number.isNaN(v)) {
+          this.showToast(`Invalid ${label}: enter a non-negative number or blank`, "error");
+          return;
+        }
+      }
+      const input = {
+        privateMode: document.getElementById("set-private-mode").checked
+      };
+      if (gcRows !== null) input.gcRowsThreshold = Math.floor(gcRows);
+      if (gcHours !== null) input.gcTimeThresholdMs = Math.floor(gcHours * 36e5);
+      if (globalHours !== null) input.globalTimeoutMs = Math.floor(globalHours * 36e5);
+      if (execTimeout !== null && !Number.isNaN(execTimeout)) {
+        input.executorTimeoutSecs = Math.floor(execTimeout);
+      }
+      try {
+        await this.client.updateApp(this.orgName, this.appName, input);
+        this.showToast("Application settings saved", "success");
+        this.renderContentView();
+      } catch (err) {
+        this.showToast(`Failed to save settings: ${err.message}`, "error");
+      }
+    }
+    // --- SCREEN 9: AUTOSCALING ---
+    async renderAutoscalingScreen(el, silent = false) {
+      if (!silent) {
+        el.innerHTML = `<div class="loading-spinner">Loading autoscaling policy...</div>`;
+      }
+      if (!this.appName) {
+        el.innerHTML = `
+        <div class="card"><div class="card-body" style="text-align:center; color:var(--text-tertiary); padding:24px;">
+          Select an application above to manage its autoscaling policy.
+        </div></div>`;
+        return;
+      }
+      try {
+        const [queues, policyRes, recsRes] = await Promise.allSettled([
+          this.client.listQueues(this.orgName, this.appName),
+          this.client.getAutoscalingPolicy(this.orgName, this.appName),
+          this.client.getAutoscale(this.orgName, this.appName)
+        ]);
+        const queueList = queues.status === "fulfilled" ? queues.value || [] : [];
+        const queuesError = queues.status === "rejected" ? queues.reason : null;
+        let policy = null;
+        if (policyRes.status === "fulfilled") {
+          policy = policyRes.value ? policyRes.value.policy || policyRes.value : null;
+        } else if (policyRes.reason && policyRes.reason.status !== 404) {
+          throw policyRes.reason;
+        }
+        const recs = recsRes.status === "fulfilled" ? recsRes.value || [] : [];
+        const recsError = recsRes.status === "rejected" ? recsRes.reason : null;
+        const eligible = queueList.filter((q) => !q.partitionQueue && q.workerConcurrency > 0);
+        const queueOptions = queueList.map((q) => {
+          const ok = !q.partitionQueue && q.workerConcurrency > 0;
+          return `<option value="${escapeHtml4(q.name)}" ${policy && policy.queue === q.name ? "selected" : ""} ${ok ? "" : "disabled"}>${escapeHtml4(q.name)}${ok ? ` (concurrency ${q.workerConcurrency})` : " (ineligible)"}</option>`;
+        }).join("");
+        const rollout = policy && policy.rollout || {};
+        el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <span class="text-secondary" style="font-size:12px;">Autoscaling Policy</span>
+          </div>
+          <div>
+            ${policy ? `<button class="btn btn-sm btn-danger" data-action="deleteAutoscalingPolicy">Delete Policy</button>` : ""}
+            <button class="btn btn-sm btn-primary" data-action="submitAutoscalingPolicy">Save Policy</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div><span class="card-title">Policy</span>
+            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Backlog on the policy queue drives desired executors; the orchestrator actuates</span></div>
+          </div>
+          <div class="card-body">
+            <div class="form-field">
+              <label class="form-label" for="scale-queue">Policy queue</label>
+              <select id="scale-queue" class="select-sm">
+                <option value="">Select a queue...</option>
+                ${queueOptions}
+              </select>
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="scale-max-old">Maximum old versions (blank = latest only)</label>
+              <input type="number" id="scale-max-old" class="input-text" min="0" value="${rollout.maxOldApplicationVersions ?? ""}">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="scale-max-exec">Maximum executors per old version (blank = uncapped)</label>
+              <input type="number" id="scale-max-exec" class="input-text" min="0" placeholder="Uncapped" value="${rollout.maxExecutorsForOldApplicationVersions ?? ""}">
+            </div>
+            ${queuesError ? `<p style="font-size:12px; color:var(--color-error-text);">Queues unavailable: ${escapeHtml4(queuesError.message)}</p>` : eligible.length === 0 ? `<p style="font-size:12px; color:var(--text-tertiary);">No eligible queues: a policy queue must exist, be unpartitioned, and have worker concurrency set.</p>` : ""}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div><span class="card-title">Desired Executors</span>
+            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live recommendation per application version</span></div>
+            <span class="badge badge-neutral">${recs.length} versions</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Version</th>
+                  <th>Latest</th>
+                  <th>Desired</th>
+                  <th>Queue Depth</th>
+                  <th>Queue</th>
+                  <th>Observed</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${recsError ? `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">${policy ? `Recommendations unavailable: ${escapeHtml4(recsError.message)}` : "Attach a policy to see recommendations."}</td></tr>` : recs.length > 0 ? recs.map((r) => `
+                  <tr>
+                    <td><code>${escapeHtml4(r.applicationVersion)}</code></td>
+                    <td>${r.isLatest ? `<span class="badge badge-info">latest</span>` : "-"}</td>
+                    <td><strong>${r.desiredExecutors}</strong></td>
+                    <td>${r.queueDepth}</td>
+                    <td>${escapeHtml4(r.queueName)}</td>
+                    <td>${formatTimestamp(new Date(r.observedAt).toISOString())}</td>
+                  </tr>
+                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">${policy ? "No versions to report." : "Attach a policy to see recommendations."}</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      } catch (err) {
+        if (this.isAuthError(err)) {
+          this.renderAuthRequired(el, "load autoscaling policy");
+          return;
+        }
+        if (this.isNoExecutorError(err)) {
+          this.renderErrorState(el, `Autoscaling (${escapeHtml4(this.appName)})`, `No healthy executor connected: ${err.message}`);
+          return;
+        }
+        this.renderErrorState(el, `Autoscaling (${escapeHtml4(this.appName)})`, err.message);
+      }
+    }
+    async submitAutoscalingPolicy() {
+      const queue = document.getElementById("scale-queue").value;
+      if (!queue) {
+        this.showToast("Select a policy queue first", "error");
+        return;
+      }
+      const readOpt = (id) => {
+        const raw = document.getElementById(id).value.trim();
+        if (raw === "") return null;
+        const n = Math.floor(Number(raw));
+        if (!Number.isFinite(n) || n < 0) return NaN;
+        return n;
+      };
+      const maxOld = readOpt("scale-max-old");
+      const maxExec = readOpt("scale-max-exec");
+      if (Number.isNaN(maxOld) || Number.isNaN(maxExec)) {
+        this.showToast("Rollout caps must be non-negative numbers or blank", "error");
+        return;
+      }
+      const policy = { queue };
+      if (maxOld !== null || maxExec !== null) {
+        policy.rollout = {};
+        if (maxOld !== null) policy.rollout.maxOldApplicationVersions = maxOld;
+        if (maxExec !== null) policy.rollout.maxExecutorsForOldApplicationVersions = maxExec;
+      }
+      try {
+        await this.client.setAutoscalingPolicy(this.orgName, this.appName, policy);
+        this.showToast("Autoscaling policy saved", "success");
+        this.renderContentView();
+      } catch (err) {
+        this.showToast(`Failed to save policy: ${err.message}`, "error");
+      }
+    }
+    deleteAutoscalingPolicy() {
+      const targetApp = this.appName;
+      this.showConfirm({
+        title: "Delete Autoscaling Policy",
+        message: `Turn off autoscaling for "${targetApp}"?`,
+        consequence: "Scalers polling the recommendation endpoints will receive 404 responses until a new policy is attached.",
+        details: [
+          { label: "Application", value: targetApp },
+          { label: "Action", value: "Delete policy" }
+        ],
+        confirmText: "Delete Policy",
+        confirmClass: "btn-danger",
+        onConfirm: async () => {
+          try {
+            await this.client.deleteAutoscalingPolicy(this.orgName, targetApp);
+            this.showToast("Autoscaling policy deleted", "success");
+            this.renderContentView();
+          } catch (err) {
+            this.showToast(`Failed to delete policy: ${err.message}`, "error");
+          }
+        }
+      });
+    }
+    // --- SCREEN 10: AUDIT LOG ---
+    async renderAuditScreen(el, silent = false) {
+      if (!silent) {
+        el.innerHTML = `<div class="loading-spinner">Loading audit log...</div>`;
+      }
+      const f = this.auditFilters;
+      try {
+        const query = { limit: f.limit, offset: f.offset };
+        if (f.operation) query.operation = f.operation;
+        if (f.subject) query.subject = f.subject;
+        if (f.target) query.target = f.target;
+        if (f.startTime) query.startTime = new Date(f.startTime).toISOString();
+        if (f.endTime) query.endTime = new Date(f.endTime).toISOString();
+        const entries = await this.client.listAuditLogs(this.orgName, query);
+        const rows = entries || [];
+        el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <input type="text" id="audit-operation" class="input-text" placeholder="Operation (e.g. workflow.cancel)" aria-label="Filter by operation" value="${escapeHtml4(f.operation)}" style="width:220px;">
+            <input type="text" id="audit-subject" class="input-text" placeholder="Subject" aria-label="Filter by subject" value="${escapeHtml4(f.subject)}" style="width:160px;">
+            <input type="text" id="audit-target" class="input-text" placeholder="Target" aria-label="Filter by target" value="${escapeHtml4(f.target)}" style="width:160px;">
+            <input type="datetime-local" id="audit-start" class="input-text" aria-label="Filter by start time" value="${escapeHtml4(f.startTime)}" style="width:170px;">
+            <input type="datetime-local" id="audit-end" class="input-text" aria-label="Filter by end time" value="${escapeHtml4(f.endTime)}" style="width:170px;">
+          </div>
+          <div class="filter-group">
+            <button class="btn btn-sm btn-primary" data-action="applyAuditFilters">Apply Filters</button>
+            <button class="btn btn-sm btn-secondary" data-action="clearAuditFilters">Clear</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div><span class="card-title">Audit Log</span>
+            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${escapeHtml4(this.orgName)} &middot; newest first</span></div>
+            <div>
+              <button class="btn btn-xs btn-secondary" data-action="auditPrevPage" ${f.offset === 0 ? "disabled" : ""}>Prev</button>
+              <button class="btn btn-xs btn-secondary" data-action="auditNextPage" ${rows.length < f.limit ? "disabled" : ""}>Next</button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Operation</th>
+                  <th>Status</th>
+                  <th>Subject</th>
+                  <th>Target</th>
+                  <th>Source IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.length > 0 ? rows.map((e) => `
+                  <tr>
+                    <td>${formatTimestamp(e.emitTime)}</td>
+                    <td><code>${escapeHtml4(e.operation)}</code></td>
+                    <td>${e.status === "success" ? `<span class="badge badge-success">success</span>` : `<span class="badge badge-danger">failure</span>`}</td>
+                    <td>${escapeHtml4(e.subject ? e.subject.display : "")} <span class="text-secondary" style="font-size:11px;">(${escapeHtml4(e.subject ? e.subject.type : "")})</span></td>
+                    <td>${e.target ? `<code>${escapeHtml4(e.target.id)}</code> <span class="text-secondary" style="font-size:11px;">(${escapeHtml4(e.target.type)})</span>` : "-"}</td>
+                    <td><code>${escapeHtml4(e.sourceIp || "")}</code></td>
+                  </tr>
+                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">No audit entries match.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      } catch (err) {
+        if (this.isAuthError(err)) {
+          this.renderAuthRequired(el, "load audit log");
+          return;
+        }
+        if (err && err.status === 404 && /oauth|no-auth/i.test(err.message || "")) {
+          this.renderAuthRequired(el, "load audit log");
+          return;
+        }
+        this.renderErrorState(el, `Audit Log (${escapeHtml4(this.orgName)})`, err.message);
+      }
+    }
+    applyAuditFilters() {
+      const val = (id) => {
+        const node = document.getElementById(id);
+        return node ? node.value.trim() : "";
+      };
+      this.auditFilters.operation = val("audit-operation");
+      this.auditFilters.subject = val("audit-subject");
+      this.auditFilters.target = val("audit-target");
+      this.auditFilters.startTime = val("audit-start");
+      this.auditFilters.endTime = val("audit-end");
+      this.auditFilters.offset = 0;
+      this.renderContentView();
+    }
+    clearAuditFilters() {
+      this.auditFilters = { operation: "", subject: "", target: "", startTime: "", endTime: "", limit: 100, offset: 0 };
+      this.renderContentView();
+    }
+    auditPrevPage() {
+      this.auditFilters.offset = Math.max(0, this.auditFilters.offset - this.auditFilters.limit);
+      this.renderContentView();
+    }
+    auditNextPage() {
+      this.auditFilters.offset += this.auditFilters.limit;
+      this.renderContentView();
+    }
   };
   function escapeHtml4(str) {
     if (str === null || str === void 0) return "";
@@ -2902,6 +3348,13 @@
     else if (target.dataset.deleteRule) window.app.deleteAlertRule(target.dataset.deleteRule.replace(/'/g, ""), target.dataset.ruleApp);
     else if (target.dataset.action === "openCreateKey") window.app.openCreateKeyModal();
     else if (target.dataset.action === "submitCreateKey") window.app.submitCreateKey();
+    else if (target.dataset.action === "submitAppSettings") window.app.submitAppSettings();
+    else if (target.dataset.action === "submitAutoscalingPolicy") window.app.submitAutoscalingPolicy();
+    else if (target.dataset.action === "deleteAutoscalingPolicy") window.app.deleteAutoscalingPolicy();
+    else if (target.dataset.action === "applyAuditFilters") window.app.applyAuditFilters();
+    else if (target.dataset.action === "clearAuditFilters") window.app.clearAuditFilters();
+    else if (target.dataset.action === "auditPrevPage") window.app.auditPrevPage();
+    else if (target.dataset.action === "auditNextPage") window.app.auditNextPage();
     else if (target.dataset.revokeKey) window.app.revokeKey(target.dataset.revokeKey.replace(/'/g, ""));
     else if (target.dataset.copyAndClose) {
       let text = target.dataset.copyAndClose;

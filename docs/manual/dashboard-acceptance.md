@@ -19,7 +19,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ## Navigation & Global Shell
 
-- [ ] **Sidebar Navigation**: Verify that the sidebar contains links for Fleet & Apps, Workflows, Queues, Schedules, Alert Rules, and API Keys. Clicking each navigation item switches the active view route without full-page reloads.
+- [ ] **Sidebar Navigation**: Verify that the sidebar contains links for Fleet & Apps, Workflows, Queues, Schedules, Alert Rules, API Keys, Autoscaling, Settings, and Audit Log. Clicking each navigation item switches the active view route without full-page reloads.
 - [ ] **Brand Identity**: Confirm the Relay branding and version badge render correctly in the sidebar header.
 - [ ] **Top Header & Application Selector**: Verify the application dropdown selector correctly lists registered applications. Switching applications updates the active application context across all dashboard views.
 - [ ] **Refresh Control**: Clicking the refresh button reloads data for the current active view.
@@ -122,7 +122,33 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 8. Theme Toggle & Accessibility
+## 8. Autoscaling Tab
+
+- [ ] **Policy Form**: Select an application, verify the policy queue dropdown lists only eligible queues (existing, unpartitioned, worker concurrency set) and disables the rest. Set rollout caps and save; verify the success toast and that the form reflects the stored policy on reload.
+- [ ] **Validation**: Click save without selecting a queue and verify the inline error. Enter a negative rollout cap and verify rejection.
+- [ ] **Recommendations Table**: Verify per-version rows show version, latest badge, desired executors, queue depth, queue name, and observed timestamp. With no policy attached, verify the guided empty state.
+- [ ] **Delete Policy**: Delete the policy, confirm the prompt, and verify the recommendations table returns to the empty state.
+
+---
+
+## 9. Application Settings Tab
+
+- [ ] **Settings Form**: Select an application and verify retention rows, retention hours, global timeout hours, executor timeout seconds, and the private mode checkbox reflect the stored values.
+- [ ] **Save Round-Trip**: Change a threshold, save, and verify the success toast and the persisted value on reload. Blank fields leave current values unchanged.
+- [ ] **Validation**: Enter a negative number and verify the inline error with no request sent.
+
+---
+
+## 10. Audit Log Tab
+
+- [ ] **Entries Table**: Verify rows show time, operation, success/failure status pills, subject with type, target with type (or "-" when absent), and source IP, newest first.
+- [ ] **Filters**: Enter an operation, subject, or target filter, apply, and verify the request carries the filters and the table narrows. Clear restores the unfiltered list.
+- [ ] **Paging**: Advance past a full page and verify Next/Prev offset paging; Prev disables on the first page.
+- [ ] **No-Auth Mode**: Against a relay without OIDC, verify the view explains that audit listing requires authentication instead of failing silently.
+
+---
+
+## 11. Theme Toggle & Accessibility
 
 - [ ] **Theme Persistence**: Verify toggling between dark and light themes updates UI colors across all screens and correctly persists selection across browser sessions via `localStorage`.
 - [ ] **Responsive Layout**: Verify sidebar and content areas resize gracefully across standard desktop viewports.
