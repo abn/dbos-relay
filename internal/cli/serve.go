@@ -92,7 +92,7 @@ func newServeCommand() *cobra.Command {
 				}
 			}
 
-			s, err := store.Open(ctx, cfg.DatabaseURL)
+			s, err := openStoreWithRetry(ctx, logger, cfg.DatabaseURL)
 			if err != nil {
 				return fmt.Errorf("opening store: %w", err)
 			}
@@ -251,6 +251,36 @@ func newServeCommand() *cobra.Command {
 type requestIDContextKey struct{}
 
 var contextKeyRequestID = requestIDContextKey{}
+
+// storeOpenTimeout bounds how long serve waits for the database to accept
+// connections. Postgres restarts during its own init (and slow container
+// startups generally) can refuse the first pings; exiting immediately
+// turns that into a failed deployment.
+var storeOpenTimeout = 30 * time.Second
+
+var storeOpenRetryInterval = 2 * time.Second
+
+// openStoreWithRetry opens the database, retrying refused pings until the
+// timeout or context cancellation. Every failure waits one interval, so a
+// permanently bad URL still terminates after at most the timeout.
+func openStoreWithRetry(ctx context.Context, logger *slog.Logger, databaseURL string) (*store.Store, error) {
+	deadline := time.Now().Add(storeOpenTimeout)
+	for {
+		s, err := store.Open(ctx, databaseURL)
+		if err == nil {
+			return s, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+		logger.Warn("database unavailable, retrying", "error", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(storeOpenRetryInterval):
+		}
+	}
+}
 
 type responseWriterRecorder struct {
 	http.ResponseWriter
