@@ -26,6 +26,10 @@ type DefaultManager struct {
 	logger      *slog.Logger
 }
 
+// initBackoff is how long a failed data-plane client init suppresses
+// further init attempts for the same application.
+const initBackoff = 5 * time.Second
+
 // NewManager creates a new DefaultManager with the provided client factory.
 func NewManager(factory ClientFactory) *DefaultManager {
 	if factory == nil {
@@ -160,7 +164,7 @@ func (m *DefaultManager) getOrInitClient(appID pgtype.UUID) (Client, AppConfig, 
 		return nil, cfg, fmt.Errorf("application not properly registered")
 	}
 
-	if time.Since(lastErr) < 5*time.Second {
+	if time.Since(lastErr) < initBackoff {
 		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: backoff active")
 	}
 
@@ -175,7 +179,7 @@ func (m *DefaultManager) getOrInitClient(appID pgtype.UUID) (Client, AppConfig, 
 	if ok && client != nil {
 		return client, cfg, nil
 	}
-	if time.Since(lastErr) < 5*time.Second {
+	if time.Since(lastErr) < initBackoff {
 		return nil, cfg, fmt.Errorf("failed to initialize data-plane client: backoff active")
 	}
 

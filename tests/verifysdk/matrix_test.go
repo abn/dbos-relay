@@ -465,16 +465,6 @@ func postMutation(t *testing.T, op, url string, body []byte, okStatuses ...int) 
 	}
 }
 
-// cancelWorkflowViaAPIWithRetry polls the offline cancel until it lands
-// or the deadline expires. The first data-plane use per application pays
-// client pool creation, schema verification, and ping on the critical
-// path, so a single-shot assertion turns transient init pressure into a
-// fatal 503. Kept as a named wrapper for call-site readability.
-func cancelWorkflowViaAPIWithRetry(t *testing.T, appName, wfID string) {
-	t.Helper()
-	cancelWorkflowViaAPI(t, appName, wfID)
-}
-
 func resumeWorkflowViaAPI(t *testing.T, appName, wfID string) {
 	t.Helper()
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/resume", relayBaseURL, orgName, appName, wfID)
