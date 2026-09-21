@@ -17,6 +17,9 @@ license.
 Unmodified DBOS applications connect to Relay simply by pointing their Conductor
 URL and API key at the Relay instance.
 
+Read the announcement post: [Relay: An Open-Source Control Plane for DBOS
+Applications](https://abn.is/void/relay-an-open-source-control-plane-for-dbos-applications/).
+
 | Workflow Family DAG | Fleet & Applications |
 | :---: | :---: |
 | <a href="site/assets/screenshots/dashboard-workflow-dag.png"><img src="site/assets/screenshots/dashboard-workflow-dag.png" alt="Relay Workflow Family DAG" width="100%"></a> | <a href="site/assets/screenshots/dashboard-fleet.png"><img src="site/assets/screenshots/dashboard-fleet.png" alt="Relay Fleet and Applications Overview" width="100%"></a> |
@@ -47,6 +50,10 @@ chmod +x relay
 
 # Open http://localhost:8090 in your browser to access the dashboard
 ```
+
+To try Relay without installing anything, open the [in-browser
+playground](https://relay.lab.abn.is/playground/), which runs client-side
+workflow simulations entirely in the browser.
 
 ### 2. Containerized with Podman or Docker
 
