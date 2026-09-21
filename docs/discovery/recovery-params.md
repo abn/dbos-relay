@@ -96,9 +96,9 @@ connections and recovery.
 
 Liveness detection operates as follows:
 1. **Heartbeat initiation**: The executor SDK actively initiates heartbeats by
-   sending a standard WebSocket `Ping` frame (opcode 0x9) every 10 seconds
-   (`_PING_INTERVAL` / `pingPeriodMs`). In parallel, Relay sends periodic WebSocket
-   `Ping` frames at the matching 20-second interval (`internal/hub/conn.go`).
+   sending a standard WebSocket `Ping` frame (opcode 0x9) every 20 seconds
+   (`_PING_INTERVAL` / `pingPeriodMs`). In parallel, Relay sends its own
+   WebSocket `Ping` frames every 10 seconds (`internal/hub/conn.go`).
 2. **Server expectation**: The server maintains a read deadline or liveness
    timer of 25 seconds (`executorPingWait`). Receipt of any WebSocket frame
    (Ping or Text) resets this timer and refreshes the executor's `updatedAt`

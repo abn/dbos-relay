@@ -67,7 +67,7 @@ routing.
 Relay implements the normative timing parameters defined in the executor protocol specification:
 
 * **Grace period timeout**: Default 60 seconds (`executorTimeoutSecs`), configurable per application in `relay.yaml` or overridden via application conductor settings (`PATCH /v2/orgs/{orgName}/apps/{appName}`).
-* **Server ping interval**: 20 seconds (`_PING_INTERVAL` in `internal/hub/conn.go`).
+* **Server ping interval**: 10 seconds (`pingInterval` in `internal/hub/conn.go`), matching the protocol specification.
 * **Client ping interval**: 20 seconds default across DBOS Transact SDKs.
 * **Server ping wait**: 25 seconds (`executorPingWait`), after which an unresponsive connection transitions to `DISCONNECTED`.
 * **Client pong timeout**: 15 seconds (Python, TypeScript, Java) or 30 seconds (Go).
