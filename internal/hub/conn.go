@@ -14,9 +14,14 @@ import (
 	"github.com/abn/relay/internal/protocol"
 )
 
-// Provenance: Server-initiated liveness probe. Mirrors the executor's own 20s ping cadence (see docs/discovery/recovery-params.md); the protocol-facing server value is executorPingWait = 25s.
+// Provenance: Server-initiated liveness probe. The server ping cadence
+// is 10s as documented in docs/protocol/executor-ws.md; the pong wait
+// matches the executor SDK contracts (executorPingWait = 25s).
+// Detection latency after a silent death is therefore bounded by
+// pingInterval + executorPingWait, keeping chaos DEAD deadlines clear
+// of the boundary.
 const (
-	pingInterval     = 20 * time.Second
+	pingInterval     = 10 * time.Second
 	executorPingWait = 25 * time.Second
 )
 

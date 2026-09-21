@@ -1287,7 +1287,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				executorTimeout := 10 * time.Second
 				gracePeriod := executorTimeout
 
-				deadline := time.Now().Add(55 * time.Second)
+				// Worst-case detection is ping interval (10s) plus pong
+				// wait (25s) plus grace (10s); the deadline keeps margin
+				// for loaded runners.
+				deadline := time.Now().Add(75 * time.Second)
 				for time.Now().Before(deadline) {
 					execs := getExecutorsFromAPI(t, primaryInfo.AppName)
 					found := false

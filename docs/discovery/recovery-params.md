@@ -81,7 +81,7 @@ connections and recovery.
 
 | Parameter | Default Value | Measured In | Initiator / Owner | Permitted Source |
 | --- | --- | --- | --- | --- |
-| Server ping interval | 20 seconds | seconds (`s`) | Control plane (Relay) | `internal/hub/conn.go:18`, `docs/protocol/executor-ws.md:221` |
+| Server ping interval | 10 seconds | seconds (`s`) | Control plane (Relay) | `internal/hub/conn.go:18`, `docs/protocol/executor-ws.md:221` |
 | Client ping interval | 20 seconds | seconds (`s` or `ms`) | Executor SDK | Go SDK (`dbos/conductor.go:28`), Python SDK (`conductor.py:54`), TS SDK (`conductor.ts:28`), Java SDK (`Conductor.java:525`) |
 | Server ping wait (`executorPingWait`) | 25 seconds | seconds (`s`) | Control plane (Relay) | Go SDK (`dbos/conductor.go:29`) |
 | Client pong timeout | 15s (Py, TS, Java) / 30s (Go) | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:29`), Python SDK (`conductor.py:55`), TS SDK (`conductor.ts:29`), Java SDK (`Conductor.java:89`) |
@@ -96,7 +96,7 @@ connections and recovery.
 
 Liveness detection operates as follows:
 1. **Heartbeat initiation**: The executor SDK actively initiates heartbeats by
-   sending a standard WebSocket `Ping` frame (opcode 0x9) every 20 seconds
+   sending a standard WebSocket `Ping` frame (opcode 0x9) every 10 seconds
    (`_PING_INTERVAL` / `pingPeriodMs`). In parallel, Relay sends periodic WebSocket
    `Ping` frames at the matching 20-second interval (`internal/hub/conn.go`).
 2. **Server expectation**: The server maintains a read deadline or liveness
