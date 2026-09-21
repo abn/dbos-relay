@@ -40,7 +40,7 @@ dashboard/build: ## Build the web dashboard assets
 
 dashboard/check: ## Validate dashboard production bundle syntax
 	@command -v node >/dev/null 2>&1 || { echo "ERROR: node is required for dashboard/check" >&2; exit 1; }
-	node --check internal/dashboard/dist/assets/app.js
+	node --check internal/dashboard/dist/assets/app.*.js
 
 site: ## Build static landing page and documentation site
 	$(MAKE) -C site site

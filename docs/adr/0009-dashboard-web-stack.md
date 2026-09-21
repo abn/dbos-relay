@@ -23,7 +23,7 @@ model.
 Relay implements the web dashboard as a lightweight vanilla JavaScript client with an esbuild asset compilation step:
 
 1. **Runtime framework**: Vanilla JavaScript in the browser using standard DOM templates and native browser APIs, with zero runtime UI framework dependencies.
-2. **Build and bundling**: Uses `esbuild` as a development dependency via `node build.js` to bundle modular client scripts into a single standalone IIFE distribution bundle (`internal/dashboard/dist/assets/app.js`), verified with `node --check`.
+2. **Build and bundling**: Uses `esbuild` as a development dependency via `node build.js` to bundle modular client scripts into a single standalone IIFE distribution bundle (`internal/dashboard/dist/assets/app.<hash>.js`), verified with `node --check`. The bundle and stylesheet carry a content hash in the file name, so the immutable cache headers served for `assets/` stay correct across upgrades; `index.html` is rewritten against the new names at build time.
 3. **DAG visualization**: Bespoke SVG renderer (`WorkflowDAG.js`) tailored to DBOS workflow step graphs.
 4. **Styling**: Hand-written CSS without external utility frameworks.
 5. **Types**: Client models in `src/lib/api/types.ts` are maintained directly against Relay OpenAPI schemas rather than generated via heavy external node tooling.
