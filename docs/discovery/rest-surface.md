@@ -217,3 +217,10 @@ or are deferred to later compatibility tiers:
    * `hostId` represents cloud VM instance identifiers; Relay populates `executorId`,
      `hostname`, `appVersion`, `language`, and `executorMetadata` from executor
      registrations.
+
+6. **Workflow `restart` wire message**:
+   * `restart` exists in the Python and Java SDKs but not in the Go SDK
+     (`dbos-transact-go` commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`),
+     which is Relay's protocol reference. Relay leaves it unimplemented;
+     resume, fork, and fork-from-failure cover the recovery paths.
+     See [the protocol reference](../protocol/executor-ws.md).

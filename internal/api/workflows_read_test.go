@@ -323,6 +323,68 @@ func TestSearchWorkflows(t *testing.T) {
 	})
 }
 
+func TestSearchWorkflows_TimeWindowAndAttributes(t *testing.T) {
+	var capturedMsg protocol.Message
+	r := &mockWorkflowRouter{
+		dispatchFunc: func(_ context.Context, _, _ string, msg protocol.Message) (protocol.Message, error) {
+			capturedMsg = msg
+			return &protocol.ListWorkflowsResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeListWorkflows,
+					RequestID: msg.GetRequestID(),
+				},
+				Output: []protocol.ListWorkflowsResponseBody{},
+			}, nil
+		},
+	}
+
+	server := api.NewServer(r, nil, nil)
+	completedAfter := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	completedBefore := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	dequeuedAfter := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	dequeuedBefore := time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)
+	attrs := map[string]any{"tenant": "acme"}
+
+	respObj, err := server.SearchWorkflows(context.Background(), gen.SearchWorkflowsRequestObject{
+		OrgName: "my-org",
+		AppName: "my-app",
+		Body: &gen.WorkflowSearchBody{
+			CompletedAfter:  &completedAfter,
+			CompletedBefore: &completedBefore,
+			DequeuedAfter:   &dequeuedAfter,
+			DequeuedBefore:  &dequeuedBefore,
+			Attributes:      &attrs,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	req, ok := capturedMsg.(*protocol.ListWorkflowsRequest)
+	if !ok {
+		t.Fatalf("expected *protocol.ListWorkflowsRequest, got %T", capturedMsg)
+	}
+	if req.Body.CompletedAfter == nil || !req.Body.CompletedAfter.Equal(completedAfter) {
+		t.Errorf("unexpected CompletedAfter: %v", req.Body.CompletedAfter)
+	}
+	if req.Body.CompletedBefore == nil || !req.Body.CompletedBefore.Equal(completedBefore) {
+		t.Errorf("unexpected CompletedBefore: %v", req.Body.CompletedBefore)
+	}
+	if req.Body.DequeuedAfter == nil || !req.Body.DequeuedAfter.Equal(dequeuedAfter) {
+		t.Errorf("unexpected DequeuedAfter: %v", req.Body.DequeuedAfter)
+	}
+	if req.Body.DequeuedBefore == nil || !req.Body.DequeuedBefore.Equal(dequeuedBefore) {
+		t.Errorf("unexpected DequeuedBefore: %v", req.Body.DequeuedBefore)
+	}
+	if req.Body.Attributes == nil || req.Body.Attributes["tenant"] != "acme" {
+		t.Errorf("unexpected Attributes: %v", req.Body.Attributes)
+	}
+
+	if _, ok := respObj.(gen.SearchWorkflows200JSONResponse); !ok {
+		t.Fatalf("expected gen.SearchWorkflows200JSONResponse, got %T", respObj)
+	}
+}
+
 func TestGetWorkflow(t *testing.T) {
 	t.Run("returns 200 with workflow details", func(t *testing.T) {
 		status := "SUCCESS"
