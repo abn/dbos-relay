@@ -309,4 +309,8 @@ Retention defaults to 90 days and is configurable per organization between
 `new_name` renames the organization). A PATCH changing nothing returns 204
 without recording an entry. Expired entries are purged hourly.
 Domain-claim mutations are recorded under `domain_claim.create` and
-`domain_claim.delete`, a Relay extension outside the upstream taxonomy.
+`domain_claim.delete`, and join-secret generation under
+`secret.generate`, Relay extensions outside the upstream taxonomy.
+User registration (`POST /v2/users`) records no entry: audit entries are
+scoped to an organization and no org context exists at registration time.
+The subsequent join and role-grant actions are recorded.
