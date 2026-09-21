@@ -437,6 +437,43 @@ func TestManager_EagerInitializationFailureLogsWarning(t *testing.T) {
 	}
 }
 
+func TestManager_LazyInitializationFailureLogsWarning(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	appID := pgtype.UUID{Bytes: [16]byte{8, 8, 8}, Valid: true}
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return nil, errors.New("connection refused to target application db")
+	})
+	mgr.SetLogger(logger)
+
+	if err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://fake/db",
+	}); err != nil {
+		t.Fatalf("RegisterApp failed: %v", err)
+	}
+
+	// The eager attempt fails and starts the init backoff
+	// (dataplane.initBackoff); sleep past it so Dispatch takes the
+	// lazy factory path instead of the backoff shortcut, which logs
+	// nothing. Bump this sleep if initBackoff changes.
+	buf.Reset()
+	time.Sleep(6 * time.Second)
+
+	_, err := mgr.Dispatch(context.Background(), appID, &protocol.ListWorkflowsRequest{
+		Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req-lazy"},
+	})
+	if err == nil {
+		t.Fatal("expected Dispatch to fail with a failing factory")
+	}
+
+	logOutput := buf.String()
+	if !bytes.Contains([]byte(logOutput), []byte("failed lazy data-plane client initialization")) {
+		t.Fatalf("expected warning log on lazy client init failure, got: %s", logOutput)
+	}
+}
+
 func TestManager_CloseShutsDownClients(t *testing.T) {
 	appID := pgtype.UUID{Bytes: [16]byte{5, 5, 5}, Valid: true}
 	mock := &mockClient{}
