@@ -448,47 +448,89 @@ func getFullWorkflowViaAPI(t *testing.T, appName, wfID string) *gen.Workflow {
 
 func cancelWorkflowViaAPI(t *testing.T, appName, wfID string) {
 	t.Helper()
+	cancelWorkflowViaAPIWithRetry(t, appName, wfID)
+}
+
+// cancelWorkflowViaAPIWithRetry polls the offline cancel until it lands
+// or the deadline expires. The first data-plane use per application pays
+// client pool creation, schema verification, and ping on the critical
+// path, so a single-shot assertion turns transient init pressure into a
+// fatal 503. 5xx and transport errors retry; 4xx fails fast.
+func cancelWorkflowViaAPIWithRetry(t *testing.T, appName, wfID string) {
+	t.Helper()
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/cancel", relayBaseURL, orgName, appName, wfID)
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{}`))
-	if err != nil {
-		t.Fatalf("failed to create cancel request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := getAPIKey(); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to dispatch cancel via Relay API: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("cancel via Relay API returned status %d: %s", resp.StatusCode, string(b))
+	deadline := time.Now().Add(90 * time.Second)
+	var lastErr string
+	for attempts := 0; ; attempts++ {
+		req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{}`))
+		if err != nil {
+			t.Fatalf("failed to create cancel request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if key := getAPIKey(); key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+				if attempts > 0 {
+					t.Logf("offline cancel landed after %d retries", attempts)
+				}
+				return
+			}
+			if resp.StatusCode < 500 {
+				t.Fatalf("cancel via Relay API returned status %d: %s", resp.StatusCode, string(body))
+			}
+			lastErr = fmt.Sprintf("status %d: %s", resp.StatusCode, string(body))
+		} else {
+			lastErr = err.Error()
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("cancel via Relay API failed after polling: %s", lastErr)
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
 
 func resumeWorkflowViaAPI(t *testing.T, appName, wfID string) {
 	t.Helper()
 	url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/resume", relayBaseURL, orgName, appName, wfID)
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{"queueName":"_dbos_internal_queue"}`))
-	if err != nil {
-		t.Fatalf("failed to create resume request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := getAPIKey(); key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to dispatch resume via Relay API: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("resume via Relay API returned status %d: %s", resp.StatusCode, string(b))
+	deadline := time.Now().Add(90 * time.Second)
+	var lastErr string
+	for attempts := 0; ; attempts++ {
+		req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(`{"queueName":"_dbos_internal_queue"}`))
+		if err != nil {
+			t.Fatalf("failed to create resume request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if key := getAPIKey(); key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+				if attempts > 0 {
+					t.Logf("offline resume landed after %d retries", attempts)
+				}
+				return
+			}
+			if resp.StatusCode < 500 {
+				t.Fatalf("resume via Relay API returned status %d: %s", resp.StatusCode, string(body))
+			}
+			lastErr = fmt.Sprintf("status %d: %s", resp.StatusCode, string(body))
+		} else {
+			lastErr = err.Error()
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("resume via Relay API failed after polling: %s", lastErr)
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
 
