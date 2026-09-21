@@ -1029,6 +1029,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 					if err != nil {
 						t.Fatalf("[%s] Failed to create SDK client: %v", lang, err)
 					}
+					t.Cleanup(func() { _ = dbos.Shutdown(sdkClient, 10*time.Second) })
 					statuses, err := sdkClient.ListWorkflows(sdkClient, dbos.WithFilterWorkflowIDs(wfID))
 					if err != nil || len(statuses) == 0 {
 						t.Fatalf("[%s] Failed to query workflow via SDK client: %v", lang, err)
@@ -1099,6 +1100,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("[%s] Failed to create SDK client: %v", lang, err)
 				}
+				t.Cleanup(func() { _ = dbos.Shutdown(sdkClient, 10*time.Second) })
 				statuses, err := sdkClient.ListWorkflows(sdkClient, dbos.WithFilterWorkflowIDs(wfID), dbos.WithFilterLoadInput(true), dbos.WithFilterLoadOutput(true))
 				if err != nil || len(statuses) == 0 {
 					t.Fatalf("[%s] Failed to query workflow via SDK client: %v", lang, err)
