@@ -728,6 +728,21 @@ table.data-table tr.clickable:hover td {
   color: var(--text-primary);
 }
 
+/* Metric bars (metrics explorer, pure CSS/divs) */
+.metric-bar {
+  height: 8px;
+  min-width: 80px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.metric-bar-fill {
+  height: 100%;
+  background: var(--color-info);
+  border-radius: 3px;
+}
+
 /* Toolbar & Filters */
 .toolbar {
   display: flex;

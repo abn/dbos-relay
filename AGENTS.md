@@ -51,6 +51,11 @@ in the wiki under `docs/`.
   opportunistic refactoring, speculative abstractions, feature creep, or
   incidental edits in unrelated files. If a separate issue is spotted, handle
   it in a distinct change.
+- **Visually verify UI changes.** Every dashboard, playground, or docs-site
+  UI change is verified against real rendered screenshots that the agent
+  inspects itself before merge. Screenshot inspection is never delegated
+  to a subagent. Screenshots attach to PRs via drag-drop and are never
+  committed to the repository.
 - **No internal process leaks.** All committed files (code, tests, schemas,
   documentation, comments, and commit messages) must avoid internal references
   to process, tracking, task IDs, work identifiers, ticket numbers, scratch

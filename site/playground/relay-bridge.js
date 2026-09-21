@@ -578,6 +578,63 @@
       return new Response(JSON.stringify(rows.slice(offset, offset + limit)), { status: 200, headers: jsonHeaders });
     }
 
+    // 18. Metrics scrape (canned exposition for the playground demo app)
+    if (path === "/v1/metrics") {
+      const only = parsed.searchParams.getAll("metrics");
+      const exposition = [
+        '# HELP dbos_conductor_v1_executor_count Number of registered executors.',
+        '# TYPE dbos_conductor_v1_executor_count gauge',
+        'dbos_conductor_v1_executor_count{application="ecommerce-checkout",application_version="1.0.0",status="HEALTHY"} 1',
+        '# HELP dbos_conductor_v1_workflow_success_rate Workflows that completed successfully per second.',
+        '# TYPE dbos_conductor_v1_workflow_success_rate gauge',
+        'dbos_conductor_v1_workflow_success_rate{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow",queue_name="orders-standard"} 0.42',
+        '# HELP dbos_conductor_v1_workflow_failed_rate Workflows that terminated with an error per second.',
+        '# TYPE dbos_conductor_v1_workflow_failed_rate gauge',
+        'dbos_conductor_v1_workflow_failed_rate{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow",queue_name="orders-standard"} 0.01',
+        '# HELP dbos_conductor_v1_workflow_started_rate Workflows created per second.',
+        '# TYPE dbos_conductor_v1_workflow_started_rate gauge',
+        'dbos_conductor_v1_workflow_started_rate{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow",queue_name="orders-standard"} 0.45',
+        '# HELP dbos_conductor_v1_workflow_enqueued_count Workflows currently in the ENQUEUED state.',
+        '# TYPE dbos_conductor_v1_workflow_enqueued_count gauge',
+        'dbos_conductor_v1_workflow_enqueued_count{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow",queue_name="orders-standard"} 3',
+        '# HELP dbos_conductor_v1_workflow_pending_count Workflows currently in the PENDING state.',
+        '# TYPE dbos_conductor_v1_workflow_pending_count gauge',
+        'dbos_conductor_v1_workflow_pending_count{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow"} 2',
+        '# HELP dbos_conductor_v1_workflow_max_queue_wait_seconds Maximum queue wait across workflows completed successfully in the window.',
+        '# TYPE dbos_conductor_v1_workflow_max_queue_wait_seconds gauge',
+        'dbos_conductor_v1_workflow_max_queue_wait_seconds{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow",queue_name="orders-standard"} 1.8',
+        '# HELP dbos_conductor_v1_workflow_max_total_latency_seconds Maximum end-to-end latency across workflows completed successfully in the window.',
+        '# TYPE dbos_conductor_v1_workflow_max_total_latency_seconds gauge',
+        'dbos_conductor_v1_workflow_max_total_latency_seconds{application="ecommerce-checkout",workflow_name="ProcessCheckoutWorkflow",queue_name="orders-standard"} 4.2',
+        '# HELP dbos_conductor_v1_step_success_rate Workflow steps that completed successfully per second.',
+        '# TYPE dbos_conductor_v1_step_success_rate gauge',
+        'dbos_conductor_v1_step_success_rate{application="ecommerce-checkout",step_name="validate_customer"} 0.4',
+        '# HELP dbos_conductor_v1_step_failed_rate Workflow steps that terminated with an error per second.',
+        '# TYPE dbos_conductor_v1_step_failed_rate gauge',
+        'dbos_conductor_v1_step_failed_rate{application="ecommerce-checkout",step_name="charge_card"} 0.005',
+      ];
+      const keep = new Set(only);
+      const appFilter = parsed.searchParams.get("applications") || "";
+      const wfFilter = parsed.searchParams.get("workflow_names") || "";
+      const labelValue = (line, key) => {
+        const m = line.match(new RegExp(key + '="((?:[^"\\\\]|\\\\.)*)"'));
+        return m ? m[1] : "";
+      };
+      const samples = exposition.filter(line => {
+        if (line.startsWith("#")) return false;
+        if (keep.size > 0 && !keep.has(line.split("{")[0])) return false;
+        if (appFilter && labelValue(line, "application") !== appFilter) return false;
+        if (wfFilter && labelValue(line, "workflow_name") !== wfFilter && labelValue(line, "step_name") !== wfFilter) return false;
+        return true;
+      });
+      const live = new Set(samples.map(line => line.split("{")[0]));
+      const lines = exposition.filter(line => {
+        if (!line.startsWith("#")) return samples.includes(line);
+        return live.has(line.split(" ")[2] || "");
+      });
+      return new Response(lines.join("\n") + "\n", { status: 200, headers: { "Content-Type": "text/plain; version=0.0.4" } });
+    }
+
     return nativeFetch(input, init);
   };
 
