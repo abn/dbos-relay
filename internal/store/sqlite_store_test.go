@@ -56,8 +56,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if dirty {
 		t.Fatalf("database is dirty after migration")
 	}
-	if v != 6 {
-		t.Fatalf("expected migration version 6, got %d", v)
+	if v != 7 {
+		t.Fatalf("expected migration version 7, got %d", v)
 	}
 
 	// Migrate down 1 step
@@ -68,8 +68,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get migrate version after down: %v", err)
 	}
-	if v != 5 {
-		t.Fatalf("expected migration version 5, got %d", v)
+	if v != 6 {
+		t.Fatalf("expected migration version 6, got %d", v)
 	}
 
 	// Migrate back up
@@ -77,8 +77,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 		t.Fatalf("failed to migrate back up: %v", err)
 	}
 	v, _, _ = s.MigrateVersion(ctx)
-	if v != 6 {
-		t.Fatalf("expected migration version 6, got %d", v)
+	if v != 7 {
+		t.Fatalf("expected migration version 7, got %d", v)
 	}
 }
 

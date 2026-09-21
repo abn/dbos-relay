@@ -244,6 +244,10 @@ func auditDeniedOp(method, path string, identity *auth.UserIdentity) (op, appNam
 			return auditOpRoleDelete, "", string(gen.AuditTargetTypeRole), rest[2], true
 		}
 	case "tokens":
+		// Token routes always carry the key name: POST creates and
+		// DELETE revokes /v2/orgs/{org}/tokens/{tokenName}. A future
+		// nameless POST would fall through to no mapping rather than
+		// mis-attribute, by construction of the len(rest) == 3 check.
 		if len(rest) == 3 && (method == "POST" || method == "DELETE") {
 			op := auditOpTokenCreate
 			if method == "DELETE" {

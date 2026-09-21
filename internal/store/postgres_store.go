@@ -213,9 +213,9 @@ func (b *postgresBackend) Truncate(ctx context.Context) error {
 	reseed := `
 		INSERT INTO roles (organisation_id, name, permissions, is_global)
 		VALUES
-			(NULL, 'admin', ARRAY['application.read', 'application.write', 'websocket.connect'], true),
-			(NULL, 'operator', ARRAY['application.read', 'application.write', 'websocket.connect'], true),
-			(NULL, 'viewer', ARRAY['application.read'], true)
+			(NULL, 'admin', ARRAY['application.read', 'application.write', 'websocket.connect', 'metric.read', 'organization.read', 'organization.write', 'token.read', 'token.write'], true),
+			(NULL, 'operator', ARRAY['application.read', 'application.write', 'websocket.connect', 'metric.read', 'organization.read', 'organization.write', 'token.read', 'token.write'], true),
+			(NULL, 'viewer', ARRAY['application.read', 'metric.read', 'organization.read', 'token.read'], true)
 		ON CONFLICT DO NOTHING;
 	`
 	if _, err := b.pool.Exec(ctx, reseed); err != nil {

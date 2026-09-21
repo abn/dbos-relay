@@ -228,9 +228,9 @@ func (b *sqliteBackend) Truncate(ctx context.Context) error {
 	reseed := `
 		INSERT INTO roles (organisation_id, name, permissions, is_global)
 		VALUES
-			(NULL, 'admin', '["application.read", "application.write", "websocket.connect"]', 1),
-			(NULL, 'operator', '["application.read", "application.write", "websocket.connect"]', 1),
-			(NULL, 'viewer', '["application.read"]', 1)
+			(NULL, 'admin', '["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"]', 1),
+			(NULL, 'operator', '["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"]', 1),
+			(NULL, 'viewer', '["application.read", "metric.read", "organization.read", "token.read"]', 1)
 		ON CONFLICT DO NOTHING;
 	`
 	if _, err := b.db.ExecContext(ctx, reseed); err != nil {

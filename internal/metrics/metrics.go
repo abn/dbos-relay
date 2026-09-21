@@ -117,7 +117,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	perms := identity.Permissions
 	if len(perms) == 0 && identity.IsAPIKey {
-		perms = auth.CatalogPermissions()
+		// Empty-permission keys inherit the viewer read set. This is the
+		// pre-catalog default narrowed to reads; full access requires
+		// explicit grants.
+		perms = auth.RolePermissions(auth.RoleViewer)
 	}
 
 	if !identity.IsAdmin && !auth.HasPermission(perms, auth.PermApplicationRead) && !auth.HasPermission(perms, auth.PermMetricRead) {

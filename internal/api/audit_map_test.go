@@ -44,6 +44,7 @@ func TestAuditDeniedOpMapping(t *testing.T) {
 		{"POST", "/v2/orgs/acme/apps/shop/schedules/nightly/backfill", "schedule.backfill", "shop", "schedule", "nightly", true},
 		{"POST", "/v2/orgs/acme/apps/shop/alerting-rules", "alerting_rule.create", "shop", "alerting_rule", "", true},
 		{"DELETE", "/v2/orgs/acme/apps/shop/alerting-rules/rule-1", "alerting_rule.delete", "shop", "alerting_rule", "rule-1", true},
+		{"POST", "/v2/orgs/acme/secrets", "secret.generate", "", "organization", "acme", true},
 		{"GET", "/v2/orgs/acme/apps/shop/queues", "", "", "", "", false},
 		{"GET", "/v1/metrics", "", "", "", "", false},
 	}

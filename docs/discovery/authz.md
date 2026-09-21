@@ -64,8 +64,9 @@ Summary of permissions, default roles, application scoping, and key format
 confirmed from public documentation and client source:
 
 1. **Permission list**: `application.read`, `application.write`,
-   `websocket.connect`, and `metric.read` form the grantable permission
-   catalog exposed by `GET /v2/orgs/{orgName}/permissions`.
+   `websocket.connect`, `metric.read`, `organization.read`,
+   `organization.write`, `token.read`, and `token.write` form the grantable
+   permission catalog exposed by `GET /v2/orgs/{orgName}/permissions`.
 2. **Default roles**: `admin`, `operator`, and `viewer` (read-only), with
    `admin` also represented as a user profile attribute (`isDbosAdmin`).
 3. **Key scoping**: Keys are scoped by organization, optionally restricted to
@@ -86,6 +87,10 @@ organization.
 | `application.write` | Application | Mutations on application resources: registering apps, deleting apps, updating settings, cancelling workflows, resuming workflows, forking workflows, importing workflows, bulk operations (bulk-cancel, bulk-delete, bulk-resume, bulk-fork), schedule management (pause, resume, trigger, backfill), alerting rule creation and deletion, autoscaling policy modification. |
 | `websocket.connect` | Application | Establishing executor WebSocket connections to the control plane at `/websocket/{appName}/{apiKey}`. Required by runtime worker processes. |
 | `metric.read` | Application | Reading application metrics, including the Prometheus-compatible `/v1/metrics` scrape endpoint. Accepted alongside `application.read` on that endpoint. |
+| `organization.read` | Organization | Read-only inspection of organization details, members, roles, domain claims, and audit logs. |
+| `organization.write` | Organization | Mutations on organization resources: renaming the organization, managing members and roles, and setting audit retention. |
+| `token.read` | Organization | Listing API keys. |
+| `token.write` | Organization | Creating and revoking API keys. |
 
 ### Catalog endpoint
 
@@ -95,7 +100,7 @@ The permission catalog is fetched via:
 * Auth requirement: Not OAuth-gated (`x-dbos-requires-oauth: false`). Served in
   both authenticated and no-auth modes.
 * Response: JSON array of strings (`[]string`), containing the supported
-  grantable permissions: `["application.read", "application.write", "websocket.connect", "metric.read"]`.
+  grantable permissions: `["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"]`.
 
 ## 3. Role hierarchy and structure
 
@@ -118,9 +123,16 @@ Defined in `openapi-3.1.json`:
 
 | Role name | `isGlobal` | Permissions granted | Purpose |
 | --- | --- | --- | --- |
-| `admin` | `true` | `application.read`, `application.write`, `websocket.connect`, `metric.read`, plus organization administrative actions | Full administrative access. Can manage members, roles, domain claims, and API keys. Users with global administrative rights carry `isDbosAdmin: true` in `UserProfile`. |
-| `operator` | `true` | `application.read`, `application.write`, `websocket.connect`, `metric.read` | Operational lifecycle management. Can run migrations, register apps, cancel/resume/fork workflows, manage schedules and queues, without organization membership management. |
-| `viewer` | `true` | `application.read`, `metric.read` | Read-only inspection across applications, workflows, queues, schedules, and metrics. Cannot alter operational state or connect executors. |
+| `admin` | `true` | All eight permissions | Full administrative access. Can manage members, roles, domain claims, and API keys. Users with global administrative rights carry `isDbosAdmin: true` in `UserProfile`. |
+| `operator` | `true` | All eight permissions | Operational lifecycle management. Can run migrations, register apps, cancel/resume/fork workflows, manage schedules and queues, and manage organization resources. |
+| `viewer` | `true` | `application.read`, `metric.read`, `organization.read`, `token.read` | Read-only inspection across applications, workflows, queues, schedules, metrics, organization resources, and API keys. Cannot alter operational state or connect executors. |
+
+Relay's three global roles are a local design: upstream documents Organization Admin (all permissions) and Organization Member (all but `organization.write`) on the permissions page (`https://docs.dbos.dev/production/permissions`, confirmed 2026-09-21). Relay's operator matches the admin permission set for operational continuity, and the viewer holds the four read permissions.
+
+Custom organization roles are never auto-upgraded: migration 0007 updates
+only the global rows, so a custom role cloned from an older admin,
+operator, or viewer keeps its original permission set until an
+administrator grants the new permissions explicitly.
 
 ### Role assignment and execution context
 
@@ -254,7 +266,7 @@ self-hosted local deployments where no OIDC identity provider is configured.
 5. **Permissions route available**:
    * `GET /v2/orgs/{orgName}/permissions` is not OAuth-gated.
    * In no-auth mode, it responds with status `200 OK` and the standard
-     permission catalog (`["application.read", "application.write", "websocket.connect", "metric.read"]`).
+     permission catalog (`["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"]`).
 6. **Local identity resolution**:
    * `dbosctl whoami` inspects the profile's auth setting (`AuthNone`).
    * Because `/v2/users/me` is not registered, `dbosctl whoami` directly renders
