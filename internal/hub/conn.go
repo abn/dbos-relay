@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -50,7 +51,12 @@ type ExecutorConn struct {
 
 	touchLease func(ctx context.Context) error
 
-	lastRenewedAt time.Time
+	// touchRunning guards overlap: a slow lease touch must not pile up
+	// or hold up the ping loop, so a tick while a touch is in flight
+	// is skipped.
+	touchRunning atomic.Bool
+
+	lastRenewedAt atomic.Int64 // Unix nanos of last successful lease touch
 	leaseDuration time.Duration
 }
 
@@ -63,7 +69,7 @@ func NewExecutorConn(
 	mux *Multiplexer,
 	unregister func(),
 ) *ExecutorConn {
-	return &ExecutorConn{
+	c := &ExecutorConn{
 		appID:              appID,
 		executorID:         executorID,
 		appName:            appName,
@@ -76,9 +82,10 @@ func NewExecutorConn(
 		closed:             make(chan struct{}),
 		pingInterval:       pingInterval,
 		pongTimeout:        executorPingWait,
-		lastRenewedAt:      time.Now(),
 		leaseDuration:      60 * time.Second,
 	}
+	c.lastRenewedAt.Store(time.Now().UnixNano())
+	return c
 }
 
 // SetPingPongTimeouts configures heartbeat intervals (useful in tests).
@@ -203,6 +210,7 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 		timeout = executorPingWait
 	}
 
+	lastTick := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
@@ -210,43 +218,81 @@ func (c *ExecutorConn) HeartbeatPump(ctx context.Context) {
 		case <-c.closed:
 			return
 		case <-ticker.C:
+			now := time.Now()
+			if late := now.Sub(lastTick); late > 2*interval {
+				if c.logger != nil {
+					c.logger.Warn("heartbeat tick delayed, ping cadence stretched",
+						"executor_id", c.executorID,
+						"app", c.appName,
+						"delay", late,
+						"interval", interval,
+					)
+				}
+			}
+			lastTick = now
 			pingCtx, pingCancel := context.WithTimeout(ctx, timeout)
 			err := c.conn.Ping(pingCtx)
 			pingCancel()
 			if err != nil {
 				return
 			}
-			if c.touchLease != nil {
-				touchCtx, touchCancel := context.WithTimeout(ctx, timeout)
-				err := c.touchLease(touchCtx)
-				touchCancel()
-				if err != nil {
-					if c.logger != nil {
-						c.logger.Warn("executor lease renewal failed, continuing heartbeat",
-							"executor_id", c.executorID,
-							"app", c.appName,
-							"error", err,
-						)
-					}
-					leaseDur := c.leaseDuration
-					if leaseDur <= 0 {
-						leaseDur = 60 * time.Second
-					}
-					if !c.lastRenewedAt.IsZero() && time.Since(c.lastRenewedAt) > leaseDur {
-						if c.logger != nil {
-							c.logger.Error("executor lease renewal expired, closing connection",
-								"executor_id", c.executorID,
-								"app", c.appName,
-							)
-						}
-						return
-					}
-				} else {
-					c.lastRenewedAt = time.Now()
-				}
-			}
+			// The lease touch is a database write that can stall under
+			// load; run it off-loop so pings keep their cadence and a
+			// silent peer is still probed on time.
+			c.triggerLeaseTouch(ctx, timeout)
 		}
 	}
+}
+
+// triggerLeaseTouch renews the executor lease without blocking the ping
+// loop. A tick while a touch is still in flight is skipped: renewals are
+// idempotent and the expiry check below tolerates missed beats.
+func (c *ExecutorConn) triggerLeaseTouch(ctx context.Context, timeout time.Duration) {
+	if c.touchLease == nil {
+		return
+	}
+	if !c.touchRunning.CompareAndSwap(false, true) {
+		if c.logger != nil {
+			c.logger.Debug("lease touch still running, skipping beat",
+				"executor_id", c.executorID,
+				"app", c.appName,
+			)
+		}
+		return
+	}
+	go func() {
+		defer c.touchRunning.Store(false)
+		start := time.Now()
+		touchCtx, touchCancel := context.WithTimeout(ctx, timeout)
+		err := c.touchLease(touchCtx)
+		touchCancel()
+		if err != nil {
+			if c.logger != nil {
+				c.logger.Warn("executor lease renewal failed, continuing heartbeat",
+					"executor_id", c.executorID,
+					"app", c.appName,
+					"error", err,
+					"elapsed", time.Since(start),
+				)
+			}
+			leaseDur := c.leaseDuration
+			if leaseDur <= 0 {
+				leaseDur = 60 * time.Second
+			}
+			if last := c.lastRenewedAt.Load(); last != 0 && time.Since(time.Unix(0, last)) > leaseDur {
+				if c.logger != nil {
+					c.logger.Error("executor lease renewal expired, closing connection",
+						"executor_id", c.executorID,
+						"app", c.appName,
+					)
+				}
+				_ = c.Close()
+				return
+			}
+			return
+		}
+		c.lastRenewedAt.Store(time.Now().UnixNano())
+	}()
 }
 
 // Close gracefully closes the connection.

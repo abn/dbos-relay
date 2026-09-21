@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,7 +179,9 @@ type mockHubStore struct {
 	disconnectCtxErrs []error
 	upserted          []gen.UpsertExecutorParams
 	touches           []gen.TouchExecutorLastSeenParams
+	touchCalls        int
 	executors         map[string]gen.Executor
+	touchDelay        time.Duration
 	mu                sync.Mutex
 }
 
@@ -224,6 +227,15 @@ func (m *mockHubStore) DisconnectExecutor(ctx context.Context, arg gen.Disconnec
 }
 
 func (m *mockHubStore) TouchExecutorLastSeen(ctx context.Context, arg gen.TouchExecutorLastSeenParams) error {
+	m.mu.Lock()
+	m.touchCalls++
+	m.mu.Unlock()
+	// Plain sleep, ignoring ctx: stands in for a slow-but-completing
+	// database under load. (The production touch honors its own
+	// timeout; here the point is a touch that stays in flight.)
+	if d := m.touchDelay; d > 0 {
+		time.Sleep(d)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.touches = append(m.touches, arg)
@@ -1639,5 +1651,116 @@ func TestHub_Dispatch_RetrySharesDeadlineBudget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "timed out") && !strings.Contains(err.Error(), "deadline exceeded") {
 		t.Fatalf("expected timeout error, got %v", err)
+	}
+}
+
+func TestHub_Heartbeat_SlowLeaseTouchDoesNotDelayDeadPeerDetection(t *testing.T) {
+	store := newMockHubStore()
+	// Lease touches take 500ms: stands in for a slow database under load.
+	store.touchDelay = 500 * time.Millisecond
+	cfg := &config.Config{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := New(store, cfg, logger)
+	defer func() { _ = h.Close() }()
+	// Fast ping cadence (20ms) with a 60ms pong deadline.
+	h.SetPingPongTimeouts(20*time.Millisecond, 60*time.Millisecond)
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/websocket/test-app/test-key"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Flag-controlled ponging: true while the peer is alive, false to
+	// simulate a silent death with the TCP connection still open.
+	var pong atomic.Bool
+	pong.Store(true)
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		OnPingReceived: func(ctx context.Context, payload []byte) bool {
+			return pong.Load()
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "done") }()
+
+	typ, data, err := conn.Read(ctx)
+	if err != nil || typ != websocket.MessageText {
+		t.Fatalf("read prompt failed: %v", err)
+	}
+	msg, err := protocol.Decode(data)
+	if err != nil {
+		t.Fatalf("failed to decode prompt: %v", err)
+	}
+	infoReq, ok := msg.(*protocol.ExecutorInfoRequest)
+	if !ok {
+		t.Fatalf("expected *protocol.ExecutorInfoRequest, got %T", msg)
+	}
+	respData, err := protocol.Encode(&protocol.ExecutorInfoResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeExecutorInfo,
+			RequestID: infoReq.RequestID,
+		},
+		ExecutorID:         "slow-touch-peer",
+		ApplicationVersion: "v1.0.0",
+	})
+	if err != nil {
+		t.Fatalf("failed to encode response: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageText, respData); err != nil {
+		t.Fatalf("failed to write response: %v", err)
+	}
+
+	// Keep reading so the client auto-pongs server pings while alive.
+	go func() {
+		for {
+			if _, _, readErr := conn.Read(ctx); readErr != nil {
+				return
+			}
+		}
+	}()
+
+	appID := store.apps["test-app"].ID
+
+	// Wait until a slow lease touch is in flight: the next ping cycle
+	// would serialize behind it if touches still blocked the loop.
+	touchDeadline := time.Now().Add(3 * time.Second)
+	for {
+		store.mu.Lock()
+		n := store.touchCalls
+		store.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(touchDeadline) {
+			t.Fatal("slow lease touch never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Silent death: pings go unanswered from here.
+	killAt := time.Now()
+	pong.Store(false)
+
+	// Detection must complete on ping cadence (20ms tick + 60ms pong
+	// deadline + slack), not after the 500ms lease touch drains.
+	unregDeadline := killAt.Add(2 * time.Second)
+	for {
+		_, err := h.registry.GetExecutorConn(appID, "slow-touch-peer")
+		if err != nil {
+			break
+		}
+		if time.Now().After(unregDeadline) {
+			t.Fatal("executor still registered 2s after going silent")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if elapsed := time.Since(killAt); elapsed > 300*time.Millisecond {
+		t.Errorf("dead peer detected after %v, want under 300ms with a 500ms lease touch in flight", elapsed)
 	}
 }
