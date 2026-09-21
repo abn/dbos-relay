@@ -35,8 +35,8 @@
       }
     ],
     queues: [
-      { name: "orders-vip", appName: "ecommerce-checkout", concurrency: 20, activeCount: 1 },
-      { name: "orders-standard", appName: "ecommerce-checkout", concurrency: 50, activeCount: 2 }
+      { name: "orders-vip", appName: "ecommerce-checkout", concurrency: 20, workerConcurrency: 4, partitionQueue: false, activeCount: 1 },
+      { name: "orders-standard", appName: "ecommerce-checkout", concurrency: 50, workerConcurrency: 5, partitionQueue: false, activeCount: 2 }
     ],
     schedules: [
       { name: "daily-reconciliation", appName: "ecommerce-checkout", schedule: "0 0 * * *", workflowName: "ReconciliationWorkflow", status: "ACTIVE", lastRun: new Date().toISOString() }
@@ -46,6 +46,38 @@
     ],
     keys: [
       { id: "key-1", tokenName: "dev-local-key", name: "dev-local-key", prefix: "dbos_sec_dev", createdAt: "2026-09-18T18:00:00Z", permissions: ["*"], appIds: ["*"], appNames: ["*"] }
+    ],
+    appConfigs: {
+      "ecommerce-checkout": {
+        privateMode: false,
+        executorTimeoutSecs: 10,
+        gcRowsThreshold: null,
+        gcTimeThresholdMs: null,
+        globalTimeoutMs: null
+      }
+    },
+    autoscaling: {},
+    auditLog: [
+      {
+        id: "audit-seed-1",
+        emitTime: "2026-09-18T18:05:00Z",
+        operation: "workflow.cancel",
+        status: "success",
+        subject: { type: "user", id: "user_alice", display: "alice@example.com" },
+        target: { type: "workflow", id: "wf-ord-89214" },
+        sourceIp: "127.0.0.1",
+        details: { application_name: "ecommerce-checkout" }
+      },
+      {
+        id: "audit-seed-2",
+        emitTime: "2026-09-18T18:06:00Z",
+        operation: "token.create",
+        status: "success",
+        subject: { type: "api_key", id: "key-1", display: "dev-local-key" },
+        target: { type: "token", id: "dev-local-key" },
+        sourceIp: "127.0.0.1",
+        details: {}
+      }
     ],
     workflows: [
       {
@@ -89,6 +121,21 @@
       }
     }
     return null;
+  }
+
+  // Audit entries for playground-made mutations (no-auth demo: single actor)
+  let auditSeq = 100;
+  function pushAudit(operation, status, target) {
+    state.auditLog.unshift({
+      id: "audit-play-" + (auditSeq++),
+      emitTime: new Date().toISOString(),
+      operation: operation,
+      status: status,
+      subject: { type: "user", id: "user_playground", display: "playground-user" },
+      target: target || null,
+      sourceIp: "127.0.0.1",
+      details: {}
+    });
   }
 
   // Custom EventSource polyfill for SSE telemetry
@@ -351,6 +398,7 @@
       const name = decodeURIComponent(tokenMatch[1]);
       if (method === "DELETE") {
         state.keys = state.keys.filter(k => (k.tokenName !== name && k.name !== name));
+        pushAudit("token.revoke", "success", { type: "token", id: name });
         return new Response(null, { status: 204 });
       }
       if (method === "POST") {
@@ -368,13 +416,166 @@
           appNames: body.appNames || ["*"]
         };
         state.keys.push(newKey);
+        pushAudit("token.create", "success", { type: "token", id: name });
         return new Response(JSON.stringify(newKey), { status: 201, headers: jsonHeaders });
       }
     }
 
     // 13. Cancel, Resume, Fork endpoints
     if (path.includes("/cancel") || path.includes("/resume") || path.includes("/fork")) {
+      const wfMatch = path.match(/\/workflows\/([^/]+)\/(cancel|resume|fork)$/);
+      if (!wfMatch) {
+        return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "unknown workflow operation" }), { status: 404, headers: jsonHeaders });
+      }
+      const op = "workflow." + (wfMatch[2] === "fork" ? "fork" : wfMatch[2]);
+      const target = { type: "workflow", id: decodeURIComponent(wfMatch[1]) };
+      pushAudit(op, "success", target);
       return new Response(JSON.stringify({ status: "SUCCESS" }), { status: 200, headers: jsonHeaders });
+    }
+
+    // 14. Single application details (merges stored settings over the registry row)
+    const appMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)$/);
+    if (appMatch && (method === "GET" || method === "PATCH")) {
+      const appName = decodeURIComponent(appMatch[1]);
+      let app = state.apps.find(a => a.name === appName);
+      if (!app) {
+        const rows = await queryDb("SELECT name, organization, status, runtime, created_at FROM applications WHERE name = $1;", [appName]);
+        if (rows && rows.length > 0) {
+          const r = rows[0];
+          app = { name: r.name, organization: r.organization, status: r.status, runtime: r.runtime, createdAt: r.created_at };
+        }
+      }
+      if (!app) {
+        return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "application not found" }), { status: 404, headers: jsonHeaders });
+      }
+      if (!state.appConfigs[appName]) {
+        state.appConfigs[appName] = { privateMode: false, executorTimeoutSecs: 10, gcRowsThreshold: null, gcTimeThresholdMs: null, globalTimeoutMs: null };
+      }
+      if (method === "PATCH") {
+        let body = {};
+        try { if (init && init.body) body = JSON.parse(init.body); } catch (_) {}
+        const cfg = state.appConfigs[appName];
+        let changed = false;
+        const apply = (key, pred) => {
+          if (pred(body[key])) { cfg[key] = body[key]; changed = true; }
+        };
+        apply("privateMode", v => typeof v === "boolean");
+        apply("executorTimeoutSecs", v => typeof v === "number");
+        apply("gcRowsThreshold", v => typeof v === "number" || v === null);
+        apply("gcTimeThresholdMs", v => typeof v === "number" || v === null);
+        apply("globalTimeoutMs", v => typeof v === "number" || v === null);
+        if (changed) {
+          pushAudit("application.update", "success", { type: "application", id: appName });
+        }
+        return new Response(null, { status: 204 });
+      }
+      return new Response(JSON.stringify(Object.assign({}, app, state.appConfigs[appName])), { status: 200, headers: jsonHeaders });
+    }
+
+    // 15. Autoscaling policy (per-application, validated against known queues)
+    const policyMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/autoscaling-policy$/);
+    if (policyMatch) {
+      const appName = decodeURIComponent(policyMatch[1]);
+      if (method === "GET") {
+        const stored = state.autoscaling[appName];
+        if (!stored) {
+          return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "no autoscaling policy configured for application" }), { status: 404, headers: jsonHeaders });
+        }
+        return new Response(JSON.stringify({ policy: stored }), { status: 200, headers: jsonHeaders });
+      }
+      if (method === "PUT") {
+        let body = {};
+        try { if (init && init.body) body = JSON.parse(init.body); } catch (_) {}
+        if (!body.queue) {
+          return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "autoscaling policy must name a queue" }), { status: 400, headers: jsonHeaders });
+        }
+        const queue = state.queues.find(q => q.name === body.queue);
+        if (!queue) {
+          return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "unknown queue" }), { status: 400, headers: jsonHeaders });
+        }
+        if (queue.partitionQueue) {
+          return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "queue is partitioned and cannot drive autoscaling" }), { status: 400, headers: jsonHeaders });
+        }
+        if (!(queue.workerConcurrency > 0)) {
+          return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "queue has no worker concurrency set" }), { status: 400, headers: jsonHeaders });
+        }
+        const stored = { queue: body.queue };
+        if (body.rollout) stored.rollout = body.rollout;
+        if (body.$schema !== undefined) stored.$schema = body.$schema;
+        state.autoscaling[appName] = stored;
+        pushAudit("autoscaling_policy.set", "success", { type: "application", id: appName });
+        return new Response(JSON.stringify({ policy: stored }), { status: 200, headers: jsonHeaders });
+      }
+      if (method === "DELETE") {
+        const removed = Boolean(state.autoscaling[appName]);
+        delete state.autoscaling[appName];
+        if (removed) {
+          pushAudit("autoscaling_policy.delete", "success", { type: "application", id: appName });
+        }
+        return new Response(null, { status: 204 });
+      }
+    }
+
+    // 16. Autoscale recommendations (simplified playground computation)
+    const autoscaleMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/autoscale(\/versions\/(.+))?$/);
+    if (autoscaleMatch && method === "GET") {
+      const appName = decodeURIComponent(autoscaleMatch[1]);
+      const policy = state.autoscaling[appName];
+      if (!policy) {
+        return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "no autoscaling policy configured for application" }), { status: 404, headers: jsonHeaders });
+      }
+      const queue = state.queues.find(q => q.name === policy.queue) || {};
+      const workerConcurrency = queue.workerConcurrency > 0 ? queue.workerConcurrency : 1;
+      let depth = 0;
+      try {
+        const rows = await queryDb("SELECT COUNT(*) AS n FROM dbos.workflow_status WHERE status IN ('ENQUEUED','PENDING');");
+        if (rows && rows.length > 0 && rows[0].n !== undefined) depth = Number(rows[0].n) || 0;
+      } catch (_) {}
+      let desired = Math.max(1, Math.ceil(depth / workerConcurrency));
+      if (queue.concurrency > 0) {
+        desired = Math.min(desired, Math.ceil(queue.concurrency / workerConcurrency));
+      }
+      const rec = {
+        applicationVersion: "1.0.0",
+        isLatest: true,
+        desiredExecutors: desired,
+        queueName: policy.queue,
+        queueDepth: depth,
+        observedAt: Date.now()
+      };
+      if (autoscaleMatch[3]) {
+        const version = decodeURIComponent(autoscaleMatch[3]);
+        if (version !== "latest" && version !== "1.0.0") {
+          return new Response(JSON.stringify({ title: "Not Found", status: 404, detail: "application version was never registered" }), { status: 404, headers: jsonHeaders });
+        }
+        return new Response(JSON.stringify(rec), { status: 200, headers: jsonHeaders });
+      }
+      return new Response(JSON.stringify([rec]), { status: 200, headers: jsonHeaders });
+    }
+
+    // 17. Audit log (newest first, filters, paging)
+    if (path.match(/^\/v2\/orgs\/[^/]+\/audit-logs$/)) {
+      const q = parsed.searchParams;
+      const op = q.get("operation") || "";
+      const subject = q.get("subject") || "";
+      const target = q.get("target") || "";
+      const startTime = q.get("startTime") || "";
+      const endTime = q.get("endTime") || "";
+      const limitRaw = parseInt(q.get("limit") || "100", 10);
+      const offsetRaw = parseInt(q.get("offset") || "0", 10);
+      if (!Number.isInteger(limitRaw) || !Number.isInteger(offsetRaw) || limitRaw < 0 || offsetRaw < 0 || limitRaw > 1000) {
+        return new Response(JSON.stringify({ title: "Bad Request", status: 400, detail: "invalid limit or offset" }), { status: 400, headers: jsonHeaders });
+      }
+      const limit = limitRaw === 0 ? 100 : limitRaw;
+      const offset = offsetRaw;
+      let rows = state.auditLog.slice();
+      if (op) rows = rows.filter(e => e.operation === op);
+      if (subject) rows = rows.filter(e => (e.subject && (e.subject.display === subject || e.subject.id === subject)) || e.username === subject);
+      if (target) rows = rows.filter(e => e.target && e.target.id === target);
+      if (startTime) rows = rows.filter(e => e.emitTime >= startTime);
+      if (endTime) rows = rows.filter(e => e.emitTime < endTime);
+      rows.sort((a, b) => (a.emitTime < b.emitTime ? 1 : -1));
+      return new Response(JSON.stringify(rows.slice(offset, offset + limit)), { status: 200, headers: jsonHeaders });
     }
 
     return nativeFetch(input, init);
