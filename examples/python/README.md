@@ -18,9 +18,9 @@ Dependencies are declared directly inside `main.py` via inline script metadata (
    uv run main.py
    ```
 
-   Alternatively, with standard `pip`:
+   Alternatively, with standard `pip` (pinned to match `main.py`):
    ```bash
-   pip install "dbos>=2.31.0" "psycopg-binary>=3.3.0"
+   pip install "dbos==3.0.0" "psycopg-binary>=3.3.0"
    python main.py
    ```
 
