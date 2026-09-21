@@ -34,6 +34,7 @@ class DashboardApp {
     this.panStartX = 0;
     this.panStartY = 0;
     this.auditFilters = { operation: "", subject: "", target: "", startTime: "", endTime: "", limit: 100, offset: 0 };
+    this.metricsFilters = { application: "", workflowName: "", family: "all" };
 
     // Expose global callback for SVG DAG node clicks
     window.selectStep = (encodedStepJson) => {
@@ -554,6 +555,7 @@ class DashboardApp {
       { id: "queues", label: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
       { id: "schedules", label: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
       { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
+      { id: "metrics", label: "Metrics", icon: `<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>` },
       { id: "keys", label: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` },
       { id: "autoscaling", label: "Autoscaling", icon: `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>` },
       { id: "settings", label: "Settings", icon: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>` },
@@ -677,6 +679,7 @@ class DashboardApp {
       case "queues": return this.appName ? `Queues: ${this.appName}` : "Queues";
       case "schedules": return this.appName ? `Schedules: ${this.appName}` : "Schedules";
       case "alerting": return this.appName ? `Alert Rules: ${this.appName}` : "Alerting Rules";
+      case "metrics": return "Metrics";
       case "keys": return "API Keys";
       case "autoscaling": return this.appName ? `Autoscaling: ${this.appName}` : "Autoscaling";
       case "settings": return this.appName ? `Settings: ${this.appName}` : "Settings";
@@ -730,6 +733,9 @@ class DashboardApp {
         break;
       case "alerting":
         await this.renderAlertingScreen(el, silent);
+        break;
+      case "metrics":
+        await this.renderMetricsScreen(el, silent);
         break;
       case "keys":
         await this.renderKeysScreen(el, silent);
@@ -2552,6 +2558,302 @@ class DashboardApp {
     });
   }
 
+  // --- SCREEN 11: METRICS EXPLORER ---
+  async renderMetricsScreen(el, silent = false) {
+    if (!silent) {
+      el.innerHTML = `<div class="loading-spinner">Loading metrics...</div>`;
+    }
+
+    const f = this.metricsFilters;
+    try {
+      const query = {};
+      if (f.application) query.applications = f.application;
+      if (f.workflowName) query.workflowNames = f.workflowName;
+      if (f.family !== "all") query.metrics = [f.family];
+      const text = await this.client.getMetricsText(query);
+      const families = parsePrometheusExposition(text);
+      const byName = new Map(families.map(fam => [fam.name, fam]));
+      const samplesOf = (name) => (byName.get(name) || { samples: [] }).samples;
+      const P = "dbos_conductor_v1_";
+
+      const sum = (samples) => samples.reduce((acc, s) => acc + (isFinite(s.value) ? s.value : 0), 0);
+      const successRate = sum(samplesOf(P + "workflow_success_rate"));
+      const failedRate = sum(samplesOf(P + "workflow_failed_rate"));
+      const enqueued = sum(samplesOf(P + "workflow_enqueued_count"));
+      const pending = sum(samplesOf(P + "workflow_pending_count"));
+      const executors = sum(samplesOf(P + "executor_count"));
+
+      const familyOptions = [`<option value="all"${f.family === "all" ? " selected" : ""}>All families</option>`];
+      for (const fam of families) {
+        const short = fam.name.startsWith(P) ? fam.name.slice(P.length) : fam.name;
+        familyOptions.push(`<option value="${escapeHtml(fam.name)}"${f.family === fam.name ? " selected" : ""}>${escapeHtml(short)}</option>`);
+      }
+
+      let sections = "";
+      if (families.length === 0 || families.every(fam => fam.samples.length === 0)) {
+        sections = `<div class="card"><div class="card-body"><div class="empty-state"><h4 class="empty-state-title">No metric samples</h4><p class="empty-state-desc">The scrape returned no series. Adjust or clear the filters.</p></div></div></div>`;
+      } else {
+        sections += this.renderWorkflowRateCard(samplesOf, P, sum);
+        sections += this.renderQueueDepthCard(samplesOf, P, sum);
+        sections += this.renderLatencyCard(samplesOf, P);
+        sections += this.renderExecutorCard(samplesOf, P, sum);
+        sections += this.renderStepRateCard(samplesOf, P, sum);
+      }
+
+      el.innerHTML = `
+        <div class="toolbar">
+          <div class="filter-group">
+            <input type="text" id="metrics-application" class="input-text" placeholder="Application" aria-label="Filter by application" value="${escapeHtml(f.application)}" style="width:180px;">
+            <input type="text" id="metrics-workflow" class="input-text" placeholder="Workflow name" aria-label="Filter by workflow name" value="${escapeHtml(f.workflowName)}" style="width:200px;">
+            <select id="metrics-family" class="input-text" aria-label="Filter by metric family" style="width:240px;">${familyOptions.join("")}</select>
+          </div>
+          <div class="filter-group">
+            <button class="btn btn-sm btn-primary" data-action="applyMetricsFilters">Apply Filters</button>
+            <button class="btn btn-sm btn-secondary" data-action="clearMetricsFilters">Clear</button>
+            <button class="btn btn-sm btn-secondary" data-action="refreshMetrics">Refresh</button>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card"><span class="stat-label">Workflow Success Rate</span><span class="stat-value" style="color: var(--color-success-text);">${formatMetricValue(successRate)}/s</span></div>
+          <div class="stat-card"><span class="stat-label">Workflow Failed Rate</span><span class="stat-value" style="color: var(--color-error-text);">${formatMetricValue(failedRate)}/s</span></div>
+          <div class="stat-card"><span class="stat-label">Enqueued Workflows</span><span class="stat-value">${formatMetricValue(enqueued)}</span></div>
+          <div class="stat-card"><span class="stat-label">Pending Workflows</span><span class="stat-value">${formatMetricValue(pending)}</span></div>
+          <div class="stat-card"><span class="stat-label">Registered Executors</span><span class="stat-value">${formatMetricValue(executors)}</span></div>
+        </div>
+        ${sections}
+      `;
+    } catch (err) {
+      // Metrics reads need metric.read (or application.read): a 403 here
+      // means the key lacks permission, so the sign-in state (supply a
+      // better key) is the remedy, not a dead-end error.
+      if (this.isAuthError(err) || (err && err.status === 403)) {
+        this.renderAuthRequired(el, "load metrics");
+        return;
+      }
+      this.renderErrorState(el, "Metrics", err.message);
+    }
+  }
+
+  renderWorkflowRateCard(samplesOf, P, sum) {
+    const byWorkflow = new Map();
+    const collect = (name, field) => {
+      for (const s of samplesOf(name)) {
+        const key = `${s.labels.application || ""}\0${s.labels.workflow_name || ""}`;
+        if (!byWorkflow.has(key)) {
+          byWorkflow.set(key, { application: s.labels.application || "", workflow: s.labels.workflow_name || "", started: 0, success: 0, failed: 0, cancelled: 0 });
+        }
+        byWorkflow.get(key)[field] += isFinite(s.value) ? s.value : 0;
+      }
+    };
+    collect(P + "workflow_started_rate", "started");
+    collect(P + "workflow_success_rate", "success");
+    collect(P + "workflow_failed_rate", "failed");
+    collect(P + "workflow_cancelled_rate", "cancelled");
+    const rows = [...byWorkflow.values()].sort((a, b) => b.success - a.success);
+    if (rows.length === 0) return "";
+    const max = Math.max(...rows.map(r => r.success), 0);
+    return `
+      <div class="card">
+        <div class="card-header"><div><span class="card-title">Workflow Rates</span>
+        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">per second by workflow</span></div></div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead><tr><th>Workflow</th><th>Application</th><th>Started/s</th><th>Success/s</th><th>Failed/s</th><th>Cancelled/s</th><th style="width:25%;">Success Share</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr>
+                  <td><code>${escapeHtml(r.workflow)}</code></td>
+                  <td>${escapeHtml(r.application)}</td>
+                  <td>${formatMetricValue(r.started)}</td>
+                  <td>${formatMetricValue(r.success)}</td>
+                  <td>${formatMetricValue(r.failed)}</td>
+                  <td>${formatMetricValue(r.cancelled)}</td>
+                  <td>${metricBar(r.success, max, "var(--color-success)")}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  renderQueueDepthCard(samplesOf, P, sum) {
+    const byQueue = new Map();
+    const collect = (name, field) => {
+      for (const s of samplesOf(name)) {
+        const key = `${s.labels.queue_name || ""}\0${s.labels.workflow_name || ""}`;
+        if (!byQueue.has(key)) {
+          byQueue.set(key, { queue: s.labels.queue_name || "", workflow: s.labels.workflow_name || "", enqueued: 0, pending: 0 });
+        }
+        byQueue.get(key)[field] += isFinite(s.value) ? s.value : 0;
+      }
+    };
+    collect(P + "workflow_enqueued_count", "enqueued");
+    collect(P + "workflow_pending_count", "pending");
+    const rows = [...byQueue.values()].sort((a, b) => (b.enqueued + b.pending) - (a.enqueued + a.pending));
+    if (rows.length === 0) return "";
+    const max = Math.max(...rows.map(r => r.enqueued + r.pending), 0);
+    return `
+      <div class="card">
+        <div class="card-header"><div><span class="card-title">Queue Depth</span>
+        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">enqueued and pending by queue</span></div></div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead><tr><th>Queue</th><th>Workflow</th><th>Enqueued</th><th>Pending</th><th style="width:25%;">Backlog Share</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr>
+                  <td><code>${escapeHtml(r.queue || "n/a")}</code></td>
+                  <td>${escapeHtml(r.workflow)}</td>
+                  <td>${formatMetricValue(r.enqueued)}</td>
+                  <td>${formatMetricValue(r.pending)}</td>
+                  <td>${metricBar(r.enqueued + r.pending, max, "var(--color-info)")}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  renderLatencyCard(samplesOf, P) {
+    const byWorkflow = new Map();
+    const collect = (name, field) => {
+      for (const s of samplesOf(name)) {
+        const key = `${s.labels.workflow_name || ""}`;
+        if (!byWorkflow.has(key)) {
+          byWorkflow.set(key, { workflow: s.labels.workflow_name || "", wait: null, latency: null });
+        }
+        if (isFinite(s.value)) byWorkflow.get(key)[field] = s.value;
+      }
+    };
+    collect(P + "workflow_max_queue_wait_seconds", "wait");
+    collect(P + "workflow_max_total_latency_seconds", "latency");
+    const byStep = new Map();
+    for (const s of samplesOf(P + "step_max_duration_seconds")) {
+      if (isFinite(s.value)) byStep.set(s.labels.step_name || "", s.value);
+    }
+    const rows = [...byWorkflow.values()].sort((a, b) => (b.latency || 0) - (a.latency || 0));
+    if (rows.length === 0 && byStep.size === 0) return "";
+    const stepRows = [...byStep.entries()].sort((a, b) => b[1] - a[1]);
+    return `
+      <div class="card">
+        <div class="card-header"><div><span class="card-title">Latency Maxima</span>
+        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">windowed maxima in seconds</span></div></div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead><tr><th>Workflow / Step</th><th>Max Queue Wait (s)</th><th>Max Total Latency (s)</th><th>Max Step Duration (s)</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr>
+                  <td><code>${escapeHtml(r.workflow)}</code></td>
+                  <td>${r.wait === null ? "n/a" : formatMetricValue(r.wait)}</td>
+                  <td>${r.latency === null ? "n/a" : formatMetricValue(r.latency)}</td>
+                  <td>-</td>
+                </tr>`).join("")}
+              ${stepRows.map(([step, v]) => `
+                <tr>
+                  <td><code>${escapeHtml(step)}</code> <span class="text-secondary" style="font-size:11px;">(step)</span></td>
+                  <td>-</td>
+                  <td>-</td>
+                  <td>${formatMetricValue(v)}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  renderExecutorCard(samplesOf, P, sum) {
+    const rows = samplesOf(P + "executor_count").map(s => ({
+      application: s.labels.application || "",
+      version: s.labels.application_version || "",
+      status: s.labels.status || "",
+      count: isFinite(s.value) ? s.value : 0,
+    })).sort((a, b) => b.count - a.count);
+    if (rows.length === 0) return "";
+    const max = Math.max(...rows.map(r => r.count), 0);
+    return `
+      <div class="card">
+        <div class="card-header"><div><span class="card-title">Executors</span>
+        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">registered by application version and status</span></div></div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead><tr><th>Application</th><th>Version</th><th>Status</th><th>Count</th><th style="width:25%;">Share</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr>
+                  <td>${escapeHtml(r.application)}</td>
+                  <td><code>${escapeHtml(r.version)}</code></td>
+                  <td>${escapeHtml(r.status)}</td>
+                  <td>${formatMetricValue(r.count)}</td>
+                  <td>${metricBar(r.count, max, "var(--color-warning)")}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  renderStepRateCard(samplesOf, P, sum) {
+    const byStep = new Map();
+    const collect = (name, field) => {
+      for (const s of samplesOf(name)) {
+        const key = `${s.labels.application || ""}\0${s.labels.step_name || ""}`;
+        if (!byStep.has(key)) {
+          byStep.set(key, { application: s.labels.application || "", step: s.labels.step_name || "", success: 0, failed: 0 });
+        }
+        byStep.get(key)[field] += isFinite(s.value) ? s.value : 0;
+      }
+    };
+    collect(P + "step_success_rate", "success");
+    collect(P + "step_failed_rate", "failed");
+    const rows = [...byStep.values()].sort((a, b) => b.success - a.success);
+    if (rows.length === 0) return "";
+    const max = Math.max(...rows.map(r => r.success), 0);
+    return `
+      <div class="card">
+        <div class="card-header"><div><span class="card-title">Step Rates</span>
+        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">per second by step</span></div></div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead><tr><th>Step</th><th>Application</th><th>Success/s</th><th>Failed/s</th><th style="width:25%;">Success Share</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr>
+                  <td><code>${escapeHtml(r.step)}</code></td>
+                  <td>${escapeHtml(r.application)}</td>
+                  <td>${formatMetricValue(r.success)}</td>
+                  <td>${formatMetricValue(r.failed)}</td>
+                  <td>${metricBar(r.success, max, "var(--color-success)")}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  applyMetricsFilters() {
+    const val = (id) => {
+      const node = document.getElementById(id);
+      return node ? node.value.trim() : "";
+    };
+    this.metricsFilters.application = val("metrics-application");
+    this.metricsFilters.workflowName = val("metrics-workflow");
+    const fam = document.getElementById("metrics-family");
+    this.metricsFilters.family = fam ? fam.value : "all";
+    this.renderContentView();
+  }
+
+  clearMetricsFilters() {
+    this.metricsFilters = { application: "", workflowName: "", family: "all" };
+    this.renderContentView();
+  }
+
   // --- SCREEN 10: AUDIT LOG ---
   async renderAuditScreen(el, silent = false) {
     if (!silent) {
@@ -2672,6 +2974,66 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// Parse Prometheus text exposition into families:
+// [{ name, help, type, samples: [{ labels, value }] }].
+function parsePrometheusExposition(text) {
+  const families = [];
+  const byName = new Map();
+  const familyOf = (name) => {
+    if (!byName.has(name)) {
+      const fam = { name, help: "", type: "", samples: [] };
+      byName.set(name, fam);
+      families.push(fam);
+    }
+    return byName.get(name);
+  };
+  const sampleRe = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+(-?[0-9.eE+-]+|NaN|\+Inf|-Inf)/;
+  const labelRe = /([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"/g;
+  for (const rawLine of String(text).split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith("# HELP ")) {
+      const rest = line.slice(7);
+      const sp = rest.indexOf(" ");
+      const name = sp === -1 ? rest : rest.slice(0, sp);
+      familyOf(name).help = sp === -1 ? "" : rest.slice(sp + 1);
+      continue;
+    }
+    if (line.startsWith("# TYPE ")) {
+      const parts = line.slice(7).split(/\s+/);
+      if (parts.length >= 2) familyOf(parts[0]).type = parts[1];
+      continue;
+    }
+    if (line.startsWith("#")) continue;
+    const m = sampleRe.exec(line);
+    if (!m) continue;
+    const labels = {};
+    if (m[2]) {
+      let lm;
+      labelRe.lastIndex = 0;
+      while ((lm = labelRe.exec(m[2])) !== null) {
+        labels[lm[1]] = lm[2].replace(/\\n/g, "\n").replace(/\\(.)/g, "$1");
+      }
+    }
+    const raw = m[3];
+    const value = raw === "NaN" ? NaN : raw === "+Inf" ? Infinity : raw === "-Inf" ? -Infinity : parseFloat(raw);
+    familyOf(m[1]).samples.push({ labels, value });
+  }
+  return families;
+}
+
+function formatMetricValue(v) {
+  if (typeof v !== "number" || !isFinite(v)) return "n/a";
+  if (Number.isInteger(v)) return String(v);
+  return String(Math.round(v * 1000) / 1000);
+}
+
+function metricBar(value, max, color) {
+  const pct = max > 0 && isFinite(value) ? Math.min(100, (value / max) * 100) : 0;
+  const label = `${formatMetricValue(value)} of ${formatMetricValue(max)}`;
+  return `<div class="metric-bar" role="img" aria-label="${escapeHtml(label)}"><div class="metric-bar-fill" style="width:${pct.toFixed(1)}%;${color ? `background:${color};` : ""}"></div></div>`;
 }
 
 function formatTimestamp(isoStr) {
@@ -2842,6 +3204,9 @@ document.addEventListener("click", (e) => {
   else if (target.dataset.action === "deleteAutoscalingPolicy") window.app.deleteAutoscalingPolicy();
   else if (target.dataset.action === "applyAuditFilters") window.app.applyAuditFilters();
   else if (target.dataset.action === "clearAuditFilters") window.app.clearAuditFilters();
+  else if (target.dataset.action === "applyMetricsFilters") window.app.applyMetricsFilters();
+  else if (target.dataset.action === "clearMetricsFilters") window.app.clearMetricsFilters();
+  else if (target.dataset.action === "refreshMetrics") window.app.renderContentView();
   else if (target.dataset.action === "auditPrevPage") window.app.auditPrevPage();
   else if (target.dataset.action === "auditNextPage") window.app.auditNextPage();
   else if (target.dataset.revokeKey) window.app.revokeKey(target.dataset.revokeKey.replace(/'/g, ''));

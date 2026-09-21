@@ -19,7 +19,7 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ## Navigation & Global Shell
 
-- [ ] **Sidebar Navigation**: Verify that the sidebar contains links for Fleet & Apps, Workflows, Queues, Schedules, Alert Rules, API Keys, Autoscaling, Settings, and Audit Log. Clicking each navigation item switches the active view route without full-page reloads.
+- [ ] **Sidebar Navigation**: Verify that the sidebar contains links for Fleet & Apps, Workflows, Queues, Schedules, Alert Rules, Metrics, API Keys, Autoscaling, Settings, and Audit Log. Clicking each navigation item switches the active view route without full-page reloads.
 - [ ] **Brand Identity**: Confirm the Relay branding and version badge render correctly in the sidebar header.
 - [ ] **Top Header & Application Selector**: Verify the application dropdown selector correctly lists registered applications. Switching applications updates the active application context across all dashboard views.
 - [ ] **Refresh Control**: Clicking the refresh button reloads data for the current active view.
@@ -148,7 +148,16 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 11. Theme Toggle & Accessibility
+## 11. Metrics Tab
+
+- [ ] **Summary Cards**: Verify the success/failed rates, enqueued, pending, and executor cards reflect the `/v1/metrics` scrape.
+- [ ] **Family Sections**: Verify workflow rates, queue depth, latency maxima, executors, and step rates render per-series rows with share bars.
+- [ ] **Filters**: Enter an application or workflow filter, select a single family, apply, and verify the scrape request carries the filters and the view narrows. Clear restores the full scrape.
+- [ ] **Auth**: Without a key holding `metric.read` (or `application.read`), verify the view shows the sign-in state instead of failing silently.
+
+---
+
+## 12. Theme Toggle & Accessibility
 
 - [ ] **Theme Persistence**: Verify toggling between dark and light themes updates UI colors across all screens and correctly persists selection across browser sessions via `localStorage`.
 - [ ] **Responsive Layout**: Verify sidebar and content areas resize gracefully across standard desktop viewports.

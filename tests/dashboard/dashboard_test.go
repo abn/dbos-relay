@@ -658,6 +658,26 @@ func TestDashboard_BundleParses(t *testing.T) {
 	}
 }
 
+func TestDashboard_MetricsViewBundle(t *testing.T) {
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+	for _, marker := range []string{
+		"renderMetricsScreen",
+		"parsePrometheusExposition",
+		"getMetricsText",
+		"dbos_conductor_v1_",
+		"workflow_success_rate",
+		"metrics-family",
+	} {
+		if !strings.Contains(bundle, marker) {
+			t.Errorf("bundle should include metrics explorer marker %q", marker)
+		}
+	}
+}
+
 func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
 	clientBytes, err := os.ReadFile("../../console/src/lib/api/client.ts")
 	if err != nil {

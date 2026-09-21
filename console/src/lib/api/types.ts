@@ -215,6 +215,12 @@ export interface AuditLogQuery {
   offset?: number;
 }
 
+export interface MetricsQuery {
+  applications?: string;
+  workflowNames?: string;
+  metrics?: string[];
+}
+
 export type ApiKey = Token;
 
 export interface WorkflowSearchQuery {

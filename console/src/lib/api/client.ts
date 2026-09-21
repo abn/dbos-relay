@@ -21,6 +21,7 @@ import type {
   QueueAutoscale,
   AuditLogEntry,
   AuditLogQuery,
+  MetricsQuery,
 } from "./types.js";
 
 export class ApiClient {
@@ -353,6 +354,28 @@ export class ApiClient {
     return this.request<AuditLogEntry[]>(
       `/v2/orgs/${encodeURIComponent(orgName)}/audit-logs${qs ? `?${qs}` : ""}`
     );
+  }
+
+  // Metrics scrape (Prometheus text exposition, not JSON)
+  async getMetricsText(query: MetricsQuery = {}): Promise<string> {
+    const params = new URLSearchParams();
+    if (query.applications) params.set("applications", query.applications);
+    if (query.workflowNames) params.set("workflow_names", query.workflowNames);
+    for (const m of query.metrics || []) params.append("metrics", m);
+    const qs = params.toString();
+    const url = `${this.baseUrl}/v1/metrics${qs ? `?${qs}` : ""}`;
+    const headers = new Headers();
+    headers.set("Accept", "text/plain");
+    if (this.apiKey) {
+      headers.set("Authorization", `Bearer ${this.apiKey}`);
+    }
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      const err = new Error(`HTTP ${response.status} ${response.statusText}`);
+      (err as unknown as { status: number }).status = response.status;
+      throw err;
+    }
+    return response.text();
   }
 
   // Server-Sent Events (SSE) Stream URL
