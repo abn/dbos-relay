@@ -3,12 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestServeFlags(t *testing.T) {
@@ -151,4 +153,50 @@ func TestLogLevelPlumbingAnd4xxRequestID(t *testing.T) {
 			t.Errorf("expected log to contain status 404, got: %s", logOut)
 		}
 	})
+}
+
+func TestOpenStoreWithRetrySucceedsImmediately(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s, err := openStoreWithRetry(context.Background(), logger, ":memory:")
+	if err != nil {
+		t.Fatalf("expected in-memory open to succeed: %v", err)
+	}
+	s.Close()
+}
+
+func TestOpenStoreWithRetryWaitsOutTheTimeout(t *testing.T) {
+	oldTimeout, oldInterval := storeOpenTimeout, storeOpenRetryInterval
+	storeOpenTimeout = 300 * time.Millisecond
+	storeOpenRetryInterval = 50 * time.Millisecond
+	defer func() { storeOpenTimeout, storeOpenRetryInterval = oldTimeout, oldInterval }()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	start := time.Now()
+	_, err := openStoreWithRetry(context.Background(), logger, "postgres://relay:relay@127.0.0.1:1/relay?sslmode=disable")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected refused connection to fail")
+	}
+	if elapsed < 300*time.Millisecond {
+		t.Errorf("gave up after %v, want at least the timeout: did not retry", elapsed)
+	}
+}
+
+func TestOpenStoreWithRetryHonorsCancellation(t *testing.T) {
+	oldTimeout, oldInterval := storeOpenTimeout, storeOpenRetryInterval
+	storeOpenTimeout = 30 * time.Second
+	storeOpenRetryInterval = time.Hour
+	defer func() { storeOpenTimeout, storeOpenRetryInterval = oldTimeout, oldInterval }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	start := time.Now()
+	_, err := openStoreWithRetry(ctx, logger, "postgres://relay:relay@127.0.0.1:1/relay?sslmode=disable")
+	if err == nil {
+		t.Fatal("expected cancelled context to fail")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Error("cancellation took too long: retry ignored context")
+	}
 }
