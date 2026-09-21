@@ -30,6 +30,7 @@ type inMemoryStore struct {
 	apps      map[string]storegen.Application
 	executors map[string][]storegen.Executor
 	keys      map[string]storegen.ApiKey
+	policies  map[string]storegen.AutoscalingPolicy
 }
 
 func newInMemoryStore() *inMemoryStore {
@@ -38,6 +39,7 @@ func newInMemoryStore() *inMemoryStore {
 		apps:      make(map[string]storegen.Application),
 		executors: make(map[string][]storegen.Executor),
 		keys:      make(map[string]storegen.ApiKey),
+		policies:  make(map[string]storegen.AutoscalingPolicy),
 	}
 }
 
@@ -93,16 +95,31 @@ func (m *inMemoryStore) DeleteExpiredAuditLogs(_ context.Context, _ storegen.Del
 	return 0, nil
 }
 
-func (m *inMemoryStore) GetAutoscalingPolicy(_ context.Context, _ pgtype.UUID) (storegen.AutoscalingPolicy, error) {
+func (m *inMemoryStore) GetAutoscalingPolicy(_ context.Context, appID pgtype.UUID) (storegen.AutoscalingPolicy, error) {
+	if p, ok := m.policies[formatUUID(appID)]; ok {
+		return p, nil
+	}
 	return storegen.AutoscalingPolicy{}, pgx.ErrNoRows
 }
 
 func (m *inMemoryStore) UpsertAutoscalingPolicy(_ context.Context, arg storegen.UpsertAutoscalingPolicyParams) (storegen.AutoscalingPolicy, error) {
-	return storegen.AutoscalingPolicy{ApplicationID: arg.ApplicationID, Queue: arg.Queue}, nil
+	p := storegen.AutoscalingPolicy{
+		ApplicationID:   arg.ApplicationID,
+		Queue:           arg.Queue,
+		MaxOldVersions:  arg.MaxOldVersions,
+		MaxExecutorsOld: arg.MaxExecutorsOld,
+	}
+	m.policies[formatUUID(arg.ApplicationID)] = p
+	return p, nil
 }
 
-func (m *inMemoryStore) DeleteAutoscalingPolicy(_ context.Context, _ pgtype.UUID) (int64, error) {
-	return 0, nil
+func (m *inMemoryStore) DeleteAutoscalingPolicy(_ context.Context, appID pgtype.UUID) (int64, error) {
+	key := formatUUID(appID)
+	if _, ok := m.policies[key]; !ok {
+		return 0, nil
+	}
+	delete(m.policies, key)
+	return 1, nil
 }
 
 func (m *inMemoryStore) GetApplicationByName(_ context.Context, arg storegen.GetApplicationByNameParams) (storegen.Application, error) {
@@ -879,6 +896,196 @@ func TestConformance_QueuesAndSchedules(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("backfill status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestConformance_AutoscalingSuccessPath(t *testing.T) {
+	// Backlog and queue metadata come from stubbed executor dispatch
+	// (mockRouter), not a live executor: 9 queued workflows on version
+	// v2 and a queue with worker concurrency 4, so the expected
+	// recommendation is ceil(9/4) = 3 executors.
+	workerConc := 4
+	version := "v2"
+	var queued []protocol.ListWorkflowsResponseBody
+	for i := 0; i < 9; i++ {
+		v := version
+		queued = append(queued, protocol.ListWorkflowsResponseBody{
+			WorkflowUUID:       fmt.Sprintf("wf-queued-%d", i),
+			ApplicationVersion: &v,
+		})
+	}
+	routerFn := func(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
+		switch m := msg.(type) {
+		case *protocol.GetQueueRequest:
+			return &protocol.GetQueueResponse{
+				Envelope: protocol.Envelope{Type: protocol.MessageTypeGetQueue, RequestID: m.RequestID},
+				Output:   &protocol.QueueOutput{Name: "orders", WorkerConcurrency: &workerConc},
+			}, nil
+		case *protocol.ListWorkflowsRequest:
+			rows := queued
+			if m.Body.Offset != nil && *m.Body.Offset > 0 {
+				rows = nil
+			}
+			// ENQUEUED and PENDING listings are disjoint in a real
+			// system; the PENDING query returns nothing here.
+			if len(m.Body.Status) > 0 {
+				rows = nil
+			}
+			return &protocol.ListWorkflowsResponse{
+				Envelope: protocol.Envelope{Type: protocol.MessageTypeListQueuedWorkflows, RequestID: m.RequestID},
+				Output:   rows,
+			}, nil
+		default:
+			return nil, fmt.Errorf("unexpected message: %v", msg.GetMessageType())
+		}
+	}
+
+	ts, store := setupTestServer(t, routerFn)
+	defer ts.Close()
+
+	_, _ = store.UpsertApplication(context.Background(), storegen.UpsertApplicationParams{
+		OrganisationID: store.orgs["local"].ID,
+		Name:           "test-app",
+		Settings:       []byte(`{}`),
+	})
+	base := ts.URL + "/v2/orgs/local/apps/test-app"
+
+	// 1. No policy yet: 404.
+	resp, err := http.Get(base + "/autoscaling-policy")
+	if err != nil {
+		t.Fatalf("get absent policy: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("absent policy status = %d, want 404", resp.StatusCode)
+	}
+
+	// 2. PUT stores and echoes the policy.
+	putReq, _ := http.NewRequest(http.MethodPut, base+"/autoscaling-policy", strings.NewReader(`{"queue":"orders","rollout":{"maxOldApplicationVersions":1}}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putResp, err := http.DefaultClient.Do(putReq)
+	if err != nil {
+		t.Fatalf("put policy: %v", err)
+	}
+	defer func() { _ = putResp.Body.Close() }()
+	if putResp.StatusCode != http.StatusOK {
+		t.Fatalf("put policy status = %d, want 200", putResp.StatusCode)
+	}
+	var echoed gen.PolicyOutputBody
+	if err := json.NewDecoder(putResp.Body).Decode(&echoed); err != nil {
+		t.Fatalf("decode put echo: %v", err)
+	}
+	if echoed.Policy.Queue != "orders" {
+		t.Errorf("put echo queue = %q, want orders", echoed.Policy.Queue)
+	}
+	if echoed.Policy.Rollout == nil || echoed.Policy.Rollout.MaxOldApplicationVersions == nil ||
+		*echoed.Policy.Rollout.MaxOldApplicationVersions != 1 {
+		t.Errorf("put echo rollout = %+v, want maxOldApplicationVersions 1", echoed.Policy.Rollout)
+	}
+
+	// 3. GET returns the stored policy.
+	resp, err = http.Get(base + "/autoscaling-policy")
+	if err != nil {
+		t.Fatalf("get policy: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get policy status = %d, want 200", resp.StatusCode)
+	}
+	var stored gen.PolicyOutputBody
+	if err := json.NewDecoder(resp.Body).Decode(&stored); err != nil {
+		t.Fatalf("decode stored policy: %v", err)
+	}
+	if stored.Policy.Queue != "orders" {
+		t.Errorf("stored queue = %q, want orders", stored.Policy.Queue)
+	}
+	if stored.Policy.Rollout == nil || stored.Policy.Rollout.MaxOldApplicationVersions == nil ||
+		*stored.Policy.Rollout.MaxOldApplicationVersions != 1 {
+		t.Errorf("stored rollout = %+v, want maxOldApplicationVersions 1", stored.Policy.Rollout)
+	}
+
+	// 4. GET recommendations match the QueueAutoscale schema.
+	resp, err = http.Get(base + "/autoscale")
+	if err != nil {
+		t.Fatalf("get autoscale: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get autoscale status = %d, want 200", resp.StatusCode)
+	}
+	var recs []gen.QueueAutoscale
+	if err := json.NewDecoder(resp.Body).Decode(&recs); err != nil {
+		t.Fatalf("decode recommendations: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("got %d recommendations, want 1", len(recs))
+	}
+	rec := recs[0]
+	if rec.ApplicationVersion != "v2" {
+		t.Errorf("version = %q, want v2", rec.ApplicationVersion)
+	}
+	if !rec.IsLatest {
+		t.Error("expected the single backlog version to be latest")
+	}
+	if rec.DesiredExecutors != 3 {
+		t.Errorf("desired = %d, want 3 (ceil(9/4))", rec.DesiredExecutors)
+	}
+	if rec.QueueName != "orders" {
+		t.Errorf("queue = %q, want orders", rec.QueueName)
+	}
+	if rec.QueueDepth != 9 {
+		t.Errorf("depth = %d, want 9", rec.QueueDepth)
+	}
+	if rec.ObservedAt <= 0 {
+		t.Errorf("observedAt = %d, want positive millis", rec.ObservedAt)
+	}
+
+	// 5. Known version resolves; unknown version 404s.
+	resp, err = http.Get(base + "/autoscale/versions/v2")
+	if err != nil {
+		t.Fatalf("get version rec: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("version rec status = %d, want 200", resp.StatusCode)
+	}
+	var single gen.QueueAutoscale
+	if err := json.NewDecoder(resp.Body).Decode(&single); err != nil {
+		t.Fatalf("decode version rec: %v", err)
+	}
+	if single.DesiredExecutors != 3 {
+		t.Errorf("version desired = %d, want 3", single.DesiredExecutors)
+	}
+
+	resp, err = http.Get(base + "/autoscale/versions/v9")
+	if err != nil {
+		t.Fatalf("get unknown version: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown version status = %d, want 404", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/problem+json") {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
+
+	// 6. DELETE removes the policy; GET returns to 404.
+	delReq, _ := http.NewRequest(http.MethodDelete, base+"/autoscaling-policy", nil)
+	resp, err = http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatalf("delete policy: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204", resp.StatusCode)
+	}
+	resp, err = http.Get(base + "/autoscaling-policy")
+	if err != nil {
+		t.Fatalf("get deleted policy: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("deleted policy status = %d, want 404", resp.StatusCode)
 	}
 }
 
