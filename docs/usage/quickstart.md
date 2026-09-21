@@ -175,7 +175,11 @@ curl -fsS http://localhost:8090/v2/orgs/local/apps/my-app/schedules
 
 ## 9. Operating with dbosctl
 
-The upstream `dbosctl` CLI works directly with Relay. Point `dbosctl` at Relay's URL:
+The upstream `dbosctl` CLI works directly with Relay. There are two ways
+to authenticate: an API key for automation, or OIDC device login for
+interactive use.
+
+With an API key (automation, CI):
 
 ```bash
 export DBOS_URL="http://localhost:8090"
@@ -190,6 +194,25 @@ dbosctl workflow list --app my-app
 # View workflow details
 dbosctl workflow get <workflow-id> --app my-app
 ```
+
+With OIDC login (interactive, self-hosted Relay with an identity
+provider):
+
+```bash
+dbosctl config set selfhosted \
+  --url https://relay.example.com \
+  --issuer https://auth.example.com/realms/relay \
+  --client-id relay-cli
+dbosctl login --profile selfhosted
+dbosctl whoami --profile selfhosted
+dbosctl app list --profile selfhosted
+```
+
+`dbosctl login` runs the device-authorization flow: it prints a URL and a
+code, you approve in a browser, and the token is stored for later
+commands. Profiles live under your OS configuration directory
+(`~/.config/dbos/` on Linux); point `XDG_CONFIG_HOME` elsewhere to keep
+test logins isolated. `dbosctl logout` discards the stored token.
 
 ## 10. Error responses
 

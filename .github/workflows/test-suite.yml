@@ -28,6 +28,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install dbosctl CLI for device-login parity test
+        run: go install github.com/dbos-inc/dbos-ctl/cmd/dbosctl@v0.10.1
+
       - name: Start PostgreSQL with Podman
         run: |
           podman run -d \

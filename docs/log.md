@@ -6,6 +6,7 @@ page additions, deprecations, and structural refactors.
 ## Unreleased
 
 * **Update**: Completed Phase 4 retention and search parity: resume now requires a healthy executor on the application's recorded latest version (503 otherwise), search filter coverage is proven for time windows and attributes, `restart` divergence is recorded, and shared-database retention semantics plus dashboard deferral are documented in [Workflow retention](usage/retention.md).
+* **Update**: Completed Phase 5 developer surface: the real upstream `dbosctl` binary completes OIDC device login against Relay with the in-test identity provider (`whoami`, `app list`, `app register` all pass), and OIDC profile setup is documented in [Quickstart](usage/quickstart.md).
 
 * **Update**: Completed the Conductor permission catalog at eight grantable values (`application.read/write`, `websocket.connect`, `metric.read`, `organization.read/write`, `token.read/write`) with role defaults, route-level enforcement for organization, token, and metric routes, migration 0007 updating global role seeds on both engines, and narrowed empty-key defaults to the viewer read set. See [Permission model](discovery/authz.md).
 
