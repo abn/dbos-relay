@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -426,18 +427,18 @@ func TestDashboard_StaticAssetsAndSPARoutes(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	// Static Assets
+	// Static Assets (fingerprinted bundle URLs resolve via the served index)
 	assets := []struct {
 		path        string
 		contentType string
 	}{
-		{"/assets/app.js", "javascript"},
-		{"/assets/app.css", "text/css"},
-		{"/assets/favicon.svg", "image/svg+xml"},
+		{dashboardAssetURL(t, ts.URL, "js"), "javascript"},
+		{dashboardAssetURL(t, ts.URL, "css"), "text/css"},
+		{ts.URL + "/assets/favicon.svg", "image/svg+xml"},
 	}
 
 	for _, a := range assets {
-		resp, err := http.Get(ts.URL + a.path)
+		resp, err := http.Get(a.path)
 		if err != nil {
 			t.Fatalf("GET %s failed: %v", a.path, err)
 		}
@@ -614,8 +615,43 @@ func (m *dashboardTestStore) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.
 	return nil
 }
 
+// dashboardBundlePath locates the built dashboard bundle on disk. The build
+// fingerprints the file name (app.<hash>.js), so resolve it by glob and
+// require exactly one generation to be present.
+func dashboardBundlePath(t *testing.T) string {
+	t.Helper()
+	matches, err := filepath.Glob("../../internal/dashboard/dist/assets/app.*.js")
+	if err != nil {
+		t.Fatalf("globbing dashboard bundle: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly one dashboard bundle, found %d: %v", len(matches), matches)
+	}
+	return matches[0]
+}
+
+// dashboardAssetURL resolves a fingerprinted asset URL through the served
+// index, so a stale reference fails the test instead of 404ing silently.
+func dashboardAssetURL(t *testing.T, tsURL, ext string) string {
+	t.Helper()
+	resp, err := http.Get(tsURL + "/")
+	if err != nil {
+		t.Fatalf("GET index failed: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("reading index: %v", err)
+	}
+	m := regexp.MustCompile(`assets/app\.([0-9a-f]{12})\.` + ext).Find(body)
+	if m == nil {
+		t.Fatalf("served index references no fingerprinted .%s bundle", ext)
+	}
+	return tsURL + "/" + string(m)
+}
+
 func TestDashboard_BundleParses(t *testing.T) {
-	cmd := exec.Command("node", "--check", "../../internal/dashboard/dist/assets/app.js")
+	cmd := exec.Command("node", "--check", dashboardBundlePath(t))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("node --check failed: %v\nOutput: %s", err, string(output))
@@ -745,7 +781,7 @@ func TestDashboard_TokenContractParity(t *testing.T) {
 	}
 
 	// 3. Verify built bundle reads tokenName and appIds
-	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
 	if err != nil {
 		t.Fatalf("reading app.js bundle: %v", err)
 	}
@@ -856,7 +892,7 @@ func TestDashboard_AuthenticationFlow(t *testing.T) {
 	}
 
 	// 3. Static asset loads without auth and includes auth support in bundle
-	assetResp, err := http.Get(ts.URL + "/assets/app.js")
+	assetResp, err := http.Get(dashboardAssetURL(t, ts.URL, "js"))
 	if err != nil {
 		t.Fatalf("GET app.js failed: %v", err)
 	}
@@ -882,7 +918,7 @@ func TestDashboard_AuthenticationFlow(t *testing.T) {
 }
 
 func TestDashboard_ChildWorkflowXSSSanitization(t *testing.T) {
-	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
 	if err != nil {
 		t.Fatalf("reading bundle: %v", err)
 	}
@@ -903,7 +939,7 @@ func TestDashboard_ChildWorkflowXSSSanitization(t *testing.T) {
 }
 
 func TestDashboard_NoConnectedExecutorsState(t *testing.T) {
-	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
 	if err != nil {
 		t.Fatalf("reading bundle: %v", err)
 	}
@@ -921,7 +957,7 @@ func TestDashboard_NoConnectedExecutorsState(t *testing.T) {
 }
 
 func TestDashboard_FleetWideAndPerSectionFiltering(t *testing.T) {
-	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
 	if err != nil {
 		t.Fatalf("reading bundle: %v", err)
 	}
@@ -943,7 +979,7 @@ func TestDashboard_FleetWideAndPerSectionFiltering(t *testing.T) {
 }
 
 func TestDashboard_ApplicationDataAccessIndicator(t *testing.T) {
-	bundleBytes, err := os.ReadFile("../../internal/dashboard/dist/assets/app.js")
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
 	if err != nil {
 		t.Fatalf("reading bundle: %v", err)
 	}
