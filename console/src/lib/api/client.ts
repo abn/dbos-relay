@@ -421,6 +421,11 @@ export class ApiClient {
     return this.request<string[]>(`/v2/orgs/${encodeURIComponent(orgName)}/permissions`);
   }
 
+  // Organization directory (Relay-native; absent on older servers).
+  async listOrganizations(): Promise<string[]> {
+    return this.request<string[]>(`/v2/orgs`);
+  }
+
   // Server-Sent Events (SSE) Stream URL
   getEventsUrl(orgName: string, appName?: string): string {
     const base = appName

@@ -309,6 +309,10 @@
     async listPermissions(orgName) {
       return this.request(`/v2/orgs/${encodeURIComponent(orgName)}/permissions`);
     }
+    // Organization directory (Relay-native; absent on older servers).
+    async listOrganizations() {
+      return this.request(`/v2/orgs`);
+    }
     // Server-Sent Events (SSE) Stream URL
     getEventsUrl(orgName, appName) {
       const base = appName ? `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/events` : `/v2/orgs/${encodeURIComponent(orgName)}/events`;
@@ -760,7 +764,8 @@
       this.apiKey = sessionStorage.getItem("relay_api_key") || null;
       this.client = new ApiClient("", this.apiKey);
       this.currentRoute = "fleet";
-      this.orgName = "default";
+      this.orgName = localStorage.getItem("relay_selected_org") || "default";
+      this.organizations = [];
       this.appName = "";
       this.apps = [];
       this.selectedWorkflowId = null;
@@ -831,13 +836,13 @@
       } else {
         this.showToast("Cleared saved credential", "info");
       }
-      this.render();
+      this.loadOrganizations().finally(() => this.render());
     }
     signOut() {
       this.setApiKey(null);
       this.closeModal();
       this.showToast("Signed out. Using unauthenticated public access", "info");
-      this.render();
+      this.loadOrganizations().finally(() => this.render());
     }
     showToast(message, type = "info") {
       let container = document.getElementById("toast-container");
@@ -1163,6 +1168,11 @@
         this.appName = appParam;
         localStorage.setItem("relay_selected_app", appParam);
       }
+      const orgParam = params.get("org");
+      if (orgParam) {
+        this.orgName = orgParam;
+        localStorage.setItem("relay_selected_org", orgParam);
+      }
       this.applyTheme(this.theme);
       window.addEventListener("hashchange", () => this.handleRouting());
       window.addEventListener("message", (event) => {
@@ -1170,6 +1180,7 @@
           this.applyTheme(event.data.theme);
         }
       });
+      await this.loadOrganizations();
       await this.loadApplications();
       if (appParam && this.apps.some((a) => a.name === appParam)) {
         this.appName = appParam;
@@ -1196,6 +1207,36 @@
       this.applyTheme(next);
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: "theme_changed", theme: next }, "*");
+      }
+    }
+    async loadOrganizations() {
+      let names = [];
+      try {
+        names = await this.client.listOrganizations();
+      } catch (err) {
+        if (err && err.status === 404) {
+          names = [];
+        } else if (this.isAuthError(err)) {
+          this.organizations = [];
+          return;
+        } else {
+          this.organizations = [];
+          return;
+        }
+      }
+      this.organizations = names || [];
+      const stored = localStorage.getItem("relay_selected_org");
+      if (this.organizations.length > 0) {
+        if (stored && this.organizations.includes(stored)) {
+          this.orgName = stored;
+        } else if (this.organizations.includes("default")) {
+          this.orgName = "default";
+        } else {
+          this.orgName = this.organizations[0];
+        }
+        localStorage.setItem("relay_selected_org", this.orgName);
+      } else if (stored) {
+        this.orgName = stored;
       }
     }
     async loadApplications() {
@@ -1330,6 +1371,12 @@
           <h1 class="header-title" title="${escapeHtml4(this.getRouteTitle())}">${escapeHtml4(this.getRouteTitle())}</h1>
         </div>
         <div class="header-right">
+          <div class="selector-group">
+            <label class="form-label" for="header-org-select" style="margin:0;">Org:</label>
+            <select id="header-org-select" class="select-sm" data-change="org" aria-label="Active organization">
+              ${this.organizations.length > 0 ? this.organizations.map((o) => `<option value="${escapeHtml4(o)}" ${o === this.orgName ? "selected" : ""}>${escapeHtml4(o)}</option>`).join("") : `<option value="${escapeHtml4(this.orgName)}" selected>${escapeHtml4(this.orgName)}</option>`}
+            </select>
+          </div>
           ${this.currentRoute === "audit" || this.currentRoute === "keys" ? "" : `
           <div class="selector-group">
             <label class="form-label" for="header-app-select" style="margin:0;">App:</label>
@@ -1393,6 +1440,23 @@
           return `Audit Log: ${this.orgName}`;
         default:
           return "Relay Dashboard";
+      }
+    }
+    async onOrgChange(newOrgName) {
+      const next = newOrgName || "default";
+      if (next === this.orgName) return;
+      if (this.apiKey && this.apiKey.startsWith("dbos_")) {
+        this.setApiKey(null);
+        this.showToast(`Switched to organization "${next}". Enter its API key to continue.`, "info");
+      }
+      this.orgName = next;
+      localStorage.setItem("relay_selected_org", next);
+      this.appName = "";
+      localStorage.removeItem("relay_selected_app");
+      await this.loadApplications();
+      this.render();
+      if (this.pollInterval === "stream") {
+        this.startSSE();
       }
     }
     onAppChange(newAppName) {
@@ -3968,6 +4032,7 @@
     let target = e.target.closest("[data-change]");
     if (!target) return;
     if (target.dataset.change === "app") window.app.onAppChange(target.value);
+    else if (target.dataset.change === "org") window.app.onOrgChange(target.value);
     else if (target.dataset.change === "wfStatus") window.app.filterWorkflowsStatus(target.value);
     else if (target.dataset.change === "pollInterval") window.app.setPollInterval(target.value);
   });

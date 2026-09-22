@@ -697,6 +697,24 @@ func TestDashboard_RolesViewBundle(t *testing.T) {
 	}
 }
 
+func TestDashboard_OrgSelectorBundle(t *testing.T) {
+	bundleBytes, err := os.ReadFile(dashboardBundlePath(t))
+	if err != nil {
+		t.Fatalf("reading bundle: %v", err)
+	}
+	bundle := string(bundleBytes)
+	for _, marker := range []string{
+		"onOrgChange",
+		"listOrganizations",
+		"relay_selected_org",
+		"header-org-select",
+	} {
+		if !strings.Contains(bundle, marker) {
+			t.Errorf("bundle should include org selector marker %q", marker)
+		}
+	}
+}
+
 func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
 	clientBytes, err := os.ReadFile("../../console/src/lib/api/client.ts")
 	if err != nil {
@@ -748,8 +766,13 @@ func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
 			t.Errorf("found dead /restart template: %s", normalized)
 		}
 
-		// Allow Relay extension endpoints (e.g. SSE event streaming)
+		// Allow Relay extension endpoints (e.g. SSE event streaming,
+		// the organization directory): Relay-native routes registered
+		// outside the vendored upstream spec.
 		if strings.HasSuffix(normalized, "/events") {
+			continue
+		}
+		if normalized == "/v2/orgs" {
 			continue
 		}
 
