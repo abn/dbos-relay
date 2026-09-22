@@ -72,6 +72,13 @@ cfg: DBOSConfig = {
     "conductor_key": api_key,
 }
 
+if role == "secondary":
+    # Migrate-once leader: only the primary runs system-database DDL.
+    # Concurrent migrators deadlock in DDL under load. Secondaries
+    # verify the schema instead; the launch retry loop below absorbs
+    # the window while the primary migrates.
+    cfg["run_migrations"] = False
+
 DBOS(config=cfg)
 
 @DBOS.step()
@@ -144,16 +151,19 @@ if __name__ == "__main__":
     http_thread.start()
 
     launched = False
-    for attempt in range(1, 16):
+    # Secondaries may wait out a slow first migration: verify fails fast
+    # until the primary finishes, so they get a larger attempt budget.
+    max_attempts = 60 if role == "secondary" else 15
+    for attempt in range(1, max_attempts + 1):
         try:
             DBOS.launch()
             launched = True
             break
         except Exception as exc:
-            print(f"Attempt {attempt}/15 to launch DBOS failed: {exc}. Retrying in 1s...", file=sys.stderr, flush=True)
+            print(f"Attempt {attempt}/{max_attempts} to launch DBOS failed: {exc}. Retrying in 1s...", file=sys.stderr, flush=True)
             time.sleep(1)
     if not launched:
-        sys.exit("Failed to launch DBOS after 15 attempts")
+        sys.exit(f"Failed to launch DBOS after {max_attempts} attempts")
 
     print(f"DBOS Python sample application launched successfully for app {app_name}", flush=True)
 
