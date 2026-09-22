@@ -167,7 +167,16 @@ This document provides the definitive manual acceptance test checklist for verif
 
 ---
 
-## 13. Theme Toggle & Accessibility
+## 13. Organization Switching
+
+- [ ] **Selector**: Verify the header Org selector lists all organizations from the directory and defaults to the stored selection or `default`. Against an older server without the endpoint, verify a single option.
+- [ ] **Switch & Isolation**: Switch organizations and verify the app list, fleet counts, and view titles reflect the new org only. Reload and verify the selection persists.
+- [ ] **Key Boundary**: With a per-org API key stored, switch orgs and verify the key is cleared with a prompt for the new org's key. Switching without a key or with a cross-org token keeps the session.
+- [ ] **Mobile**: Verify the header wraps without clipping at 390px.
+
+---
+
+## 14. Theme Toggle & Accessibility
 
 - [ ] **Theme Persistence**: Verify toggling between dark and light themes updates UI colors across all screens and correctly persists selection across browser sessions via `localStorage`.
 - [ ] **Responsive Layout**: Verify sidebar and content areas resize gracefully across standard desktop viewports.
