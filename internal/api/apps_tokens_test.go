@@ -1978,3 +1978,154 @@ func TestGroup7_LifecycleAndAudit(t *testing.T) {
 		}
 	})
 }
+
+func TestOrgDirectory(t *testing.T) {
+	orgs := []storegen.Organisation{
+		{ID: makeUUID(61), Name: "production"},
+		{ID: makeUUID(62), Name: "default"},
+		{ID: makeUUID(63), Name: "acme"},
+	}
+	newStore := func() *mockStoreReader {
+		return &mockStoreReader{
+			listAllOrgsFunc: func(ctx context.Context) ([]storegen.Organisation, error) {
+				return orgs, nil
+			},
+		}
+	}
+
+	t.Run("names sorted", func(t *testing.T) {
+		srv := api.NewServer(nil, newStore(), nil)
+		rec := httptest.NewRecorder()
+		srv.ServeOrgList(rec, httptest.NewRequest(http.MethodGet, "/v2/orgs", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var names []string
+		if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil {
+			t.Fatalf("decode names: %v", err)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
+		want := []string{"acme", "default", "production"}
+		if len(names) != len(want) {
+			t.Fatalf("names = %v, want %v", names, want)
+		}
+		for i := range want {
+			if names[i] != want[i] {
+				t.Fatalf("names = %v, want %v", names, want)
+			}
+		}
+	})
+
+	t.Run("empty store yields empty array", func(t *testing.T) {
+		store := &mockStoreReader{
+			listAllOrgsFunc: func(ctx context.Context) ([]storegen.Organisation, error) {
+				return nil, nil
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+		rec := httptest.NewRecorder()
+		srv.ServeOrgList(rec, httptest.NewRequest(http.MethodGet, "/v2/orgs", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
+			t.Fatalf("body = %q, want []", body)
+		}
+	})
+
+	t.Run("store failure yields 500", func(t *testing.T) {
+		store := &mockStoreReader{
+			listAllOrgsFunc: func(ctx context.Context) ([]storegen.Organisation, error) {
+				return nil, errors.New("db down")
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+		rec := httptest.NewRecorder()
+		srv.ServeOrgList(rec, httptest.NewRequest(http.MethodGet, "/v2/orgs", nil))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", rec.Code)
+		}
+	})
+
+	t.Run("unauthenticated request rejected", func(t *testing.T) {
+		srv := api.NewServer(nil, newStore(), nil).WithAuth(true, nil)
+		handler := api.NewHandler(nil, srv)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v2/orgs", nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("non-admin key may list", func(t *testing.T) {
+		plain, rec2, err := auth.Mint()
+		if err != nil {
+			t.Fatalf("mint key: %v", err)
+		}
+		store := newStore()
+		store.getAPIKeyByLookupFunc = func(ctx context.Context, lookup string) (storegen.ApiKey, error) {
+			return storegen.ApiKey{
+				Lookup:           rec2.Lookup,
+				KeyHash:          rec2.Hash,
+				OrganisationID:   orgs[1].ID,
+				Name:             "org-key",
+				Permissions:      []string{auth.PermApplicationRead},
+				ApplicationNames: []string{},
+			}, nil
+		}
+		store.touchAPIKeyLastUsedFunc = func(ctx context.Context, id pgtype.UUID) error { return nil }
+		srv := api.NewServer(nil, store, nil).WithAuth(true, nil)
+		handler := api.NewHandler(nil, srv)
+		req := httptest.NewRequest(http.MethodGet, "/v2/orgs", nil)
+		req.Header.Set("Authorization", "Bearer "+plain)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+		var names []string
+		if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil || len(names) != 3 {
+			t.Fatalf("decode names: %v %s", err, rec.Body.String())
+		}
+	})
+
+	t.Run("no-auth mode lists", func(t *testing.T) {
+		srv := api.NewServer(nil, newStore(), nil)
+		handler := api.NewHandler(nil, srv)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v2/orgs", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("app-scoped key may list names only", func(t *testing.T) {
+		plain, rec2, err := auth.Mint()
+		if err != nil {
+			t.Fatalf("mint key: %v", err)
+		}
+		store := newStore()
+		store.getAPIKeyByLookupFunc = func(ctx context.Context, lookup string) (storegen.ApiKey, error) {
+			return storegen.ApiKey{
+				Lookup:           rec2.Lookup,
+				KeyHash:          rec2.Hash,
+				OrganisationID:   orgs[1].ID,
+				Name:             "app-key",
+				Permissions:      []string{auth.PermApplicationRead},
+				ApplicationNames: []string{"shop"},
+			}, nil
+		}
+		store.touchAPIKeyLastUsedFunc = func(ctx context.Context, id pgtype.UUID) error { return nil }
+		srv := api.NewServer(nil, store, nil).WithAuth(true, nil)
+		handler := api.NewHandler(nil, srv)
+		req := httptest.NewRequest(http.MethodGet, "/v2/orgs", nil)
+		req.Header.Set("Authorization", "Bearer "+plain)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		}
+	})
+}

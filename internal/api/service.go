@@ -215,6 +215,11 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/events", AuthMiddleware(server)(eventsHandler))
 		mux.Handle("GET /v2/orgs/{orgName}/events", AuthMiddleware(server)(eventsHandler))
 
+		orgListHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server.ServeOrgList(w, r)
+		})
+		mux.Handle("GET /v2/orgs", AuthMiddleware(server)(orgListHandler))
+
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 				problem.Write(w, &problem.Problem{
