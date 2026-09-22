@@ -41,8 +41,9 @@ records a failure audit entry):
   negative values explicitly instead of silently falling back to the
   default on read.
 
-The dashboard blocks negative numbers client-side before sending; a
-zero executor timeout is rejected by the server with a failure entry.
+The dashboard enforces the same bounds client-side before sending
+(executor timeout minimum 1); the server rejects the rest with a failure
+entry.
 
 ## Shared system databases
 
