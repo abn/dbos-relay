@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/abn/dbos-relay/compare/v0.3.0...v0.4.0) (2026-09-22)
+
+
+### Features
+
+* **api:** add organization directory endpoint ([1f73e31](https://github.com/abn/dbos-relay/commit/1f73e3182103f819fb422120236f22748635cf76))
+* **dashboard:** add organization selector ([1be5f08](https://github.com/abn/dbos-relay/commit/1be5f086beda793607dd538c5deab6f7ab83f698))
+
+
+### Bug Fixes
+
+* **dashboard:** require positive executor timeout ([43281e0](https://github.com/abn/dbos-relay/commit/43281e047ca64607a0923a855da49fe85f54245c))
+* **verify:** serialize Python sample migrations ([91040d4](https://github.com/abn/dbos-relay/commit/91040d4cc0bddf5024adc365a93e6384dcbb6075))
+
 ## [0.3.0](https://github.com/abn/dbos-relay/compare/v0.2.1...v0.3.0) (2026-09-21)
 
 
