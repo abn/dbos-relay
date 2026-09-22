@@ -394,10 +394,12 @@ func AuthMiddleware(server *Server) func(http.Handler) http.Handler {
 					}
 				}
 			} else {
-				// Global endpoints require admin privileges. This branch
-				// stays unaudited: the paths carry no org scope to record
+				// Global endpoints require admin privileges, except the
+				// organization directory and the identity stub, which any
+				// authenticated caller may read. This branch stays
+				// unaudited: the paths carry no org scope to record
 				// under and never map to a taxonomy operation.
-				if r.URL.Path != "/v2/users/me" && r.URL.Path != "/v1/metrics" && !identity.IsAdmin {
+				if r.URL.Path != "/v2/users/me" && r.URL.Path != "/v2/orgs" && r.URL.Path != "/v1/metrics" && !identity.IsAdmin {
 					problem.Write(w, &problem.Problem{Type: "about:blank", Title: "Forbidden", Status: http.StatusForbidden, Detail: "Global endpoints require admin privileges"})
 					return
 				}

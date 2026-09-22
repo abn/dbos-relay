@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/auth"
+	"github.com/abn/relay/internal/problem"
 	storegen "github.com/abn/relay/internal/store/gen"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -214,6 +216,42 @@ func (s *Server) handleRegisterUser(ctx context.Context, request gen.RegisterUse
 	return gen.RegisterUser201JSONResponse{
 		Id: formatUUID(user.ID),
 	}, nil
+}
+
+// ServeOrgList serves the Relay-native organization directory: the
+// sorted names of all organizations. Any authenticated caller may list,
+// including app-scoped keys and non-member users: names alone grant
+// nothing, and per-organization routes keep enforcing their own
+// permissions. The endpoint records no audit entry since it carries no
+// org scope.
+func (s *Server) ServeOrgList(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		problem.Write(w, &problem.Problem{
+			Type:   "about:blank",
+			Title:  "Service Unavailable",
+			Status: http.StatusServiceUnavailable,
+			Detail: "database store is unavailable",
+		})
+		return
+	}
+	orgs, err := s.store.ListAllOrganisations(r.Context())
+	if err != nil {
+		problem.Write(w, &problem.Problem{
+			Type:   "about:blank",
+			Title:  "Internal Server Error",
+			Status: http.StatusInternalServerError,
+			Detail: "Failed to list organisations",
+		})
+		return
+	}
+	names := make([]string, 0, len(orgs))
+	for _, org := range orgs {
+		names = append(names, org.Name)
+	}
+	sort.Strings(names)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(names)
 }
 
 func (s *Server) handleGetOrg(ctx context.Context, request gen.GetOrgRequestObject) (gen.GetOrgResponseObject, error) {
