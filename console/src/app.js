@@ -2555,19 +2555,19 @@ class DashboardApp {
   }
 
   async submitAppSettings() {
-    const readNum = (id) => {
+    const readNum = (id, min) => {
       const raw = document.getElementById(id).value.trim();
       if (raw === "") return null;
       const n = Number(raw);
-      return Number.isFinite(n) && n >= 0 ? n : NaN;
+      return Number.isFinite(n) && n >= min ? n : NaN;
     };
-    const gcRows = readNum("set-gc-rows");
-    const gcHours = readNum("set-gc-hours");
-    const globalHours = readNum("set-global-hours");
-    const execTimeout = readNum("set-exec-timeout");
-    for (const [label, v] of [["retention rows", gcRows], ["retention hours", gcHours], ["global timeout", globalHours], ["executor timeout", execTimeout]]) {
+    const gcRows = readNum("set-gc-rows", 0);
+    const gcHours = readNum("set-gc-hours", 0);
+    const globalHours = readNum("set-global-hours", 0);
+    const execTimeout = readNum("set-exec-timeout", 1);
+    for (const [label, v, min] of [["retention rows", gcRows, 0], ["retention hours", gcHours, 0], ["global timeout", globalHours, 0], ["executor timeout", execTimeout, 1]]) {
       if (Number.isNaN(v)) {
-        this.showToast(`Invalid ${label}: enter a non-negative number or blank`, "error");
+        this.showToast(`Invalid ${label}: enter a number at least ${min} or blank`, "error");
         return;
       }
     }
