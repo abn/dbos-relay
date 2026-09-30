@@ -74,6 +74,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["/app/bin/app"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-golang-secondary:
@@ -98,6 +104,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["/app/bin/app"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8086/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-python-primary:
@@ -123,6 +135,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["sh", "-c", "pip install -q uv && uv run main.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health')"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-python-secondary:
@@ -147,6 +165,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["sh", "-c", "pip install -q uv && uv run main.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8084/health')"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-typescript-primary:
@@ -169,6 +193,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["node", "/app/dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8082/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-typescript-secondary:
@@ -191,6 +221,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["node", "/app/dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8085/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-java:
@@ -213,6 +249,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["java", "-jar", "/app/target/dbos-java-sample-1.0.0.jar"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8083/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
   app-java-secondary:
@@ -235,6 +277,12 @@ services:
       postgres:
         condition: service_healthy
     command: ["java", "-jar", "/app/target/dbos-java-sample-1.0.0.jar"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8087/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 5
     restart: "no"
 
 volumes:
