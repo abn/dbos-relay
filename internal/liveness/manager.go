@@ -3,6 +3,7 @@ package liveness
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -16,6 +17,9 @@ import (
 
 const (
 	DefaultExecutorTimeout = 60 * time.Second
+
+	// sweepInterval is the cadence of the periodic dead-executor sweep.
+	sweepInterval = 30 * time.Second
 )
 
 // StoreQueries specifies the database operations required by the liveness manager.
@@ -75,6 +79,13 @@ func NewManager(clock Clock, q StoreQueries, recovery RecoveryRunner, logger *sl
 		ctx:       ctx,
 		cancel:    cancel,
 	}
+}
+
+// Start launches the periodic dead-executor sweep. Call it once during
+// startup, after recovery has been configured.
+func (m *Manager) Start() {
+	m.wg.Add(1)
+	safego.Go(m.logger, "liveness-sweep", m.sweepLoop)
 }
 
 func executorKey(appID pgtype.UUID, executorID string) string {
@@ -377,6 +388,17 @@ func (m *Manager) watchGracePeriod(appID pgtype.UUID, executorID, version string
 				}
 
 				if attempt == maxRetries {
+					if errors.Is(err, ErrNoHealthyPeers) {
+						// A transient lack of a healthy peer is not a
+						// failure: the periodic sweep retries once one
+						// connects.
+						m.logger.Warn("recovery deferred awaiting healthy peer",
+							"executorID", executorID,
+							"attempts", attempt,
+						)
+						return
+					}
+
 					m.logger.Error("recovery dispatch failed for dead executor and retry budget exhausted",
 						"executorID", executorID,
 						"error", err,
@@ -403,7 +425,7 @@ func (m *Manager) watchGracePeriod(appID pgtype.UUID, executorID, version string
 				select {
 				case <-m.ctx.Done():
 					return
-				case <-time.After(backoff):
+				case <-m.clock.After(backoff):
 				}
 				backoff *= 2
 			}
@@ -435,6 +457,43 @@ func (m *Manager) SweepDeadExecutors(ctx context.Context, appID pgtype.UUID) {
 				"error", err,
 			)
 		}
+	}
+}
+
+// sweepLoop periodically re-attempts recovery for dead executors until Stop
+// cancels the manager context.
+func (m *Manager) sweepLoop() {
+	defer m.wg.Done()
+
+	for {
+		timer := m.clock.NewTimer(sweepInterval)
+		select {
+		case <-m.ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C():
+		}
+		m.sweepAll()
+	}
+}
+
+// sweepAll re-attempts recovery for every tracked dead executor.
+func (m *Manager) sweepAll() {
+	if m.queries == nil || m.recovery == nil {
+		return
+	}
+
+	m.mu.Lock()
+	apps := make(map[pgtype.UUID]struct{})
+	for _, e := range m.executors {
+		if e.state == StateDead {
+			apps[e.appID] = struct{}{}
+		}
+	}
+	m.mu.Unlock()
+
+	for appID := range apps {
+		m.SweepDeadExecutors(m.ctx, appID)
 	}
 }
 

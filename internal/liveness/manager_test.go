@@ -120,6 +120,68 @@ func (m *mockRecoveryRunner) RecoverDeadExecutor(ctx context.Context, appID pgty
 	return nil
 }
 
+// controllableRecoveryRunner records calls and returns an error the test can
+// switch mid-flight to simulate a healthy peer appearing.
+type controllableRecoveryRunner struct {
+	mu        sync.Mutex
+	err       error
+	calls     []string
+	successes int
+}
+
+func (c *controllableRecoveryRunner) RecoverDeadExecutor(_ context.Context, _ pgtype.UUID, deadExecutorID, _ string) error {
+	c.mu.Lock()
+	c.calls = append(c.calls, deadExecutorID)
+	err := c.err
+	if err == nil {
+		c.successes++
+	}
+	c.mu.Unlock()
+	return err
+}
+
+func (c *controllableRecoveryRunner) SetError(err error) {
+	c.mu.Lock()
+	c.err = err
+	c.mu.Unlock()
+}
+
+func (c *controllableRecoveryRunner) CallCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.calls)
+}
+
+func (c *controllableRecoveryRunner) SuccessCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.successes
+}
+
+func (c *controllableRecoveryRunner) LastCall() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.calls) == 0 {
+		return ""
+	}
+	return c.calls[len(c.calls)-1]
+}
+
+// driveClock advances the virtual clock in small steps until pred holds,
+// tolerating timers registered asynchronously by background goroutines.
+func driveClock(t *testing.T, clock *liveness.VirtualClock, pred func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if pred() {
+			return
+		}
+		clock.Advance(250 * time.Millisecond)
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition not reached within deadline")
+}
+
 func TestManager_GracePeriodAndRecovery(t *testing.T) {
 	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	store := newMockStoreQueries()
@@ -670,5 +732,78 @@ func TestManager_ClusterReconnectRace(t *testing.T) {
 	// Ensure executor was evicted from A's tracking map
 	if mgrA.TrackedCount() != 0 {
 		t.Fatalf("expected 0 tracked executors on A, got %d", mgrA.TrackedCount())
+	}
+}
+
+func TestManager_RecoveryReattemptsAfterNoHealthyPeers(t *testing.T) {
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	store := newMockStoreQueries()
+	recovery := &controllableRecoveryRunner{}
+	recovery.SetError(liveness.ErrNoHealthyPeers)
+
+	mgr := liveness.NewManager(clock, store, recovery, nil)
+	mgr.Start()
+	defer mgr.Stop()
+
+	appID := pgtype.UUID{Bytes: [16]byte{92}, Valid: true}
+	execID := "exec-no-peer-yet"
+	ctx := context.Background()
+
+	if err := mgr.OnConnect(ctx, appID, execID, "v1.0.0"); err != nil {
+		t.Fatalf("OnConnect failed: %v", err)
+	}
+	mgr.OnDisconnect(ctx, appID, execID)
+
+	// Grace expires and the dispatch goroutine exhausts its retry budget
+	// against ErrNoHealthyPeers.
+	driveClock(t, clock, func() bool { return recovery.CallCount() >= 3 })
+
+	// A transient lack of a healthy peer must not abandon the executor.
+	if got := mgr.TrackedCount(); got != 1 {
+		t.Fatalf("expected executor still tracked after no-healthy-peer deferral, got %d", got)
+	}
+
+	// A healthy peer appears; the periodic sweep recovers the dead executor.
+	before := recovery.CallCount()
+	recovery.SetError(nil)
+	driveClock(t, clock, func() bool { return recovery.SuccessCount() > 0 })
+
+	if recovery.CallCount() <= before {
+		t.Fatal("recovery was not re-attempted after a healthy peer appeared")
+	}
+	if got := recovery.LastCall(); got != execID {
+		t.Fatalf("expected final recovery for %q, got %q", execID, got)
+	}
+}
+
+func TestManager_PeriodicSweepReattemptsStrandedDeadExecutor(t *testing.T) {
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	store := newMockStoreQueries()
+	recovery := &controllableRecoveryRunner{}
+	recovery.SetError(errors.New("peer transport failure"))
+
+	mgr := liveness.NewManager(clock, store, recovery, nil)
+	mgr.Start()
+	defer mgr.Stop()
+
+	appID := pgtype.UUID{Bytes: [16]byte{93}, Valid: true}
+	execID := "exec-stranded"
+	ctx := context.Background()
+
+	if err := mgr.OnConnect(ctx, appID, execID, "v1.0.0"); err != nil {
+		t.Fatalf("OnConnect failed: %v", err)
+	}
+	mgr.OnDisconnect(ctx, appID, execID)
+
+	// Grace expires and the immediate dispatch exhausts its retry budget,
+	// stranding the dead executor.
+	driveClock(t, clock, func() bool { return recovery.CallCount() >= 3 })
+
+	// No peer reconnect happens; a healthy peer appears only on the cadence.
+	recovery.SetError(nil)
+	driveClock(t, clock, func() bool { return recovery.SuccessCount() > 0 })
+
+	if got := recovery.LastCall(); got != execID {
+		t.Fatalf("expected periodic sweep recovery for %q, got %q", execID, got)
 	}
 }
