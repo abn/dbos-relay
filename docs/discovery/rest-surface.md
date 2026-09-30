@@ -18,10 +18,10 @@ does not populate.
 ## Specification provenance
 
 The REST surface is defined by two OpenAPI documents vendored under `api/spec/`:
-* `openapi.json` (OpenAPI 3.1.0, SHA256: `b5dc31eb29686a84fe0390a7446b5acdbc0dd05846cc94a746de649b92880722`)
-* `openapi-3.0.json` (OpenAPI 3.0.3, SHA256: `aed633d5b923e24b1c27e0860ca38af00c0941747fbc7bfed1d9fb4de3fdfd4a`)
+* `openapi.json` (OpenAPI 3.1.0, SHA256: `61845a5cb182fd63bba7d431a4b296e0d35b667be4c2130845edb53a0e729312`)
+* `openapi-3.0.json` (OpenAPI 3.0.3, SHA256: `9310bfc55b15d285ed41114cf62b58b53c77f1a225780de0e7dfff74362fc167`)
 
-Both documents were fetched on 2026-09-08 from `https://cloud.dbos.dev/conductor/v2/`.
+Both documents were fetched on 2026-09-30 from `https://cloud.dbos.dev/conductor/v2/`.
 Both were served publicly over HTTPS with HTTP 200 OK without requiring authentication
 or click-through licensing. Detailed provenance
 and checksums are tracked in `api/spec/PROVENANCE.md` and the
@@ -29,7 +29,7 @@ and checksums are tracked in `api/spec/PROVENANCE.md` and the
 
 ## Operation inventory
 
-The OpenAPI specification defines 64 operations across applications, workflows,
+The OpenAPI specification defines 66 operations across applications, workflows,
 steps, queues, schedules, executors, alerting rules, metrics, organizations,
 members, roles, and tokens.
 
@@ -87,6 +87,7 @@ own Postgres database.
 | `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork` | `forkWorkflow` | Executor dispatch | No | `ForkWorkflowRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/notifications` | `listWorkflowNotifications` | Executor dispatch | No | `GetWorkflowNotificationsRequest` |
 | `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume` | `resumeWorkflow` | Executor dispatch | No | `ResumeWorkflowRequest` |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind` | `rewindWorkflow` | Not implemented | No | N/A |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps` | `listWorkflowSteps` | Executor dispatch | No | `ListStepsRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/streams` | `listWorkflowStreams` | Executor dispatch | No | `GetWorkflowStreamsRequest` |
 | `GET` | `/v2/orgs/{orgName}/audit-logs` | `listAuditLogs` | Relay store | Yes | N/A |
@@ -105,6 +106,7 @@ own Postgres database.
 | `GET` | `/v2/orgs/{orgName}/tokens` | `listTokens` | Relay store | No | N/A |
 | `DELETE` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `deleteToken` | Relay store | No | N/A |
 | `POST` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `createToken` | Relay store | No | N/A |
+| `PATCH` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `updateToken` | Not implemented | No | N/A |
 | `POST` | `/v2/users` | `registerUser` | Relay store | Yes | N/A |
 | `GET` | `/v2/users/me` | `getCurrentUser` | Relay store | Yes | N/A |
 
@@ -226,3 +228,23 @@ or are deferred to later compatibility tiers:
      which is Relay's protocol reference. Relay leaves it unimplemented;
      resume, fork, and fork-from-failure cover the recovery paths.
      See [the protocol reference](../protocol/executor-ws.md).
+
+7. **New operations pending implementation**:
+   * The 2026-09-30 contract adds `rewindWorkflow`
+     (`POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind`)
+     and `updateToken` (`PATCH /v2/orgs/{orgName}/tokens/{tokenName}`).
+     Relay registers both routes and answers `501 Not Implemented` until
+     their behaviour is implemented.
+
+8. **Autoscaling queue partition restriction**:
+   * The 2026-09-30 contract drops "not be partitioned" from the
+     `AutoscalePolicy.queue` description and adds per-partition limits to
+     `Queue`. Relay still rejects partitioned queues on a policy write,
+     which is stricter than the current contract; reconciling the two is
+     an open question. See [Autoscaling](../usage/autoscaling.md).
+
+9. **Application name length**:
+   * The 2026-09-30 contract raises the `appName` path parameter maximum
+     length from 30 to 256. Relay's `validateAppName` still enforces 3 to
+     30 characters, so a name the contract accepts is rejected on
+     registration. Reconciling the two is an open question.

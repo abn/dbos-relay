@@ -586,3 +586,12 @@ func (s *Server) ImportWorkflow(ctx context.Context, request gen.ImportWorkflowR
 	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowImport, auditStatusSuccess, "", "", nil)
 	return gen.ImportWorkflow201Response{}, nil
 }
+
+// RewindWorkflow provenance: Conductor OpenAPI POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind (operation: rewindWorkflow)
+// Relay does not yet implement workflow rewind.
+func (s *Server) RewindWorkflow(ctx context.Context, request gen.RewindWorkflowRequestObject) (gen.RewindWorkflowResponseObject, error) {
+	return gen.RewindWorkflowdefaultApplicationProblemPlusJSONResponse{
+		StatusCode: http.StatusNotImplemented,
+		Body:       MakeErrorModel(http.StatusNotImplemented, "Not Implemented", "workflow rewind is not implemented"),
+	}, nil
+}
