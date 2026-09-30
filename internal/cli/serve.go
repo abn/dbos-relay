@@ -116,6 +116,7 @@ func newServeCommand() *cobra.Command {
 			dispatcher.SetRecorder(s.Queries())
 			livenessMgr.SetRecovery(dispatcher)
 			h.SetLivenessTracker(livenessMgr)
+			livenessMgr.Start()
 			defer livenessMgr.Stop()
 
 			alertEvaluator := alerting.NewEvaluator(s.Queries(), h, logger)
