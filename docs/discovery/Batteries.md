@@ -81,6 +81,9 @@ Validates mutating workflow control actions dispatched from the control plane to
   with `newWorkflowId` dispatches `fork_workflow` frame to the executor, returning HTTP 200 or 201
   with the new workflow identifier. Asserts that the executor received the fork request and that
   the response contains the expected workflow ID.
+- **Check 4.4 (Rewind Workflow)**: `POST /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/rewind`
+  dispatches `rewind_workflow` frame to the executor, returning HTTP 200 or 204. Asserts that the
+  executor received the rewind request for the targeted workflow.
 
 ### Battery 5: Queues and Schedules Operations
 

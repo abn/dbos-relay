@@ -59,7 +59,8 @@ Certifies that mutating workflow operations are dispatched over executor sockets
 | :--- | :--- | :---: | :--- | :---: |
 | **4.1** | `/v2/orgs/{org}/apps/{app}/workflows/{id}/cancel` | `POST` | `cancel` (`CancelWorkflowRequest`) | `200 OK` / `204 No Content` |
 | **4.2** | `/v2/orgs/{org}/apps/{app}/workflows/{id}/resume` | `POST` | `resume` (`ResumeWorkflowRequest`) | `200 OK` / `204 No Content` |
-| **4.3** | `/v2/orgs/{org}/apps/{app}/workflows/{id}/restart` | `POST` | `fork_workflow` (`ForkWorkflowRequest`) | `200 OK` / `201 Created` |
+| **4.3** | `/v2/orgs/{org}/apps/{app}/workflows/{id}/fork` | `POST` | `fork_workflow` (`ForkWorkflowRequest`) | `200 OK` / `201 Created` |
+| **4.4** | `/v2/orgs/{org}/apps/{app}/workflows/{id}/rewind` | `POST` | `rewind_workflow` (`RewindWorkflowRequest`) | `200 OK` / `204 No Content` |
 
 ---
 

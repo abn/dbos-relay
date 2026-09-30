@@ -32,7 +32,7 @@ Batteries tested:
   1. Specification & System Probes (/healthz, /openapi.json, /docs, /v1/metrics)
   2. WebSocket Handshake & Fleet Registration (/websocket/{app}/{key})
   3. REST & Wire Multiplexing (Workflows, Steps, Observability)
-  4. Workflow Control Operations (Cancel, Resume, Restart)
+  4. Workflow Control Operations (Cancel, Resume, Fork, Rewind)
   5. Queues & Schedules Operations (Listing, Pause, Resume)
   6. Workflow Recovery & Liveness Lifecycle
   7. Alerting Rules Management (Create, List, Delete)
