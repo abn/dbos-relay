@@ -5,6 +5,7 @@ page additions, deprecations, and structural refactors.
 
 ## Unreleased
 
+* **Update**: Re-vendored the Conductor v2 OpenAPI documents (`openapi.json` 3.1.0 and `openapi-3.0.json` 3.0.3, fetched 2026-09-30) and regenerated the server, adding the `rewindWorkflow` and `updateToken` operations to the [REST surface](discovery/rest-surface.md) inventory. Recorded the dropped partition restriction on autoscaling policy queues and the raised application name length as open divergences.
 * **Update**: Completed Phase 4 retention and search parity: resume now requires a healthy executor on the application's recorded latest version (503 otherwise), search filter coverage is proven for time windows and attributes, `restart` divergence is recorded, and shared-database retention semantics plus dashboard deferral are documented in [Workflow retention](usage/retention.md).
 * **Update**: Completed Phase 5 developer surface: the real upstream `dbosctl` binary completes OIDC device login against Relay with the in-test identity provider (`whoami`, `app list`, `app register` all pass), and OIDC profile setup is documented in [Quickstart](usage/quickstart.md).
 * **Update**: Implemented Conductor autoscaling parity per [ADR 0012](adr/0012-autoscaling-policy-support.md): stored policies validated against a running executor, per-version recommendations from executor-reported backlog (`ceil(queueDepth / workerConcurrency)` with concurrency and rollout caps), KEDA wiring in [Autoscaling](usage/autoscaling.md). Relay recommends counts; actuation stays with the orchestrator.

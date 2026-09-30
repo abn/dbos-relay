@@ -332,7 +332,7 @@ type AutoscalePolicy struct {
 	// Example: //schemas/AutoscalePolicy.json
 	Schema *string `json:"$schema,omitempty"`
 
-	// Queue The queue whose utilization drives the desired executor count. Must exist, not be partitioned and have worker_concurrency set.
+	// Queue The queue whose utilization drives the desired executor count. Must exist and have worker_concurrency set.
 	Queue   string         `json:"queue"`
 	Rollout *RolloutPolicy `json:"rollout,omitempty"`
 }
@@ -747,15 +747,27 @@ type Queue struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// ApplicationName The application that owns this queue, when several applications share a system database. Null for in-memory queues and for queues recorded before DBOS Transact tracked application names.
-	ApplicationName     *string  `json:"applicationName"`
-	Concurrency         *int32   `json:"concurrency"`
-	Name                string   `json:"name"`
-	PartitionQueue      bool     `json:"partitionQueue"`
-	PollingIntervalSecs float64  `json:"pollingIntervalSecs"`
-	PriorityEnabled     bool     `json:"priorityEnabled"`
-	RateLimitMax        *int32   `json:"rateLimitMax"`
-	RateLimitPeriodSecs *float64 `json:"rateLimitPeriodSecs"`
-	WorkerConcurrency   *int32   `json:"workerConcurrency"`
+	ApplicationName *string `json:"applicationName"`
+	Concurrency     *int32  `json:"concurrency"`
+	Name            string  `json:"name"`
+
+	// PartitionConcurrency Maximum workflows running concurrently within each partition. Null when no such limit is set, and for a queue using the deprecated partitionQueue option, where concurrency itself applies per partition.
+	PartitionConcurrency *int32 `json:"partitionConcurrency"`
+	PartitionQueue       bool   `json:"partitionQueue"`
+
+	// PartitionRateLimitMax Maximum workflows started per rate limit period within each partition. Null when no such limit is set, and for a queue using the deprecated partitionQueue option, where rateLimitMax itself applies per partition.
+	PartitionRateLimitMax *int32 `json:"partitionRateLimitMax"`
+
+	// PartitionRateLimitPeriodSecs Length in seconds of the per-partition rate limit period. Null whenever partitionRateLimitMax is null.
+	PartitionRateLimitPeriodSecs *float64 `json:"partitionRateLimitPeriodSecs"`
+
+	// PartitionWorkerConcurrency Maximum workflows running concurrently on a single executor within each partition. Null when no such limit is set, and for a queue using the deprecated partitionQueue option, where workerConcurrency itself applies per partition.
+	PartitionWorkerConcurrency *int32   `json:"partitionWorkerConcurrency"`
+	PollingIntervalSecs        float64  `json:"pollingIntervalSecs"`
+	PriorityEnabled            bool     `json:"priorityEnabled"`
+	RateLimitMax               *int32   `json:"rateLimitMax"`
+	RateLimitPeriodSecs        *float64 `json:"rateLimitPeriodSecs"`
+	WorkerConcurrency          *int32   `json:"workerConcurrency"`
 }
 
 // QueueAutoscale defines model for QueueAutoscale.
@@ -826,6 +838,22 @@ type ResumeWorkflowInputBody struct {
 	// Example: //schemas/ResumeWorkflowInputBody.json
 	Schema    *string `json:"$schema,omitempty"`
 	QueueName *string `json:"queueName,omitempty"`
+}
+
+// RewindWorkflowInputBody defines model for RewindWorkflowInputBody.
+type RewindWorkflowInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: //schemas/RewindWorkflowInputBody.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// AppVersion Application version to replay the workflow under. Defaults to the version it already ran on, which only an executor still on that version will dequeue.
+	AppVersion        *string `json:"appVersion,omitempty"`
+	QueueName         *string `json:"queueName,omitempty"`
+	QueuePartitionKey *string `json:"queuePartitionKey,omitempty"`
+
+	// StartStep Step to rewind to. Defaults to the workflow's first step, discarding its whole history.
+	StartStep *int32 `json:"startStep,omitempty"`
 }
 
 // RoleOutput defines model for RoleOutput.
@@ -946,6 +974,15 @@ type UpdateOrgInputBody struct {
 	Schema                *string `json:"$schema,omitempty"`
 	AuditLogRetentionDays *int32  `json:"auditLogRetentionDays,omitempty"`
 	NewName               *string `json:"newName,omitempty"`
+}
+
+// UpdateTokenInputBody defines model for UpdateTokenInputBody.
+type UpdateTokenInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Example: //schemas/UpdateTokenInputBody.json
+	Schema  *string `json:"$schema,omitempty"`
+	NewName *string `json:"newName,omitempty"`
 }
 
 // UserProfile defines model for UserProfile.
@@ -1200,6 +1237,9 @@ type ForkWorkflowJSONRequestBody = ForkWorkflowInputBody
 // ResumeWorkflowJSONRequestBody defines body for ResumeWorkflow for application/json ContentType.
 type ResumeWorkflowJSONRequestBody = ResumeWorkflowInputBody
 
+// RewindWorkflowJSONRequestBody defines body for RewindWorkflow for application/json ContentType.
+type RewindWorkflowJSONRequestBody = RewindWorkflowInputBody
+
 // RequestDomainClaimJSONRequestBody defines body for RequestDomainClaim for application/json ContentType.
 type RequestDomainClaimJSONRequestBody = RequestDomainClaimInputBody
 
@@ -1208,6 +1248,9 @@ type JoinOrgJSONRequestBody = JoinOrgInputBody
 
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = CreateRoleInputBody
+
+// UpdateTokenJSONRequestBody defines body for UpdateToken for application/json ContentType.
+type UpdateTokenJSONRequestBody = UpdateTokenInputBody
 
 // CreateTokenJSONRequestBody defines body for CreateToken for application/json ContentType.
 type CreateTokenJSONRequestBody = CreateTokenInputBody
@@ -1349,6 +1392,9 @@ type ServerInterface interface {
 	// ResumeWorkflow Resume workflow
 	// (POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume)
 	ResumeWorkflow(w http.ResponseWriter, r *http.Request, orgName string, appName string, workflowId string)
+	// RewindWorkflow Rewind workflow
+	// (POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind)
+	RewindWorkflow(w http.ResponseWriter, r *http.Request, orgName string, appName string, workflowId string)
 	// ListWorkflowSteps List workflow steps
 	// (GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps)
 	ListWorkflowSteps(w http.ResponseWriter, r *http.Request, orgName string, appName string, workflowId string, params ListWorkflowStepsParams)
@@ -1400,6 +1446,9 @@ type ServerInterface interface {
 	// DeleteToken Delete token
 	// (DELETE /v2/orgs/{orgName}/tokens/{tokenName})
 	DeleteToken(w http.ResponseWriter, r *http.Request, orgName string, tokenName string)
+	// UpdateToken Update token
+	// (PATCH /v2/orgs/{orgName}/tokens/{tokenName})
+	UpdateToken(w http.ResponseWriter, r *http.Request, orgName string, tokenName string)
 	// CreateToken Create token
 	// (POST /v2/orgs/{orgName}/tokens/{tokenName})
 	CreateToken(w http.ResponseWriter, r *http.Request, orgName string, tokenName string)
@@ -3287,6 +3336,50 @@ func (siw *ServerInterfaceWrapper) ResumeWorkflow(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// RewindWorkflow operation middleware
+func (siw *ServerInterfaceWrapper) RewindWorkflow(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orgName" -------------
+	var orgName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orgName", r.PathValue("orgName"), &orgName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orgName", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "appName" -------------
+	var appName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "appName", r.PathValue("appName"), &appName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "appName", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "workflowId" -------------
+	var workflowId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workflowId", r.PathValue("workflowId"), &workflowId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workflowId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RewindWorkflow(w, r, orgName, appName, workflowId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListWorkflowSteps operation middleware
 func (siw *ServerInterfaceWrapper) ListWorkflowSteps(w http.ResponseWriter, r *http.Request) {
 
@@ -3942,6 +4035,41 @@ func (siw *ServerInterfaceWrapper) DeleteToken(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// UpdateToken operation middleware
+func (siw *ServerInterfaceWrapper) UpdateToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orgName" -------------
+	var orgName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orgName", r.PathValue("orgName"), &orgName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orgName", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "tokenName" -------------
+	var tokenName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenName", r.PathValue("tokenName"), &tokenName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenName", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateToken(w, r, orgName, tokenName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateToken operation middleware
 func (siw *ServerInterfaceWrapper) CreateToken(w http.ResponseWriter, r *http.Request) {
 
@@ -4169,6 +4297,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork", wrapper.ForkWorkflow)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/notifications", wrapper.ListWorkflowNotifications)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume", wrapper.ResumeWorkflow)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind", wrapper.RewindWorkflow)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps", wrapper.ListWorkflowSteps)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/streams", wrapper.ListWorkflowStreams)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v2/orgs/{orgName}/audit-logs", wrapper.ListAuditLogs)
@@ -4186,6 +4315,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v2/orgs/{orgName}/secrets", wrapper.GenerateSecret)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v2/orgs/{orgName}/tokens", wrapper.ListTokens)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v2/orgs/{orgName}/tokens/{tokenName}", wrapper.DeleteToken)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v2/orgs/{orgName}/tokens/{tokenName}", wrapper.UpdateToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v2/orgs/{orgName}/tokens/{tokenName}", wrapper.CreateToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v2/users", wrapper.RegisterUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v2/users/me", wrapper.GetCurrentUser)
@@ -5913,6 +6043,42 @@ func (response ResumeWorkflowdefaultApplicationProblemPlusJSONResponse) VisitRes
 	return err
 }
 
+type RewindWorkflowRequestObject struct {
+	OrgName    string `json:"orgName"`
+	AppName    string `json:"appName"`
+	WorkflowId string `json:"workflowId"`
+	Body       *RewindWorkflowJSONRequestBody
+}
+
+type RewindWorkflowResponseObject interface {
+	VisitRewindWorkflowResponse(w http.ResponseWriter) error
+}
+
+type RewindWorkflow204Response struct {
+}
+
+func (response RewindWorkflow204Response) VisitRewindWorkflowResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RewindWorkflowdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ErrorModel
+	StatusCode int
+}
+
+func (response RewindWorkflowdefaultApplicationProblemPlusJSONResponse) VisitRewindWorkflowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListWorkflowStepsRequestObject struct {
 	OrgName    string `json:"orgName"`
 	AppName    string `json:"appName"`
@@ -6571,6 +6737,41 @@ func (response DeleteTokendefaultApplicationProblemPlusJSONResponse) VisitDelete
 	return err
 }
 
+type UpdateTokenRequestObject struct {
+	OrgName   string `json:"orgName"`
+	TokenName string `json:"tokenName"`
+	Body      *UpdateTokenJSONRequestBody
+}
+
+type UpdateTokenResponseObject interface {
+	VisitUpdateTokenResponse(w http.ResponseWriter) error
+}
+
+type UpdateToken204Response struct {
+}
+
+func (response UpdateToken204Response) VisitUpdateTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UpdateTokendefaultApplicationProblemPlusJSONResponse struct {
+	Body       ErrorModel
+	StatusCode int
+}
+
+func (response UpdateTokendefaultApplicationProblemPlusJSONResponse) VisitUpdateTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateTokenRequestObject struct {
 	OrgName   string `json:"orgName"`
 	TokenName string `json:"tokenName"`
@@ -6823,6 +7024,9 @@ type StrictServerInterface interface {
 	// ResumeWorkflow Resume workflow
 	// (POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume)
 	ResumeWorkflow(ctx context.Context, request ResumeWorkflowRequestObject) (ResumeWorkflowResponseObject, error)
+	// RewindWorkflow Rewind workflow
+	// (POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind)
+	RewindWorkflow(ctx context.Context, request RewindWorkflowRequestObject) (RewindWorkflowResponseObject, error)
 	// ListWorkflowSteps List workflow steps
 	// (GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps)
 	ListWorkflowSteps(ctx context.Context, request ListWorkflowStepsRequestObject) (ListWorkflowStepsResponseObject, error)
@@ -6874,6 +7078,9 @@ type StrictServerInterface interface {
 	// DeleteToken Delete token
 	// (DELETE /v2/orgs/{orgName}/tokens/{tokenName})
 	DeleteToken(ctx context.Context, request DeleteTokenRequestObject) (DeleteTokenResponseObject, error)
+	// UpdateToken Update token
+	// (PATCH /v2/orgs/{orgName}/tokens/{tokenName})
+	UpdateToken(ctx context.Context, request UpdateTokenRequestObject) (UpdateTokenResponseObject, error)
 	// CreateToken Create token
 	// (POST /v2/orgs/{orgName}/tokens/{tokenName})
 	CreateToken(ctx context.Context, request CreateTokenRequestObject) (CreateTokenResponseObject, error)
@@ -8277,6 +8484,44 @@ func (sh *strictHandler) ResumeWorkflow(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// RewindWorkflow operation middleware
+func (sh *strictHandler) RewindWorkflow(w http.ResponseWriter, r *http.Request, orgName string, appName string, workflowId string) {
+	var request RewindWorkflowRequestObject
+
+	request.OrgName = orgName
+	request.AppName = appName
+	request.WorkflowId = workflowId
+
+	var body RewindWorkflowJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RewindWorkflow(ctx, request.(RewindWorkflowRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RewindWorkflow")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RewindWorkflowResponseObject); ok {
+		if err := validResponse.VisitRewindWorkflowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListWorkflowSteps operation middleware
 func (sh *strictHandler) ListWorkflowSteps(w http.ResponseWriter, r *http.Request, orgName string, appName string, workflowId string, params ListWorkflowStepsParams) {
 	var request ListWorkflowStepsRequestObject
@@ -8745,6 +8990,40 @@ func (sh *strictHandler) DeleteToken(w http.ResponseWriter, r *http.Request, org
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteTokenResponseObject); ok {
 		if err := validResponse.VisitDeleteTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateToken operation middleware
+func (sh *strictHandler) UpdateToken(w http.ResponseWriter, r *http.Request, orgName string, tokenName string) {
+	var request UpdateTokenRequestObject
+
+	request.OrgName = orgName
+	request.TokenName = tokenName
+
+	var body UpdateTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateToken(ctx, request.(UpdateTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateTokenResponseObject); ok {
+		if err := validResponse.VisitUpdateTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

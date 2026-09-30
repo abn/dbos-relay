@@ -249,3 +249,12 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 	s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusSuccess, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 	return gen.DeleteToken204Response{}, nil
 }
+
+// UpdateToken provenance: Conductor OpenAPI PATCH /v2/orgs/{orgName}/tokens/{tokenName} (operation: updateToken)
+// Relay does not yet support renaming an API key.
+func (s *Server) UpdateToken(ctx context.Context, request gen.UpdateTokenRequestObject) (gen.UpdateTokenResponseObject, error) {
+	return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+		StatusCode: http.StatusNotImplemented,
+		Body:       MakeErrorModel(http.StatusNotImplemented, "Not Implemented", "renaming an API key is not implemented"),
+	}, nil
+}

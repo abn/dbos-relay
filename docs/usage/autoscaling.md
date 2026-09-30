@@ -29,8 +29,10 @@ curl -X PUT "$RELAY/v2/orgs/my-org/apps/my-app/autoscaling-policy" \
 ```
 
 Relay validates the queue against a running executor before storing the
-policy. The queue must exist, must not be partitioned, and must have a
-worker concurrency set; otherwise the write is rejected with 400. The
+policy. The queue must exist and must have a worker concurrency set;
+otherwise the write is rejected with 400. Relay also rejects partitioned
+queues for now, although the 2026-09-30 contract no longer forbids them
+(recorded in [REST surface](../discovery/rest-surface.md)). The
 optional `rollout` section caps old versions during rollouts:
 
 ```json

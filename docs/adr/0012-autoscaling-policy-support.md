@@ -59,3 +59,11 @@ Relay implements autoscaling policies and recommendations:
   taxonomy page publishes no operation strings for them. Relay records
   `autoscaling_policy.set` and `autoscaling_policy.delete` (its own
   names, documented as such) against the application target.
+
+## Addendum (2026-09-30)
+
+The re-vendored OpenAPI document drops "not be partitioned" from the
+`AutoscalePolicy.queue` description and adds per-partition limits to
+`Queue`. Relay still rejects partitioned queues on write, which is
+stricter than the current contract; reconciling the two is tracked as an
+open divergence in [REST surface](../discovery/rest-surface.md).
