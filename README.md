@@ -27,7 +27,7 @@ Applications](https://abn.is/void/relay-an-open-source-control-plane-for-dbos-ap
 ## Key Features
 
 - **Dual-Engine Storage (ADR 0011)**: Pure-Go embedded SQLite (`modernc.org/sqlite`) for zero-dependency local development and single-node instances, plus PostgreSQL for clustered, multi-instance production deployments.
-- **Full Conductor Protocol Parity**: Complete 32-message bidirectional WebSocket protocol support, verified across all four official DBOS Transact SDKs (TypeScript, Python, Go, and Java).
+- **Full Conductor Protocol Parity**: Complete 33-message bidirectional WebSocket protocol support, verified against the official DBOS Transact SDKs (TypeScript, Python, Go, and Java).
 - **Zero Application Changes**: Requires no upstream SDK modifications or custom wrappers; applications configure standard DBOS environment variables.
 - **Embedded Web Dashboard**: Self-hosted operations console on port 8090 with interactive SVG workflow DAG family visualization, execution curves, canvas viewport (pan/zoom), step history, real-time Server-Sent Events (SSE) telemetry, schedule management, and alerting rules.
 - **Declarative Fleet Management**: Manage applications, queues, and alert policies declaratively via `relay.yaml` with `relay apply` and `relay diff`.

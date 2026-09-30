@@ -625,6 +625,7 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		cancelledID string
 		resumedID   string
 		forkedReq   *protocol.ForkWorkflowRequest
+		rewoundReq  *protocol.RewindWorkflowRequest
 	)
 
 	fe.SetHandler(protocol.MessageTypeCancel, func(msg protocol.Message) (protocol.Message, error) {
@@ -676,6 +677,23 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 				RequestID: req.RequestID,
 			},
 			NewWorkflowID: &newID,
+		}, nil
+	})
+
+	fe.SetHandler(protocol.MessageTypeRewindWorkflow, func(msg protocol.Message) (protocol.Message, error) {
+		req, ok := msg.(*protocol.RewindWorkflowRequest)
+		if !ok || req.Body.WorkflowID == "" {
+			return nil, errors.New("invalid rewind request frame")
+		}
+		mu.Lock()
+		rewoundReq = req
+		mu.Unlock()
+		return &protocol.RewindWorkflowResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeRewindWorkflow,
+				RequestID: req.RequestID,
+			},
+			Success: true,
 		}, nil
 	})
 
@@ -789,6 +807,35 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		mu.Unlock()
 		if gotFork == nil || gotFork.Body.WorkflowID != "wf-conf-1" {
 			return fmt.Errorf("executor did not receive fork frame for wf-conf-1")
+		}
+		return nil
+	}))
+
+	// Check 4.4: Rewind Workflow
+	checks = append(checks, executeCheck("4.4 Rewind Workflow Mutation", func() error {
+		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/wf-conf-1/rewind", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"startStep": 1}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.cfg.ConductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+		}
+		mu.Lock()
+		gotRewind := rewoundReq
+		mu.Unlock()
+		if gotRewind == nil || gotRewind.Body.WorkflowID != "wf-conf-1" {
+			return fmt.Errorf("executor did not receive rewind frame for wf-conf-1")
 		}
 		return nil
 	}))

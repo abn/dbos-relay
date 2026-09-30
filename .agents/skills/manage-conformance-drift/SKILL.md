@@ -64,7 +64,7 @@ When a test fails, identify the owning battery (1 through 8) and component:
 | **B1** | Health, OpenAPI, Metrics, Docs | `internal/api/`, `api/spec/`, `internal/metrics/` |
 | **B2** | WebSocket Upgrade, Auth, Registration | `internal/hub/`, `internal/store/` |
 | **B3** | Observability (Workflows, Steps) | `internal/router/`, `internal/protocol/`, `internal/api/` |
-| **B4** | Workflow Controls (Cancel, Resume, Restart) | `internal/api/workflows_write.go`, `internal/protocol/` |
+| **B4** | Workflow Controls (Cancel, Resume, Fork, Rewind) | `internal/api/workflows_write.go`, `internal/protocol/` |
 | **B5** | Queues & Schedules | `internal/api/queues.go`, `schedules.go`, `internal/protocol/` |
 | **B6** | Recovery & Liveness Lifecycle | `internal/liveness/`, `internal/hub/` |
 | **B7** | Alerting Rules Management | `internal/api/apps.go`, `internal/alerting/` |

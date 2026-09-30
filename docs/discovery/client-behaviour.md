@@ -281,6 +281,7 @@ HTTP mapping, URL template, query parameters, payload shape, and resolution flag
 | :--- | :--- | :--- | :--- | :--- |
 | `dbosctl api-key list` | `GET` | `/v2/orgs/{orgName}/tokens` | None. | `--profile`, `--url`, `--org`, `-o` / `--output` |
 | `dbosctl api-key create <name>` | `POST` | `/v2/orgs/{orgName}/tokens/{tokenName}` | Body: `{"appNames": [...], "permissions": [...]}`. Flag: repeatable `--app`, repeatable `--permission`. | `--profile`, `--url`, `--org`, `-o` / `--output` |
+| `dbosctl api-key rename <name> <new-name>` | `PATCH` | `/v2/orgs/{orgName}/tokens/{tokenName}` | Body: `{"newName": "<new-name>"}`. The key secret is unchanged. | `--profile`, `--url`, `--org` |
 | `dbosctl api-key delete <name>` | `DELETE` | `/v2/orgs/{orgName}/tokens/{tokenName}` | None. | `--profile`, `--url`, `--org` |
 
 #### Applications (`app`)
@@ -410,6 +411,9 @@ against Relay running as the target server, asserting behavior matching the `dbo
   - `api-key list`: `GET /v2/orgs/{orgName}/tokens` returns API keys.
   - `api-key create`: `POST /v2/orgs/{orgName}/tokens/{tokenName}` mints API key with secret
     returned once in HTTP 201 response.
+  - `api-key rename`: `PATCH /v2/orgs/{orgName}/tokens/{tokenName}` renames an active key from
+    `{"newName": "<new-name>"}`; the secret is unchanged, and a name already held by another
+    active key returns HTTP 409.
   - `api-key delete`: `DELETE /v2/orgs/{orgName}/tokens/{tokenName}` revokes API key.
 - [ ] **Problem Details Format**:
   - Non-2xx responses emit `application/problem+json` matching `api.ErrorModel`

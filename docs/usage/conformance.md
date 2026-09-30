@@ -30,7 +30,7 @@ The conformance suite evaluates 8 distinct batteries (for detailed per-check spe
 3. **REST & Wire Multiplexing (Observability)**: Tests dispatching queries for
    workflows, workflow details, and step executions over WebSockets.
 4. **Workflow Control Operations**: Verifies workflow mutations (`cancel`, `resume`,
-   and `fork_workflow`).
+   `fork_workflow`, and `rewind_workflow`).
 5. **Queues & Schedules Operations**: Verifies listing and pausing/resuming queues
    and schedules.
 6. **Workflow Recovery & Liveness Lifecycle**: Tests disconnect detection and
