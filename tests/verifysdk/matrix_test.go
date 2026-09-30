@@ -544,6 +544,36 @@ func waitForExecutors(t *testing.T, containers map[string]containerInfo, timeout
 	t.Fatalf("timed out waiting for healthy executors across all applications after %v", timeout)
 }
 
+// waitForSecondaryExecutor polls the executors API until the app reports both
+// executors in a healthy state. Each sample app runs exactly two (a primary
+// and a secondary), so this waits out the survivor's delayed launch and
+// handshake instead of sleeping a fixed interval that can race it.
+func waitForSecondaryExecutor(t *testing.T, info containerInfo) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		execs, err := fetchExecutors(info.AppName)
+		if err != nil {
+			t.Logf("[%s] Waiting for secondary executor: %v", info.Language, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		healthy := 0
+		for _, e := range execs {
+			if e.Status == "HEALTHY" || e.Status == "connected" {
+				healthy++
+			}
+		}
+		if healthy >= 2 {
+			t.Logf("[%s] Both executors registered healthy for app %s", info.Language, info.AppName)
+			return
+		}
+		t.Logf("[%s] Waiting for secondary executor to register healthy (%d/%d)...", info.Language, healthy, len(execs))
+		time.Sleep(1 * time.Second)
+	}
+	t.Fatalf("[%s] Timed out waiting for secondary executor of app %s to register healthy", info.Language, info.AppName)
+}
+
 func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
 	t.Helper()
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -1225,7 +1255,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				// Ensure both primary and secondary containers are running
 				_ = runCmd(t, "podman", "start", primaryContainer)
 				_ = runCmd(t, "podman", "start", secondaryContainer)
-				time.Sleep(2 * time.Second)
+
+				// Wait until the survivor registers healthy before relying on
+				// it again; a fixed sleep races its delayed launch.
+				waitForSecondaryExecutor(t, primaryInfo)
 
 				// Ensure secondary container is up
 				secondaryLogs := runCmd(t, "podman", "logs", secondaryContainer)
@@ -1356,7 +1389,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// (d) Terminal state read through Relay API
 				var chaosStatus string
-				statusDeadline := time.Now().Add(25 * time.Second)
+				// Anchor the poll to the confirmed DEAD transition: recovery
+				// is redelivered under the ExecutorDeadline (30s default) plus
+				// the survivor's DB reconnect, which exceeds a fixed 25s.
+				statusDeadline := deadTime.Add(90 * time.Second)
 				for time.Now().Before(statusDeadline) {
 					chaosStatus, _ = getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
 					if chaosStatus == "SUCCESS" {
@@ -1609,7 +1645,10 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// Wait for forked workflow to reach terminal SUCCESS state via Relay API
 				var finalStatus, finalExecID string
-				deadline := time.Now().Add(25 * time.Second)
+				// The survivor must dequeue and execute the fork; budget for
+				// the executor deadline plus a DB reconnect instead of a fixed
+				// 25s.
+				deadline := time.Now().Add(90 * time.Second)
 				for time.Now().Before(deadline) {
 					finalStatus, finalExecID = getWorkflowViaAPI(t, info.AppName, forkedID)
 					if finalStatus == "SUCCESS" {
@@ -1647,7 +1686,9 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				// Wait for the step-zero fork to reach terminal SUCCESS state via Relay API
 				var stepZeroStatus, stepZeroExecID string
-				stepZeroDeadline := time.Now().Add(25 * time.Second)
+				// Budget for the executor deadline plus a DB reconnect instead
+				// of a fixed 25s.
+				stepZeroDeadline := time.Now().Add(90 * time.Second)
 				for time.Now().Before(stepZeroDeadline) {
 					stepZeroStatus, stepZeroExecID = getWorkflowViaAPI(t, info.AppName, stepZeroID)
 					if stepZeroStatus == "SUCCESS" {
