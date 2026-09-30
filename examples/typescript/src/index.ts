@@ -17,7 +17,9 @@ const stepPool = new Pool({
 
 async function recordStepExecution(workflowID: string, stepName: string): Promise<void> {
   let lastErr: Error | unknown;
-  for (let attempt = 1; attempt <= 10; attempt++) {
+  const deadline = Date.now() + 45000;
+  let delay = 500;
+  while (true) {
     try {
       await stepPool.query(`
         INSERT INTO test_step_executions (workflow_id, step_name, executed_at)
@@ -26,7 +28,13 @@ async function recordStepExecution(workflowID: string, stepName: string): Promis
       return;
     } catch (err) {
       lastErr = err;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (Date.now() >= deadline) {
+        break;
+      }
+      // Back off with jitter so a transient DNS/connection outage
+      // self-recovers instead of exhausting the fixed budget.
+      await new Promise((resolve) => setTimeout(resolve, Math.random() * delay));
+      delay = Math.min(8000, delay * 2);
     }
   }
   console.error(`Failed to record step execution for ${stepName}:`, lastErr);

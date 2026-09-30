@@ -8,6 +8,7 @@
 
 import json
 import os
+import random
 import sys
 import threading
 import time
@@ -36,7 +37,9 @@ def get_step_conn(clean_url: str):
 def record_step_execution(workflow_id: str, step_name: str) -> None:
     clean_url = db_url.replace("+psycopg", "")
     last_exc = None
-    for attempt in range(1, 11):
+    deadline = time.monotonic() + 45.0
+    delay = 0.5
+    while True:
         try:
             conn = get_step_conn(clean_url)
             with conn.cursor() as cur:
@@ -54,7 +57,12 @@ def record_step_execution(workflow_id: str, step_name: str) -> None:
                     except Exception:
                         pass
                 _step_conn = None
-            time.sleep(0.5)
+            if time.monotonic() >= deadline:
+                break
+            # Back off with jitter so a transient DNS/connection outage
+            # self-recovers instead of exhausting the fixed budget.
+            time.sleep(random.uniform(0.0, delay))
+            delay = min(8.0, delay * 2)
     print(f"record_step_execution failed for {step_name} ({workflow_id}): {last_exc}", file=sys.stderr, flush=True)
 
 # Configure DBOS SDK
