@@ -87,7 +87,7 @@ own Postgres database.
 | `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/fork` | `forkWorkflow` | Executor dispatch | No | `ForkWorkflowRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/notifications` | `listWorkflowNotifications` | Executor dispatch | No | `GetWorkflowNotificationsRequest` |
 | `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/resume` | `resumeWorkflow` | Executor dispatch | No | `ResumeWorkflowRequest` |
-| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind` | `rewindWorkflow` | Not implemented | No | N/A |
+| `POST` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind` | `rewindWorkflow` | Executor dispatch | No | `RewindWorkflowRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/steps` | `listWorkflowSteps` | Executor dispatch | No | `ListStepsRequest` |
 | `GET` | `/v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/streams` | `listWorkflowStreams` | Executor dispatch | No | `GetWorkflowStreamsRequest` |
 | `GET` | `/v2/orgs/{orgName}/audit-logs` | `listAuditLogs` | Relay store | Yes | N/A |
@@ -229,12 +229,11 @@ or are deferred to later compatibility tiers:
      resume, fork, and fork-from-failure cover the recovery paths.
      See [the protocol reference](../protocol/executor-ws.md).
 
-7. **New operations pending implementation**:
-   * The 2026-09-30 contract adds `rewindWorkflow`
-     (`POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind`)
-     and `updateToken` (`PATCH /v2/orgs/{orgName}/tokens/{tokenName}`).
-     Relay registers both routes and answers `501 Not Implemented` until
-     their behaviour is implemented.
+7. **New operation pending implementation**:
+   * The 2026-09-30 contract adds `updateToken`
+     (`PATCH /v2/orgs/{orgName}/tokens/{tokenName}`). Relay registers the
+     route and answers `501 Not Implemented` until its behaviour is
+     implemented.
 
 8. **Autoscaling queue partition restriction**:
    * The 2026-09-30 contract drops "not be partitioned" from the

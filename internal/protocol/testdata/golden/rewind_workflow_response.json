@@ -1,0 +1,5 @@
+{
+  "type": "rewind_workflow",
+  "request_id": "req-uuid",
+  "success": true
+}

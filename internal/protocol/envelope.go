@@ -22,6 +22,7 @@ const (
 	MessageTypeListSteps                   MessageType = "list_steps"
 	MessageTypeGetWorkflow                 MessageType = "get_workflow"
 	MessageTypeForkWorkflow                MessageType = "fork_workflow"
+	MessageTypeRewindWorkflow              MessageType = "rewind_workflow"
 	MessageTypeForkFromFailure             MessageType = "fork_from_failure"
 	MessageTypeExistPendingWorkflows       MessageType = "exist_pending_workflows"
 	MessageTypeRetention                   MessageType = "retention"

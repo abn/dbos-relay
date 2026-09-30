@@ -27,6 +27,7 @@ const (
 	auditOpWorkflowCancel     = "workflow.cancel"
 	auditOpWorkflowResume     = "workflow.resume"
 	auditOpWorkflowFork       = "workflow.fork"
+	auditOpWorkflowRewind     = "workflow.rewind"
 	auditOpWorkflowForkFail   = "workflow.fork_from_failure"
 	auditOpWorkflowDelete     = "workflow.delete"
 	auditOpWorkflowImport     = "workflow.import"
@@ -361,6 +362,8 @@ func auditDeniedWorkflowOp(method string, rest []string, app string) (op, appNam
 			return auditOpWorkflowResume, app, string(gen.AuditTargetTypeWorkflow), rest[0], true
 		case "fork":
 			return auditOpWorkflowFork, app, string(gen.AuditTargetTypeWorkflow), rest[0], true
+		case "rewind":
+			return auditOpWorkflowRewind, app, string(gen.AuditTargetTypeWorkflow), rest[0], true
 		}
 	}
 	return "", "", "", "", false

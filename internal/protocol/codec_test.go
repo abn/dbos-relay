@@ -178,6 +178,26 @@ func getAllGoldenFixtures() map[string]struct {
 				NewWorkflowID: stringPtr("wf-forked-2"),
 			},
 		},
+		"rewind_workflow_request.json": {
+			isResponse: false,
+			expected: &RewindWorkflowRequest{
+				Envelope: Envelope{Type: MessageTypeRewindWorkflow, RequestID: "req-uuid"},
+				Body: RewindWorkflowRequestBody{
+					WorkflowID:         "wf-123",
+					StartStep:          intPtr(2),
+					ApplicationVersion: stringPtr("v1.0.0"),
+					QueueName:          stringPtr("orders"),
+					QueuePartitionKey:  stringPtr("eu"),
+				},
+			},
+		},
+		"rewind_workflow_response.json": {
+			isResponse: true,
+			expected: &RewindWorkflowResponse{
+				Envelope: Envelope{Type: MessageTypeRewindWorkflow, RequestID: "req-uuid"},
+				Success:  true,
+			},
+		},
 		"get_metrics_request.json": {
 			isResponse: false,
 			expected: &GetMetricsRequest{
@@ -817,6 +837,7 @@ func TestZeroValueResponses(t *testing.T) {
 		&ListStepsResponse{Envelope: Envelope{Type: MessageTypeListSteps}},
 		&GetWorkflowResponse{Envelope: Envelope{Type: MessageTypeGetWorkflow}},
 		&ForkWorkflowResponse{Envelope: Envelope{Type: MessageTypeForkWorkflow}},
+		&RewindWorkflowResponse{Envelope: Envelope{Type: MessageTypeRewindWorkflow}},
 		&ForkFromFailureResponse{Envelope: Envelope{Type: MessageTypeForkFromFailure}},
 		&ExistPendingWorkflowsResponse{Envelope: Envelope{Type: MessageTypeExistPendingWorkflows}},
 		&RetentionResponse{Envelope: Envelope{Type: MessageTypeRetention}},
@@ -962,6 +983,7 @@ func TestSpecCoversAllMessageTypes(t *testing.T) {
 		MessageTypeListSteps,
 		MessageTypeGetWorkflow,
 		MessageTypeForkWorkflow,
+		MessageTypeRewindWorkflow,
 		MessageTypeForkFromFailure,
 		MessageTypeExistPendingWorkflows,
 		MessageTypeRetention,

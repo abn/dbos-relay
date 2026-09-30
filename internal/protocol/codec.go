@@ -134,6 +134,8 @@ func decodeWithDirection(data []byte, isResponse bool) (Message, error) {
 			msg = &GetWorkflowResponse{}
 		case MessageTypeForkWorkflow:
 			msg = &ForkWorkflowResponse{}
+		case MessageTypeRewindWorkflow:
+			msg = &RewindWorkflowResponse{}
 		case MessageTypeForkFromFailure:
 			msg = &ForkFromFailureResponse{}
 		case MessageTypeExistPendingWorkflows:
@@ -201,6 +203,8 @@ func decodeWithDirection(data []byte, isResponse bool) (Message, error) {
 			msg = &GetWorkflowRequest{}
 		case MessageTypeForkWorkflow:
 			msg = &ForkWorkflowRequest{}
+		case MessageTypeRewindWorkflow:
+			msg = &RewindWorkflowRequest{}
 		case MessageTypeForkFromFailure:
 			msg = &ForkFromFailureRequest{}
 		case MessageTypeExistPendingWorkflows:

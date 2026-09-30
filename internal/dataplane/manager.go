@@ -252,6 +252,7 @@ func isMutatingMessage(msgType protocol.MessageType) bool {
 	case protocol.MessageTypeCancel,
 		protocol.MessageTypeResume,
 		protocol.MessageTypeForkWorkflow,
+		protocol.MessageTypeRewindWorkflow,
 		protocol.MessageTypeDelete:
 		return true
 	default:

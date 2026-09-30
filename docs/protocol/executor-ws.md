@@ -17,10 +17,10 @@ wss://<relay-host>/websocket/{appName}/{conductorKey}
 The API key is transmitted in the URL path (`{conductorKey}`).
 
 Relay derives this protocol from the following public DBOS Transact SDK repositories:
-* Python SDK: `dbos-transact-py` (commit `833794f7a1138bacf75ff6d88647a33eb5e35e52`)
-* TypeScript SDK: `dbos-transact-ts` (commit `d8c4974cca6cc84b296f3b8edfbbb41627ddd47e`)
-* Go SDK: `dbos-transact-go` (commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`)
-* Java SDK: `dbos-transact-java` (commit `1248174f393bd97f9973ec83cbc6e42b6e319ed1`)
+* Python SDK: `dbos-transact-py` (commit `2b93e1467a5464f817ef5d11aa5f10d3d2253761`)
+* TypeScript SDK: `dbos-transact-ts` (commit `749a4d420127e97715bf1f5d8caabf496a40af0b`)
+* Go SDK: `dbos-transact-golang` (commit `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5`)
+* Java SDK: `dbos-transact-java` (commit `ecc2bda4deb57e3ba38c55cca150e95c99eb9d64`)
 
 ### Handshake Sequence
 
@@ -68,7 +68,7 @@ All wire messages share a common JSON envelope (`internal/protocol/envelope.go:4
 
 ## Message Catalogue
 
-Relay supports 32 distinct protocol message types, matching the upstream Go SDK (`dbos-transact-go/dbos/conductor_protocol.go` commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`).
+Relay supports 33 distinct protocol message types, matching the upstream Go SDK (`dbos-transact-golang/dbos/conductor_protocol.go` commit `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5`).
 
 ### Core Lifecycle and Execution
 
@@ -144,69 +144,73 @@ Relay supports 32 distinct protocol message types, matching the upstream Go SDK 
     * Request body: `workflow_id` (string), `start_step` (integer), `new_workflow_id` (string, optional), `application_version` (string, optional), `queue_name` (string, optional), `queue_partition_key` (string, optional).
     * Response: `new_workflow_id` (string, optional).
 
-18. `fork_from_failure`
+18. `rewind_workflow`
+    * Request body: `workflow_id` (string), `start_step` (integer, optional), `application_version` (string, optional), `queue_name` (string, optional), `queue_partition_key` (string, optional). Replays a workflow from an earlier step and discards the history after it; the workflow keeps its identifier, unlike a fork.
+    * Response: `success` (boolean).
+
+19. `fork_from_failure`
     * Request body: `workflow_ids` (array of strings), `application_version` (string, optional), `queue_name` (string, optional), `queue_partition_key` (string, optional), `from_last_failure` (boolean, optional), `from_last_step` (boolean, optional), `from_step` (integer, optional), `from_step_name` (string, optional).
     * Response: `forked_workflow_ids` (array of strings).
 
-19. `export_workflow`
+20. `export_workflow`
     * Request: `workflow_id` (string), `export_children` (boolean).
     * Response: `serialized_workflow` (string, optional).
 
-20. `import_workflow`
+21. `import_workflow`
     * Request: `serialized_workflow` (string).
     * Response: `success` (boolean).
 
 ### Schedules
 
-21. `list_schedules`
+22. `list_schedules`
     * Request: `body` (object, optional filter parameters: `status`, `workflow_name`, `schedule_name_prefix`, `application_name`, `load_context`).
     * Response: `output` (array of schedule objects).
 
-22. `get_schedule`
+23. `get_schedule`
     * Request: `schedule_name` (string), `load_context` (boolean, optional).
     * Response: `output` (schedule object).
 
-23. `pause_schedule`
+24. `pause_schedule`
     * Request: `schedule_name` (string).
     * Response: `success` (boolean).
 
-24. `resume_schedule`
+25. `resume_schedule`
     * Request: `schedule_name` (string).
     * Response: `success` (boolean).
 
-25. `trigger_schedule`
+26. `trigger_schedule`
     * Request: `schedule_name` (string).
     * Response: `workflow_id` (string, optional).
 
-26. `backfill_schedule`
+27. `backfill_schedule`
     * Request: `schedule_name` (string), `start` (timestamp string, ISO 8601), `end` (timestamp string, ISO 8601).
     * Response: `workflow_ids` (array of strings).
 
 ### Queues and Metrics
 
-27. `list_queues`
+28. `list_queues`
     * Request: `body` (object, optional filter parameter `application_name`).
     * Response: `output` (array of queue metadata objects).
 
-28. `get_queue`
+29. `get_queue`
     * Request: `name` (string).
     * Response: `output` (queue metadata object).
 
-29. `get_metrics`
+30. `get_metrics`
     * Request: `start_time` (timestamp string, RFC 3339), `end_time` (timestamp string, RFC 3339), `metric_class` (string), `application_name` (array of strings, optional).
     * Response: `metrics` (array of `{metric_name, metric_type, value}`).
 
 ### Applications and Alerts
 
-30. `list_application_versions`
+31. `list_application_versions`
     * Request: Envelope only.
     * Response: `output` (array of application version objects with `{version_id, version_name, version_timestamp, created_at}`).
 
-31. `set_latest_application_version`
+32. `set_latest_application_version`
     * Request: `version_name` (string).
     * Response: `success` (boolean).
 
-32. `alert`
+33. `alert`
     * Request: Dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:590-595`).
     * Response: `success` (boolean).
 
@@ -296,6 +300,7 @@ In multi-instance deployments, Relay instances coordinate state through the shar
 |---|---|---|---|---|
 | `metadata` | Supported | Supported | Supported | Supported |
 | `cancel_children` | Supported | Supported | Supported (`conductor_protocol.go:462-467`) | Supported (`CancelRequest.java:8`) |
+| `rewind_workflow` | Supported | Supported | Supported (`conductor_protocol.go`) | Not yet implemented |
 
 ## Version Skew Policy
 

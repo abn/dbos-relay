@@ -1,0 +1,11 @@
+{
+  "type": "rewind_workflow",
+  "request_id": "req-uuid",
+  "body": {
+    "workflow_id": "wf-123",
+    "start_step": 2,
+    "application_version": "v1.0.0",
+    "queue_name": "orders",
+    "queue_partition_key": "eu"
+  }
+}

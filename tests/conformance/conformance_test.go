@@ -532,6 +532,11 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 				Envelope:          protocol.Envelope{Type: protocol.MessageTypeForkFromFailure, RequestID: m.RequestID},
 				ForkedWorkflowIDs: []string{"wf-forked-from-fail-1"},
 			}, nil
+		case *protocol.RewindWorkflowRequest:
+			return &protocol.RewindWorkflowResponse{
+				Envelope: protocol.Envelope{Type: protocol.MessageTypeRewindWorkflow, RequestID: m.RequestID},
+				Success:  true,
+			}, nil
 		case *protocol.DeleteWorkflowRequest:
 			return &protocol.DeleteWorkflowResponse{
 				Envelope: protocol.Envelope{Type: protocol.MessageTypeDelete, RequestID: m.RequestID},
@@ -693,7 +698,34 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Errorf("restart response workflowId = %q, want wf-restarted-789", restartResp.WorkflowId)
 	}
 
-	// 9. Bulk cancel workflows
+	// 9. Rewind workflow (same identifier, discards history after the step)
+	rewindReq := `{"startStep":1,"queueName":"orders"}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID+"/rewind", "application/json", strings.NewReader(rewindReq))
+	if err != nil {
+		t.Fatalf("rewind workflow: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("rewind status = %d, want 204 or 200", resp.StatusCode)
+	}
+	if len(capturedMsgs) == 0 {
+		t.Fatal("expected captured message for rewind")
+	}
+	rewindMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.RewindWorkflowRequest)
+	if !ok {
+		t.Fatalf("expected RewindWorkflowRequest, got %T", capturedMsgs[len(capturedMsgs)-1])
+	}
+	if rewindMsg.Body.WorkflowID != wfUUID {
+		t.Errorf("rewind WorkflowID = %q, want %q", rewindMsg.Body.WorkflowID, wfUUID)
+	}
+	if rewindMsg.Body.StartStep == nil || *rewindMsg.Body.StartStep != 1 {
+		t.Errorf("rewind StartStep = %v, want 1", rewindMsg.Body.StartStep)
+	}
+	if rewindMsg.Body.QueueName == nil || *rewindMsg.Body.QueueName != "orders" {
+		t.Errorf("rewind QueueName = %v, want orders", rewindMsg.Body.QueueName)
+	}
+
+	// 10. Bulk cancel workflows
 	bulkCancelReq := `{"workflowIds":["wf-123","wf-456"]}`
 	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-cancel", "application/json", strings.NewReader(bulkCancelReq))
 	if err != nil {
@@ -704,7 +736,7 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Fatalf("bulk cancel status = %d, want 204 or 200", resp.StatusCode)
 	}
 
-	// 10. Bulk resume workflows
+	// 11. Bulk resume workflows
 	bulkResumeReq := `{"workflowIds":["wf-123","wf-456"]}`
 	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-resume", "application/json", strings.NewReader(bulkResumeReq))
 	if err != nil {
@@ -715,7 +747,7 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Fatalf("bulk resume status = %d, want 204 or 200", resp.StatusCode)
 	}
 
-	// 11. Bulk fork workflows from failure
+	// 12. Bulk fork workflows from failure
 	bulkForkReq := `{"workflowIds":["wf-failed-1"]}`
 	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-fork-from-failure", "application/json", strings.NewReader(bulkForkReq))
 	if err != nil {
@@ -726,7 +758,7 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Fatalf("bulk fork status = %d, want 200", resp.StatusCode)
 	}
 
-	// 12. Delete workflow
+	// 13. Delete workflow
 	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID, nil)
 	resp, err = http.DefaultClient.Do(delReq)
 	if err != nil {
@@ -744,7 +776,7 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Errorf("delete WorkflowID = %q, want %q", deleteMsg.WorkflowID, wfUUID)
 	}
 
-	// 13. Bulk delete workflows
+	// 14. Bulk delete workflows
 	bulkDelReq := `{"workflowIds":["wf-123","wf-456"]}`
 	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/bulk-delete", "application/json", strings.NewReader(bulkDelReq))
 	if err != nil {
