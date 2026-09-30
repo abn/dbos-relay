@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -159,8 +160,16 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to bind HTTP server on :%s: %v\n", port, err)
+		os.Exit(1)
+	}
 	go func() {
-		_ = http.ListenAndServe(":"+port, nil)
+		if err := http.Serve(listener, nil); err != nil {
+			fmt.Fprintf(os.Stderr, "HTTP server failed: %v\n", err)
+			os.Exit(1)
+		}
 	}()
 
 	var launched bool
