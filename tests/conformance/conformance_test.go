@@ -688,34 +688,34 @@ func TestConformance_WorkflowLifecycleAndMutations(t *testing.T) {
 		t.Errorf("fork response workflowId = %q, want wf-forked-456", forkResp.WorkflowId)
 	}
 
-	// 8. Restart workflow (step-zero fork mutation)
-	restartReq := `{"startStep":0,"newWorkflowId":"wf-restarted-789"}`
-	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID+"/fork", "application/json", strings.NewReader(restartReq))
+	// 8. Step-zero fork (restart semantics)
+	stepZeroReq := `{"startStep":0,"newWorkflowId":"wf-step-zero-789"}`
+	resp, err = http.Post(ts.URL+"/v2/orgs/local/apps/test-app/workflows/"+wfUUID+"/fork", "application/json", strings.NewReader(stepZeroReq))
 	if err != nil {
-		t.Fatalf("restart workflow: %v", err)
+		t.Fatalf("step-zero fork: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		t.Fatalf("restart status = %d, want 201 or 200", resp.StatusCode)
+		t.Fatalf("step-zero fork status = %d, want 201 or 200", resp.StatusCode)
 	}
-	restartMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.ForkWorkflowRequest)
+	stepZeroMsg, ok := capturedMsgs[len(capturedMsgs)-1].(*protocol.ForkWorkflowRequest)
 	if !ok {
-		t.Fatalf("expected ForkWorkflowRequest for restart, got %T", capturedMsgs[len(capturedMsgs)-1])
+		t.Fatalf("expected ForkWorkflowRequest for step-zero fork, got %T", capturedMsgs[len(capturedMsgs)-1])
 	}
-	if restartMsg.Body.StartStep != 0 {
-		t.Errorf("restart StartStep = %d, want 0", restartMsg.Body.StartStep)
+	if stepZeroMsg.Body.StartStep != 0 {
+		t.Errorf("step-zero fork StartStep = %d, want 0", stepZeroMsg.Body.StartStep)
 	}
-	if restartMsg.Body.WorkflowID != wfUUID {
-		t.Errorf("restart WorkflowID = %q, want %q", restartMsg.Body.WorkflowID, wfUUID)
+	if stepZeroMsg.Body.WorkflowID != wfUUID {
+		t.Errorf("step-zero fork WorkflowID = %q, want %q", stepZeroMsg.Body.WorkflowID, wfUUID)
 	}
-	var restartResp struct {
+	var stepZeroResp struct {
 		WorkflowId string `json:"workflowId"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&restartResp); err != nil {
-		t.Fatalf("decode restart response: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&stepZeroResp); err != nil {
+		t.Fatalf("decode step-zero fork response: %v", err)
 	}
-	if restartResp.WorkflowId != "wf-restarted-789" {
-		t.Errorf("restart response workflowId = %q, want wf-restarted-789", restartResp.WorkflowId)
+	if stepZeroResp.WorkflowId != "wf-step-zero-789" {
+		t.Errorf("step-zero fork response workflowId = %q, want wf-step-zero-789", stepZeroResp.WorkflowId)
 	}
 
 	// 9. Rewind workflow (same identifier, discards history after the step)

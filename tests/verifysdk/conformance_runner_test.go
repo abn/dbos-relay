@@ -453,10 +453,10 @@ func (r *conformanceProbeRunner) runBattery4(ctx context.Context) ConformanceBat
 		return nil
 	}))
 
-	// 4.2 Restart Workflow Mutation (step-0 fork semantics)
-	checks = append(checks, executeConformanceCheck("4.2 Restart (Step-0 Fork) Mutation", func() error {
+	// 4.2 Step-Zero Fork Mutation
+	checks = append(checks, executeConformanceCheck("4.2 Step-Zero Fork Mutation", func() error {
 		if r.wfID == "" {
-			return fmt.Errorf("skip: no target workflow id for restart")
+			return fmt.Errorf("skip: no target workflow id for step-zero fork")
 		}
 		reqURL := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/%s/fork", r.httpURL, r.orgName, r.appName, r.wfID)
 		bodyData := map[string]any{
@@ -488,7 +488,7 @@ func (r *conformanceProbeRunner) runBattery4(ctx context.Context) ConformanceBat
 			return fmt.Errorf("invalid json: %w", err)
 		}
 		if res.WorkflowID == "" {
-			return errors.New("empty workflowId returned from restart")
+			return errors.New("empty workflowId returned from step-zero fork")
 		}
 		return nil
 	}))
