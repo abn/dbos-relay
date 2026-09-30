@@ -774,8 +774,8 @@ func (r *Runner) runBattery4Control(ctx context.Context) BatteryResult {
 		return nil
 	}))
 
-	// Check 4.3: Restart (Fork) Workflow
-	checks = append(checks, executeCheck("4.3 Restart (Fork) Workflow Mutation", func() error {
+	// Check 4.3: Fork Workflow
+	checks = append(checks, executeCheck("4.3 Fork Workflow Mutation", func() error {
 		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/wf-conf-1/fork", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"newWorkflowId": "wf-conf-1-forked", "startStep": 0}`))
 		if err != nil {
