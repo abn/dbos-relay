@@ -23,7 +23,7 @@ Every protocol message struct in `internal/protocol/messages.go` must carry a
 provenance comment directly above its type definition:
 
 ```go
-// ListWorkflowsResponseBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListWorkflowsResponseBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListWorkflowsResponseBody struct {
     ...
 }

@@ -78,10 +78,10 @@ executor or applied directly through the SDK client data plane.
 
 ### Cancellation semantics
 
-WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update. The abridged SQL below illustrates the status transition (source: `https://github.com/dbos-inc/dbos-transact-go` commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`, `dbos/internal/sysdb/system_database.go` `CancelWorkflows` lines 2005-2071):
+WebSocket cancellation requests and data-plane cancellation calls apply the exact same database update. The abridged SQL below illustrates the status transition (source: `https://github.com/dbos-inc/dbos-transact-golang` commit `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5`, `dbos/internal/sysdb/system_database.go` `CancelWorkflows` lines 2069-2214):
 
 ```sql
--- Abridged illustration (source: dbos/internal/sysdb/system_database.go lines 2005-2071, commit ab56911)
+-- Abridged illustration (source: dbos/internal/sysdb/system_database.go lines 2069-2214, commit fb3e33e)
 UPDATE dbos.workflow_status
 SET status = 'CANCELLED'
 WHERE workflow_uuid = $1
@@ -102,10 +102,10 @@ and safety guarantees as live WebSocket cancellations.
 
 ### Resume semantics
 
-WebSocket resume requests and data-plane resume calls transition workflows back into the queue table. The abridged SQL below illustrates the transition (source: `https://github.com/dbos-inc/dbos-transact-go` commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`, `dbos/internal/sysdb/system_database.go` `ResumeWorkflows` lines 2440-2498):
+WebSocket resume requests and data-plane resume calls transition workflows back into the queue table. The abridged SQL below illustrates the transition (source: `https://github.com/dbos-inc/dbos-transact-golang` commit `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5`, `dbos/internal/sysdb/system_database.go` `ResumeWorkflows` lines 2350-2485):
 
 ```sql
--- Abridged illustration (source: dbos/internal/sysdb/system_database.go lines 2440-2498, commit ab56911)
+-- Abridged illustration (source: dbos/internal/sysdb/system_database.go lines 2350-2485, commit fb3e33e)
 UPDATE dbos.workflow_status
 SET status = 'ENQUEUED',
     queue_name = '_dbos_internal_queue',
@@ -128,15 +128,15 @@ WebSocket fork requests (`fork_workflow`) and data-plane fork mutations apply id
 When a running workflow is cancelled via the data plane while suspended in a durable sleep (`sleep`)
 or waiting on an event message (`recv`):
 
-* **Go SDK** (`dbos/workflow.go:4172-4202`, `3482-3575`): The worker process sleeps for the remaining
+* **Go SDK** (`dbos/workflow.go` `Sleep`): The worker process sleeps for the remaining
   duration via an in-memory timer. On timer expiration, the sleep function returns without checking the
   system database. Cancellation is detected only at the next checkpointed step boundary or when attempting
   to finalize the workflow outcome (`UpdateWorkflowOutcome`).
-* **Python SDK** (`dbos/_dbos.py:1871-1901`, `dbos/_sys_db.py:3647-3670`): The worker thread sleeps
+* **Python SDK** (`dbos/_dbos.py` `sleep`, `dbos/_sys_db.py` `recv`): The worker thread sleeps
   until the local duration completes (`time.sleep` or `asyncio.sleep`). Recheck intervals in `recv`
   poll exclusively for incoming notifications on `dbos.notifications`. On wakeup, the workflow continues
   and detects cancellation at the subsequent step boundary.
-* **TypeScript SDK** (`src/system_database.ts:2889-2897`, `3065`): The worker sleeps locally until the
+* **TypeScript SDK** (`src/system_database.ts` `durableSleepms`, `recv`): The worker sleeps locally until the
   target timestamp. However, immediately upon timer expiration in `durableSleepms` and upon event resolution
   in `recv`, the SDK explicitly invokes `checkIfCanceled(workflowID)`. If the row was updated to `CANCELLED`
   in `dbos.workflow_status` during the sleep window, the executor immediately throws `DBOSWorkflowCancelledError`

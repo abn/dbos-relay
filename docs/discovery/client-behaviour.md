@@ -17,8 +17,8 @@ authentication layer.
 
 All findings in this document are derived from the following permitted source:
 * Repository: `https://github.com/dbos-inc/dbos-ctl`
-* Pinned Commit: `9d14ed3f0ccddb84cd3390e0bddbcfb9ea9a32a6`
-* Date Confirmed: 2026-09-08
+* Pinned Commit: `1e6d20e3201588ff67d6157f3808c933b3ed5811`
+* Date Confirmed: 2026-09-30
 
 ## 1. License analysis
 

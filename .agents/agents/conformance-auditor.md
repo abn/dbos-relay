@@ -20,7 +20,7 @@ findings, and scope minimal, test-backed remediations.
   OpenAPI specifications (`api/spec/openapi.json`) against Relay route handlers
   and schemas.
 - **Audit SDK wire contracts**: review protocol changes in permitted open-source
-  SDKs (`dbos-transact-py`, `dbos-transact-ts`, `dbos-transact-go`,
+  SDKs (`dbos-transact-py`, `dbos-transact-ts`, `dbos-transact-golang`,
   `dbos-transact-java`) to detect new message types, field alterations, or
   serialization differences.
 - **Triage discrepancies**: categorize failures into the 8 conformance batteries,

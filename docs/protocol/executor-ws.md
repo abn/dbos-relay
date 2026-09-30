@@ -24,7 +24,7 @@ Relay derives this protocol from the following public DBOS Transact SDK reposito
 
 ### Handshake Sequence
 
-Upon WebSocket connection establishment, Relay initiates the handshake by sending an `executor_info` request frame to the executor (`conductor_protocol.go:82-95`):
+Upon WebSocket connection establishment, Relay initiates the handshake by sending an `executor_info` request frame to the executor (`conductor_protocol.go:89-104`):
 
 ```json
 {
@@ -99,6 +99,7 @@ Relay supports 33 distinct protocol message types, matching the upstream Go SDK 
 7. `retention`
    * Request: `body` (object): `gc_cutoff_epoch_ms` (integer, optional), `gc_rows_threshold` (integer, optional), `gc_batch_size` (integer, optional), `timeout_cutoff_epoch_ms` (integer, optional).
    * Response: `success` (boolean).
+   * The executor acknowledges `success: true` immediately and runs garbage collection asynchronously, so the response confirms acceptance rather than completion. An absent, null, or zero `gc_batch_size` takes the SDK default.
 
 ### Workflow Inspection and Queries
 
@@ -211,12 +212,12 @@ Relay supports 33 distinct protocol message types, matching the upstream Go SDK 
     * Response: `success` (boolean).
 
 33. `alert`
-    * Request: Dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:590-595`).
+    * Request: Dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:613-618`).
     * Response: `success` (boolean).
 
 ### Unimplemented Types
 
-* `restart`: Present in Python (`protocol.py:37`) and Java SDKs, but not implemented in Relay or the Go SDK.
+* `restart`: Present in the Java SDK, but not implemented in Relay or the Go SDK. Python and TypeScript removed it in favour of `rewind_workflow`.
 
 ## Liveness, Heartbeat, and Timeout
 
@@ -264,7 +265,7 @@ Relay inherits the execution guarantees of the upstream SDK implementation and s
 
 * Step executions are at-least-once.
 * Workflow outcomes are exactly-once.
-* Recovery dispatch is idempotent. Multiple recovery dispatches for the same dead executor do not corrupt execution state because recovery re-enqueue in the SDK system database (`dbos-transact-go` `dbos/internal/sysdb/system_database.go:5098` `ReenqueueForRecovery`) is scoped to `status = PENDING`. Rows previously transitioned to `ENQUEUED` by an initial dispatch are unaffected by duplicate dispatches.
+* Recovery dispatch is idempotent. Multiple recovery dispatches for the same dead executor do not corrupt execution state because recovery re-enqueue in the SDK system database (`dbos-transact-golang` `dbos/internal/sysdb/system_database.go:5397` `ReenqueueForRecovery`) is scoped to `status = PENDING`. Rows previously transitioned to `ENQUEUED` by an initial dispatch are unaffected by duplicate dispatches.
 
 ## Alert Notifications
 
@@ -299,10 +300,10 @@ In multi-instance deployments, Relay instances coordinate state through the shar
 | Feature | TypeScript | Python | Go | Java |
 |---|---|---|---|---|
 | `metadata` | Supported | Supported | Supported | Supported |
-| `cancel_children` | Supported | Supported | Supported (`conductor_protocol.go:462-467`) | Supported (`CancelRequest.java:8`) |
-| `rewind_workflow` | Supported | Supported | Supported (`conductor_protocol.go`) | Not yet implemented |
+| `cancel_children` | Supported | Supported | Supported (`conductor_protocol.go:485-490`) | Supported (`CancelRequest.java:8`) |
+| `rewind_workflow` | Supported (`dbos-transact-ts` `749a4d4` `protocol.ts`) | Supported (`dbos-transact-py` `2b93e14` `protocol.py`) | Supported (`dbos-transact-golang` `fb3e33e` `conductor_protocol.go`) | Not yet implemented (no `RewindWorkflow*.java`) |
 
 ## Version Skew Policy
 
-* SDK clients log unknown message types and reply with structured error responses (`dbos-transact-go/dbos/conductor.go:433`, `dbos-transact-ts/src/conductor/conductor.ts:921`, `Conductor.java:255`, `conductor.py:1168`).
+* SDK clients log unknown message types and reply with structured error responses (`dbos-transact-golang/dbos/conductor.go:445-446`, `dbos-transact-ts/src/conductor/conductor.ts:970`, `Conductor.java:275`, `conductor.py:1241`).
 * Standard JSON unmarshalling in SDKs ignores unknown fields on typed unmarshal.
