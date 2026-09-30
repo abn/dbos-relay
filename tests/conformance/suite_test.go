@@ -90,7 +90,7 @@ func TestConformance_EndToEndSuite(t *testing.T) {
 
 		_, err = s.Queries().CreateAPIKey(ctx, storegen.CreateAPIKeyParams{
 			OrganisationID:   org.ID,
-			Name:             "conformance-test-key",
+			Name:             "conformance-test-key-" + rec.Lookup,
 			Lookup:           rec.Lookup,
 			KeyHash:          rec.Hash,
 			ApplicationNames: []string{appName},

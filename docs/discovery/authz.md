@@ -278,9 +278,9 @@ self-hosted local deployments where no OIDC identity provider is configured.
 Relay records an audit entry for every mutating operation in the Conductor
 taxonomy (`https://docs.dbos.dev/production/audit-logs`): application
 registration, update, deletion, and latest-version changes; workflow cancel,
-resume, fork, fork-from-failure, delete, import, and bulk operations;
+resume, fork, rewind, fork-from-failure, delete, import, and bulk operations;
 schedule pause, resume, trigger, and backfill; alerting rule creation and
-deletion; API key creation and revocation; role creation, deletion, and
+deletion; API key creation, rename, and revocation; role creation, deletion, and
 grants; organization updates; user joins and removals; and autoscaling
 policy setting and deletion (recorded as `autoscaling_policy.set` and
 `autoscaling_policy.delete`, Relay-chosen names because the upstream

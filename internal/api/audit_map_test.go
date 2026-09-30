@@ -24,6 +24,7 @@ func TestAuditDeniedOpMapping(t *testing.T) {
 		{"POST", "/v2/orgs/acme/roles", "role.create", "", "role", "", true},
 		{"DELETE", "/v2/orgs/acme/roles/auditor", "role.delete", "", "role", "auditor", true},
 		{"POST", "/v2/orgs/acme/tokens/deploy", "token.create", "", "token", "deploy", true},
+		{"PATCH", "/v2/orgs/acme/tokens/deploy", "token.update", "", "token", "deploy", true},
 		{"DELETE", "/v2/orgs/acme/tokens/deploy", "token.revoke", "", "token", "deploy", true},
 		{"PUT", "/v2/orgs/acme/apps/shop", "application.create", "shop", "application", "shop", true},
 		{"PATCH", "/v2/orgs/acme/apps/shop", "application.update", "shop", "application", "shop", true},

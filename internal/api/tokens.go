@@ -7,10 +7,10 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api/gen"
 	"github.com/abn/relay/internal/auth"
+	"github.com/abn/relay/internal/store"
 	storegen "github.com/abn/relay/internal/store/gen"
 )
 
@@ -175,6 +175,12 @@ func (s *Server) CreateToken(ctx context.Context, request gen.CreateTokenRequest
 	})
 	if err != nil {
 		s.auditOperation(ctx, request.OrgName, "", auditOpTokenCreate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+		if store.IsUniqueViolation(err) {
+			return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusConflict,
+				Body:       MakeErrorModel(http.StatusConflict, "Conflict", fmt.Sprintf("an active token named %q already exists", request.TokenName)),
+			}, nil
+		}
 		return gen.CreateTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
@@ -208,8 +214,18 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 		}, nil
 	}
 
-	keys, err := s.store.ListAPIKeys(ctx, org.ID)
+	key, err := s.store.GetAPIKeyByName(ctx, storegen.GetAPIKeyByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.TokenName,
+	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+			return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Token not found", "Token not found"),
+			}, nil
+		}
 		s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
 		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
 			StatusCode: http.StatusInternalServerError,
@@ -217,25 +233,8 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 		}, nil
 	}
 
-	var targetID pgtype.UUID
-	found := false
-	for _, k := range keys {
-		if k.Name == request.TokenName {
-			targetID = k.ID
-			found = true
-			break
-		}
-	}
-	if !found {
-		s.auditOperation(ctx, request.OrgName, "", auditOpTokenRevoke, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
-		return gen.DeleteTokendefaultApplicationProblemPlusJSONResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       MakeErrorModel(http.StatusNotFound, "Token not found", "Token not found"),
-		}, nil
-	}
-
 	_, err = s.store.RevokeAPIKey(ctx, storegen.RevokeAPIKeyParams{
-		ID:             targetID,
+		ID:             key.ID,
 		OrganisationID: org.ID,
 	})
 	if err != nil {
@@ -250,11 +249,75 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 	return gen.DeleteToken204Response{}, nil
 }
 
-// UpdateToken provenance: Conductor OpenAPI PATCH /v2/orgs/{orgName}/tokens/{tokenName} (operation: updateToken)
-// Relay does not yet support renaming an API key.
+// UpdateToken renames an existing API key. The key secret is unchanged.
+// Provenance: Conductor OpenAPI PATCH /v2/orgs/{orgName}/tokens/{tokenName} (operation: updateToken), vendored from https://cloud.dbos.dev/conductor/v2/openapi.json, fetched 2026-09-30.
 func (s *Server) UpdateToken(ctx context.Context, request gen.UpdateTokenRequestObject) (gen.UpdateTokenResponseObject, error) {
-	return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotImplemented,
-		Body:       MakeErrorModel(http.StatusNotImplemented, "Not Implemented", "renaming an API key is not implemented"),
-	}, nil
+	orgName := normalizeOrg(request.OrgName)
+
+	if request.Body == nil || request.Body.NewName == nil || *request.Body.NewName == "" {
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+		return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "newName is required"),
+		}, nil
+	}
+	newName := *request.Body.NewName
+
+	org, err := s.store.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+			return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Organisation not found", fmt.Sprintf("organisation %q not found", orgName)),
+			}, nil
+		}
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+		return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", "database store is unavailable"),
+		}, nil
+	}
+
+	key, err := s.store.GetAPIKeyByName(ctx, storegen.GetAPIKeyByNameParams{
+		OrganisationID: org.ID,
+		Name:           request.TokenName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+			return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusNotFound,
+				Body:       MakeErrorModel(http.StatusNotFound, "Token not found", "Token not found"),
+			}, nil
+		}
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+		return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	_, err = s.store.RenameAPIKey(ctx, storegen.RenameAPIKeyParams{
+		ID:             key.ID,
+		OrganisationID: org.ID,
+		Name:           newName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || store.IsUniqueViolation(err) {
+			s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+			return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+				StatusCode: http.StatusConflict,
+				Body:       MakeErrorModel(http.StatusConflict, "Conflict", fmt.Sprintf("an active token named %q already exists", newName)),
+			}, nil
+		}
+		s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusFailure, string(gen.AuditTargetTypeToken), request.TokenName, nil)
+		return gen.UpdateTokendefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", err.Error()),
+		}, nil
+	}
+
+	s.auditOperation(ctx, request.OrgName, "", auditOpTokenUpdate, auditStatusSuccess, string(gen.AuditTargetTypeToken), newName, map[string]any{"previous_name": request.TokenName})
+	return gen.UpdateToken204Response{}, nil
 }

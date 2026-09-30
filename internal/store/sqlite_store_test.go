@@ -56,8 +56,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if dirty {
 		t.Fatalf("database is dirty after migration")
 	}
-	if v != 8 {
-		t.Fatalf("expected migration version 8, got %d", v)
+	if v != 9 {
+		t.Fatalf("expected migration version 9, got %d", v)
 	}
 
 	// Migrate down 1 step
@@ -68,8 +68,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get migrate version after down: %v", err)
 	}
-	if v != 7 {
-		t.Fatalf("expected migration version 7, got %d", v)
+	if v != 8 {
+		t.Fatalf("expected migration version 8, got %d", v)
 	}
 
 	// Migrate back up
@@ -77,8 +77,8 @@ func TestSQLite_MigrationLifecycle(t *testing.T) {
 		t.Fatalf("failed to migrate back up: %v", err)
 	}
 	v, _, _ = s.MigrateVersion(ctx)
-	if v != 8 {
-		t.Fatalf("expected migration version 8, got %d", v)
+	if v != 9 {
+		t.Fatalf("expected migration version 9, got %d", v)
 	}
 }
 
@@ -611,6 +611,86 @@ func TestSQLite_AutoscalingPolicies(t *testing.T) {
 	}
 	if _, err := s.Queries().GetAutoscalingPolicy(ctx, app.ID); err == nil {
 		t.Fatal("expected error after delete")
+	}
+}
+
+func TestSQLiteRenameAPIKey(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	org, err := s.Queries().CreateOrganisation(ctx, "rename_sqlite")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	key, err := s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "before",
+		Lookup:           "dbos_rename_sqlite",
+		KeyHash:          []byte("hash"),
+		ApplicationNames: []string{},
+		Permissions:      []string{},
+	})
+	if err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	renamed, err := s.Queries().RenameAPIKey(ctx, gen.RenameAPIKeyParams{ID: key.ID, OrganisationID: org.ID, Name: "after"})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if renamed.Name != "after" || renamed.Lookup != key.Lookup || string(renamed.KeyHash) != string(key.KeyHash) {
+		t.Fatalf("unexpected renamed key: %+v", renamed)
+	}
+	if _, err := s.Queries().GetAPIKeyByName(ctx, gen.GetAPIKeyByNameParams{OrganisationID: org.ID, Name: "after"}); err != nil {
+		t.Fatalf("lookup by new name: %v", err)
+	}
+	if _, err := s.Queries().GetAPIKeyByName(ctx, gen.GetAPIKeyByNameParams{OrganisationID: org.ID, Name: "before"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected old name gone, got %v", err)
+	}
+
+	second, err := s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "second",
+		Lookup:           "dbos_rename_sqlite_2",
+		KeyHash:          []byte("hash2"),
+		ApplicationNames: []string{},
+		Permissions:      []string{},
+	})
+	if err != nil {
+		t.Fatalf("create second key: %v", err)
+	}
+	if _, err := s.Queries().RenameAPIKey(ctx, gen.RenameAPIKeyParams{ID: second.ID, OrganisationID: org.ID, Name: "after"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected collision to update no row, got %v", err)
+	}
+
+	if _, err := s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "after",
+		Lookup:           "dbos_rename_sqlite_dup",
+		KeyHash:          []byte("hash3"),
+		ApplicationNames: []string{},
+		Permissions:      []string{},
+	}); !IsUniqueViolation(err) {
+		t.Fatalf("expected unique violation for duplicate active name, got %v", err)
+	}
+
+	if _, err := s.Queries().RevokeAPIKey(ctx, gen.RevokeAPIKeyParams{ID: renamed.ID, OrganisationID: org.ID}); err != nil {
+		t.Fatalf("revoke renamed key: %v", err)
+	}
+	reused, err := s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "after",
+		Lookup:           "dbos_rename_sqlite_reuse",
+		KeyHash:          []byte("hash4"),
+		ApplicationNames: []string{},
+		Permissions:      []string{},
+	})
+	if err != nil {
+		t.Fatalf("expected revoked name to be reusable, got %v", err)
+	}
+	active, err := s.Queries().GetAPIKeyByName(ctx, gen.GetAPIKeyByNameParams{OrganisationID: org.ID, Name: "after"})
+	if err != nil || active.ID != reused.ID {
+		t.Fatalf("expected active lookup to return the new key, got %+v err=%v", active, err)
 	}
 }
 

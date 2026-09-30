@@ -41,6 +41,7 @@ const (
 	auditOpAlertRuleCreate    = "alerting_rule.create"
 	auditOpAlertRuleDelete    = "alerting_rule.delete"
 	auditOpTokenCreate        = "token.create"
+	auditOpTokenUpdate        = "token.update"
 	auditOpTokenRevoke        = "token.revoke"
 	auditOpRoleCreate         = "role.create"
 	auditOpRoleDelete         = "role.delete"
@@ -251,13 +252,16 @@ func auditDeniedOp(method, path string, identity *auth.UserIdentity) (op, appNam
 			return auditOpRoleDelete, "", string(gen.AuditTargetTypeRole), rest[2], true
 		}
 	case "tokens":
-		// Token routes always carry the key name: POST creates and
-		// DELETE revokes /v2/orgs/{org}/tokens/{tokenName}. A future
-		// nameless POST would fall through to no mapping rather than
-		// mis-attribute, by construction of the len(rest) == 3 check.
-		if len(rest) == 3 && (method == "POST" || method == "DELETE") {
+		// Token routes always carry the key name: POST creates, PATCH
+		// renames and DELETE revokes /v2/orgs/{org}/tokens/{tokenName}.
+		// A future nameless POST would fall through to no mapping rather
+		// than mis-attribute, by construction of the len(rest) == 3 check.
+		if len(rest) == 3 && (method == "POST" || method == "PATCH" || method == "DELETE") {
 			op := auditOpTokenCreate
-			if method == "DELETE" {
+			switch method {
+			case "PATCH":
+				op = auditOpTokenUpdate
+			case "DELETE":
 				op = auditOpTokenRevoke
 			}
 			return op, "", string(gen.AuditTargetTypeToken), rest[2], true

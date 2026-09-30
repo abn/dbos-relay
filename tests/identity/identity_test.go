@@ -403,6 +403,30 @@ func (m *memoryStore) RevokeAPIKey(_ context.Context, arg storegen.RevokeAPIKeyP
 	return storegen.ApiKey{}, fmt.Errorf("key not found")
 }
 
+func (m *memoryStore) GetAPIKeyByName(_ context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range m.keys {
+		if k.OrganisationID == arg.OrganisationID && k.Name == arg.Name && k.RevokedAt.Time.IsZero() {
+			return k, nil
+		}
+	}
+	return storegen.ApiKey{}, fmt.Errorf("key not found: %s", arg.Name)
+}
+
+func (m *memoryStore) RenameAPIKey(_ context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for lookup, k := range m.keys {
+		if k.ID == arg.ID && k.OrganisationID == arg.OrganisationID && k.RevokedAt.Time.IsZero() {
+			k.Name = arg.Name
+			m.keys[lookup] = k
+			return k, nil
+		}
+	}
+	return storegen.ApiKey{}, fmt.Errorf("key not found")
+}
+
 func (m *memoryStore) CreateAlertingRule(_ context.Context, _ storegen.CreateAlertingRuleParams) (storegen.AlertingRule, error) {
 	return storegen.AlertingRule{}, nil
 }

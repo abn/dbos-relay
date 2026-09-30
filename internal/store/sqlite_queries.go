@@ -772,6 +772,35 @@ func (q *sqliteQueries) RevokeAPIKey(ctx context.Context, arg gen.RevokeAPIKeyPa
 	return scanAPIKey(row)
 }
 
+func (q *sqliteQueries) GetAPIKeyByName(ctx context.Context, arg gen.GetAPIKeyByNameParams) (gen.ApiKey, error) {
+	row := q.db.QueryRowContext(ctx,
+		`SELECT id, organisation_id, name, lookup, key_hash, application_names, permissions,
+		        created_at, last_used_at, revoked_at
+		 FROM api_keys WHERE organisation_id = ? AND name = ? AND revoked_at IS NULL`,
+		uuidToText(arg.OrganisationID), arg.Name,
+	)
+	return scanAPIKey(row)
+}
+
+func (q *sqliteQueries) RenameAPIKey(ctx context.Context, arg gen.RenameAPIKeyParams) (gen.ApiKey, error) {
+	row := q.db.QueryRowContext(ctx,
+		`UPDATE api_keys SET name = ?
+		 WHERE id = ? AND organisation_id = ? AND revoked_at IS NULL
+		   AND NOT EXISTS (
+		     SELECT 1 FROM api_keys AS other
+		     WHERE other.organisation_id = ?
+		       AND other.name = ?
+		       AND other.revoked_at IS NULL
+		       AND other.id <> ?
+		   )
+		 RETURNING id, organisation_id, name, lookup, key_hash, application_names, permissions,
+		           created_at, last_used_at, revoked_at`,
+		arg.Name, uuidToText(arg.ID), uuidToText(arg.OrganisationID),
+		uuidToText(arg.OrganisationID), arg.Name, uuidToText(arg.ID),
+	)
+	return scanAPIKey(row)
+}
+
 func (q *sqliteQueries) TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error {
 	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := q.db.ExecContext(ctx,

@@ -106,7 +106,7 @@ own Postgres database.
 | `GET` | `/v2/orgs/{orgName}/tokens` | `listTokens` | Relay store | No | N/A |
 | `DELETE` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `deleteToken` | Relay store | No | N/A |
 | `POST` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `createToken` | Relay store | No | N/A |
-| `PATCH` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `updateToken` | Not implemented | No | N/A |
+| `PATCH` | `/v2/orgs/{orgName}/tokens/{tokenName}` | `updateToken` | Relay store | No | N/A |
 | `POST` | `/v2/users` | `registerUser` | Relay store | Yes | N/A |
 | `GET` | `/v2/users/me` | `getCurrentUser` | Relay store | Yes | N/A |
 
@@ -229,13 +229,7 @@ or are deferred to later compatibility tiers:
      resume, fork, and fork-from-failure cover the recovery paths.
      See [the protocol reference](../protocol/executor-ws.md).
 
-7. **New operation pending implementation**:
-   * The 2026-09-30 contract adds `updateToken`
-     (`PATCH /v2/orgs/{orgName}/tokens/{tokenName}`). Relay registers the
-     route and answers `501 Not Implemented` until its behaviour is
-     implemented.
-
-8. **Autoscaling queue partition restriction**:
+7. **Autoscaling queue partition restriction**:
    * The 2026-09-30 contract drops "not be partitioned" from the
      `AutoscalePolicy.queue` description and adds per-partition limits to
      `Queue`. Relay still rejects partitioned queues on a policy write,

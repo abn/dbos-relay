@@ -32,6 +32,7 @@ type Querier interface {
 	DeleteStaleInstances(ctx context.Context, heartbeatAt pgtype.Timestamptz) (int64, error)
 	DisconnectExecutor(ctx context.Context, arg DisconnectExecutorParams) (Executor, error)
 	GetAPIKeyByLookup(ctx context.Context, lookup string) (ApiKey, error)
+	GetAPIKeyByName(ctx context.Context, arg GetAPIKeyByNameParams) (ApiKey, error)
 	GetAlertingRule(ctx context.Context, arg GetAlertingRuleParams) (AlertingRule, error)
 	GetApplicationByID(ctx context.Context, id pgtype.UUID) (Application, error)
 	GetApplicationByName(ctx context.Context, arg GetApplicationByNameParams) (Application, error)
@@ -68,6 +69,7 @@ type Querier interface {
 	ReapExpiredExecutors(ctx context.Context, disconnectedAt pgtype.Timestamptz) (int64, error)
 	RecordRecoveryDispatch(ctx context.Context, arg RecordRecoveryDispatchParams) (RecoveryDispatch, error)
 	RemoveMember(ctx context.Context, arg RemoveMemberParams) (OrganisationMember, error)
+	RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error)
 	RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (ApiKey, error)
 	SetExecutorDead(ctx context.Context, arg SetExecutorDeadParams) (Executor, error)
 	TouchAPIKeyLastUsed(ctx context.Context, id pgtype.UUID) error

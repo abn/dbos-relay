@@ -107,6 +107,12 @@ func (m *mockAttentionStore) CreateAPIKey(ctx context.Context, arg storegen.Crea
 func (m *mockAttentionStore) RevokeAPIKey(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error) {
 	return storegen.ApiKey{}, nil
 }
+func (m *mockAttentionStore) GetAPIKeyByName(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+	return storegen.ApiKey{}, nil
+}
+func (m *mockAttentionStore) RenameAPIKey(ctx context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+	return storegen.ApiKey{}, nil
+}
 func (m *mockAttentionStore) UpsertOrganisation(ctx context.Context, name string) (storegen.Organisation, error) {
 	return storegen.Organisation{}, nil
 }
