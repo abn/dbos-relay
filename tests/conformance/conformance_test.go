@@ -215,6 +215,26 @@ func (m *inMemoryStore) RevokeAPIKey(_ context.Context, arg storegen.RevokeAPIKe
 	return storegen.ApiKey{}, fmt.Errorf("token not found")
 }
 
+func (m *inMemoryStore) GetAPIKeyByName(_ context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+	k, ok := m.keys[arg.Name]
+	if !ok || k.OrganisationID != arg.OrganisationID || !k.RevokedAt.Time.IsZero() {
+		return storegen.ApiKey{}, fmt.Errorf("token not found")
+	}
+	return k, nil
+}
+
+func (m *inMemoryStore) RenameAPIKey(_ context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+	for name, k := range m.keys {
+		if k.ID == arg.ID && k.OrganisationID == arg.OrganisationID && k.RevokedAt.Time.IsZero() {
+			delete(m.keys, name)
+			k.Name = arg.Name
+			m.keys[arg.Name] = k
+			return k, nil
+		}
+	}
+	return storegen.ApiKey{}, fmt.Errorf("token not found")
+}
+
 func (m *inMemoryStore) CreateAlertingRule(_ context.Context, arg storegen.CreateAlertingRuleParams) (storegen.AlertingRule, error) {
 	return storegen.AlertingRule{
 		ID:                     pgtype.UUID{Bytes: [16]byte{1, 1, 1}, Valid: true},

@@ -32,8 +32,10 @@ type mockStoreReader struct {
 	listExecutorsByAppFunc      func(ctx context.Context, appID pgtype.UUID) ([]storegen.Executor, error)
 	listAPIKeysFunc             func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error)
 	getAPIKeyByLookupFunc       func(ctx context.Context, lookup string) (storegen.ApiKey, error)
+	getAPIKeyByNameFunc         func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error)
 	touchAPIKeyLastUsedFunc     func(ctx context.Context, id pgtype.UUID) error
 	createAPIKeyFunc            func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error)
+	renameAPIKeyFunc            func(ctx context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error)
 	revokeAPIKeyFunc            func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error)
 	upsertOrgFunc               func(ctx context.Context, name string) (storegen.Organisation, error)
 	getUserByUsernameFunc       func(ctx context.Context, username string) (storegen.User, error)
@@ -127,6 +129,20 @@ func (m *mockStoreReader) RevokeAPIKey(ctx context.Context, arg storegen.RevokeA
 		return m.revokeAPIKeyFunc(ctx, arg)
 	}
 	return storegen.ApiKey{}, errors.New("unexpected RevokeAPIKey")
+}
+
+func (m *mockStoreReader) GetAPIKeyByName(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+	if m.getAPIKeyByNameFunc != nil {
+		return m.getAPIKeyByNameFunc(ctx, arg)
+	}
+	return storegen.ApiKey{}, errors.New("unexpected GetAPIKeyByName")
+}
+
+func (m *mockStoreReader) RenameAPIKey(ctx context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+	if m.renameAPIKeyFunc != nil {
+		return m.renameAPIKeyFunc(ctx, arg)
+	}
+	return storegen.ApiKey{}, errors.New("unexpected RenameAPIKey")
 }
 
 func (m *mockStoreReader) ListAllOrganisations(ctx context.Context) ([]storegen.Organisation, error) {
@@ -864,6 +880,133 @@ func TestTokensAndPermissions(t *testing.T) {
 		}
 	})
 
+	t.Run("CreateToken_NameConflict", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			createAPIKeyFunc: func(ctx context.Context, arg storegen.CreateAPIKeyParams) (storegen.ApiKey, error) {
+				return storegen.ApiKey{}, errors.New("UNIQUE constraint failed: api_keys.organisation_id, api_keys.name")
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+		resp, err := srv.CreateToken(ctx, gen.CreateTokenRequestObject{OrgName: "my-org", TokenName: "dup"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob, ok := resp.(gen.CreateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob.StatusCode != http.StatusConflict {
+			t.Fatalf("expected 409 for a duplicate active name, got %T", resp)
+		}
+	})
+
+	t.Run("UpdateToken", func(t *testing.T) {
+		renamedName := ""
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAPIKeyByNameFunc: func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+				if arg.OrganisationID != orgID || arg.Name != "prod-key" {
+					t.Fatalf("unexpected lookup params: %+v", arg)
+				}
+				return storegen.ApiKey{ID: keyID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+			renameAPIKeyFunc: func(ctx context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+				if arg.ID != keyID || arg.OrganisationID != orgID {
+					t.Fatalf("unexpected rename params: %+v", arg)
+				}
+				renamedName = arg.Name
+				return storegen.ApiKey{ID: arg.ID, Name: arg.Name}, nil
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+		newName := "renamed-key"
+		resp, err := srv.UpdateToken(ctx, gen.UpdateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "prod-key",
+			Body:      &gen.UpdateTokenJSONRequestBody{NewName: &newName},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := resp.(gen.UpdateToken204Response); !ok {
+			t.Fatalf("expected UpdateToken204Response, got %T", resp)
+		}
+		if renamedName != "renamed-key" {
+			t.Fatalf("expected rename to renamed-key, got %q", renamedName)
+		}
+	})
+
+	t.Run("UpdateToken_NotFound", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAPIKeyByNameFunc: func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+				return storegen.ApiKey{}, pgx.ErrNoRows
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+		newName := "renamed-key"
+		resp, err := srv.UpdateToken(ctx, gen.UpdateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "missing-key",
+			Body:      &gen.UpdateTokenJSONRequestBody{NewName: &newName},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob, ok := resp.(gen.UpdateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob.StatusCode != http.StatusNotFound {
+			t.Fatalf("expected 404, got %T", resp)
+		}
+	})
+
+	t.Run("UpdateToken_MissingName", func(t *testing.T) {
+		srv := api.NewServer(nil, &mockStoreReader{}, nil)
+		resp, err := srv.UpdateToken(ctx, gen.UpdateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "prod-key",
+			Body:      &gen.UpdateTokenJSONRequestBody{},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob, ok := resp.(gen.UpdateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %T", resp)
+		}
+	})
+
+	t.Run("UpdateToken_NameConflict", func(t *testing.T) {
+		store := &mockStoreReader{
+			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
+				return storegen.Organisation{ID: orgID, Name: name}, nil
+			},
+			getAPIKeyByNameFunc: func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+				return storegen.ApiKey{ID: keyID, OrganisationID: orgID, Name: arg.Name}, nil
+			},
+			renameAPIKeyFunc: func(ctx context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+				return storegen.ApiKey{}, pgx.ErrNoRows
+			},
+		}
+		srv := api.NewServer(nil, store, nil)
+		newName := "taken"
+		resp, err := srv.UpdateToken(ctx, gen.UpdateTokenRequestObject{
+			OrgName:   "my-org",
+			TokenName: "prod-key",
+			Body:      &gen.UpdateTokenJSONRequestBody{NewName: &newName},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		prob, ok := resp.(gen.UpdateTokendefaultApplicationProblemPlusJSONResponse)
+		if !ok || prob.StatusCode != http.StatusConflict {
+			t.Fatalf("expected 409 for a name conflict, got %T", resp)
+		}
+	})
+
 	t.Run("CreateToken_ScopeAndPermissionClamping", func(t *testing.T) {
 		store := &mockStoreReader{
 			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
@@ -952,10 +1095,11 @@ func TestTokensAndPermissions(t *testing.T) {
 			getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
 				return storegen.Organisation{ID: orgID, Name: name}, nil
 			},
-			listAPIKeysFunc: func(ctx context.Context, id pgtype.UUID) ([]storegen.ApiKey, error) {
-				return []storegen.ApiKey{
-					{ID: keyID, Name: "key-to-delete"},
-				}, nil
+			getAPIKeyByNameFunc: func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+				if arg.Name == "key-to-delete" {
+					return storegen.ApiKey{ID: keyID, Name: "key-to-delete"}, nil
+				}
+				return storegen.ApiKey{}, pgx.ErrNoRows
 			},
 			revokeAPIKeyFunc: func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error) {
 				if arg.ID != keyID {

@@ -74,6 +74,34 @@ func (q *Queries) GetAPIKeyByLookup(ctx context.Context, lookup string) (ApiKey,
 	return i, err
 }
 
+const getAPIKeyByName = `-- name: GetAPIKeyByName :one
+SELECT id, organisation_id, name, lookup, key_hash, application_names, permissions, created_at, last_used_at, revoked_at FROM api_keys
+WHERE organisation_id = $1 AND name = $2 AND revoked_at IS NULL
+`
+
+type GetAPIKeyByNameParams struct {
+	OrganisationID pgtype.UUID
+	Name           string
+}
+
+func (q *Queries) GetAPIKeyByName(ctx context.Context, arg GetAPIKeyByNameParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, getAPIKeyByName, arg.OrganisationID, arg.Name)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.Name,
+		&i.Lookup,
+		&i.KeyHash,
+		&i.ApplicationNames,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const listAPIKeys = `-- name: ListAPIKeys :many
 SELECT id, organisation_id, name, lookup, key_hash, application_names, permissions, created_at, last_used_at, revoked_at FROM api_keys
 WHERE organisation_id = $1
@@ -109,6 +137,44 @@ func (q *Queries) ListAPIKeys(ctx context.Context, organisationID pgtype.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const renameAPIKey = `-- name: RenameAPIKey :one
+UPDATE api_keys
+SET name = $3
+WHERE api_keys.id = $1 AND api_keys.organisation_id = $2 AND api_keys.revoked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM api_keys AS other
+    WHERE other.organisation_id = $2
+      AND other.name = $3
+      AND other.revoked_at IS NULL
+      AND other.id <> $1
+  )
+RETURNING id, organisation_id, name, lookup, key_hash, application_names, permissions, created_at, last_used_at, revoked_at
+`
+
+type RenameAPIKeyParams struct {
+	ID             pgtype.UUID
+	OrganisationID pgtype.UUID
+	Name           string
+}
+
+func (q *Queries) RenameAPIKey(ctx context.Context, arg RenameAPIKeyParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, renameAPIKey, arg.ID, arg.OrganisationID, arg.Name)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.Name,
+		&i.Lookup,
+		&i.KeyHash,
+		&i.ApplicationNames,
+		&i.Permissions,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
 const revokeAPIKey = `-- name: RevokeAPIKey :one

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/abn/relay/internal/api"
@@ -41,8 +42,8 @@ func TestAuditOperationEnvelopeAPIKey(t *testing.T) {
 			captured = arg
 			return storegen.AuditLog{}, nil
 		},
-		listAPIKeysFunc: func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error) {
-			return []storegen.ApiKey{{Name: "old-key"}}, nil
+		getAPIKeyByNameFunc: func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+			return storegen.ApiKey{Name: "old-key"}, nil
 		},
 		revokeAPIKeyFunc: func(ctx context.Context, arg storegen.RevokeAPIKeyParams) (storegen.ApiKey, error) {
 			return storegen.ApiKey{}, nil
@@ -133,8 +134,8 @@ func TestAuditFailureEntries(t *testing.T) {
 		getOrgByNameFunc: func(ctx context.Context, name string) (storegen.Organisation, error) {
 			return storegen.Organisation{ID: auditTestOrgID(), Name: name}, nil
 		},
-		listAPIKeysFunc: func(ctx context.Context, orgID pgtype.UUID) ([]storegen.ApiKey, error) {
-			return nil, nil
+		getAPIKeyByNameFunc: func(ctx context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+			return storegen.ApiKey{}, pgx.ErrNoRows
 		},
 		createAuditLogFunc: func(ctx context.Context, arg storegen.CreateAuditLogParams) (storegen.AuditLog, error) {
 			actions = append(actions, arg.Action)

@@ -97,6 +97,65 @@ func TestGetAPIKeyByLookupRevoked(t *testing.T) {
 	}
 }
 
+func TestRenameAPIKey(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	org, err := s.Queries().CreateOrganisation(ctx, "acme_rename_test")
+	if err != nil {
+		t.Fatalf("expected to create valid organisation, got error: %v", err)
+	}
+
+	key, err := s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "before",
+		Lookup:           "dbos_rename_lookup",
+		KeyHash:          []byte("testhash123"),
+		ApplicationNames: []string{"test-app"},
+		Permissions:      []string{"admin"},
+	})
+	if err != nil {
+		t.Fatalf("expected to create api key, got error: %v", err)
+	}
+
+	renamed, err := s.Queries().RenameAPIKey(ctx, gen.RenameAPIKeyParams{
+		ID:             key.ID,
+		OrganisationID: org.ID,
+		Name:           "after",
+	})
+	if err != nil {
+		t.Fatalf("expected to rename api key, got error: %v", err)
+	}
+	if renamed.Name != "after" {
+		t.Fatalf("expected renamed key name %q, got %q", "after", renamed.Name)
+	}
+	if renamed.Lookup != key.Lookup || string(renamed.KeyHash) != string(key.KeyHash) {
+		t.Fatalf("expected rename to preserve lookup and hash")
+	}
+
+	if _, err := s.Queries().GetAPIKeyByName(ctx, gen.GetAPIKeyByNameParams{OrganisationID: org.ID, Name: "after"}); err != nil {
+		t.Fatalf("expected renamed key to be found by new name, got error: %v", err)
+	}
+	if _, err := s.Queries().GetAPIKeyByName(ctx, gen.GetAPIKeyByNameParams{OrganisationID: org.ID, Name: "before"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected old name to be gone, got error: %v", err)
+	}
+
+	second, err := s.Queries().CreateAPIKey(ctx, gen.CreateAPIKeyParams{
+		OrganisationID:   org.ID,
+		Name:             "second",
+		Lookup:           "dbos_rename_lookup_2",
+		KeyHash:          []byte("testhash456"),
+		ApplicationNames: []string{"test-app"},
+		Permissions:      []string{"admin"},
+	})
+	if err != nil {
+		t.Fatalf("expected to create second api key, got error: %v", err)
+	}
+	if _, err := s.Queries().RenameAPIKey(ctx, gen.RenameAPIKeyParams{ID: second.ID, OrganisationID: org.ID, Name: "after"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("expected rename collision to update no row, got error: %v", err)
+	}
+}
+
 func TestStore_InTx(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()

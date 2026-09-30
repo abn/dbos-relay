@@ -269,6 +269,30 @@ func (s *dashboardTestStore) RevokeAPIKey(_ context.Context, arg storegen.Revoke
 	return storegen.ApiKey{}, nil
 }
 
+func (s *dashboardTestStore) GetAPIKeyByName(_ context.Context, arg storegen.GetAPIKeyByNameParams) (storegen.ApiKey, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range s.keys {
+		if k.OrganisationID == arg.OrganisationID && k.Name == arg.Name && k.RevokedAt.Time.IsZero() {
+			return k, nil
+		}
+	}
+	return storegen.ApiKey{}, errors.New("key not found")
+}
+
+func (s *dashboardTestStore) RenameAPIKey(_ context.Context, arg storegen.RenameAPIKeyParams) (storegen.ApiKey, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for lookup, k := range s.keys {
+		if k.ID == arg.ID && k.OrganisationID == arg.OrganisationID && k.RevokedAt.Time.IsZero() {
+			k.Name = arg.Name
+			s.keys[lookup] = k
+			return k, nil
+		}
+	}
+	return storegen.ApiKey{}, errors.New("key not found")
+}
+
 func (s *dashboardTestStore) UpsertOrganisation(_ context.Context, name string) (storegen.Organisation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

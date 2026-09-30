@@ -7,6 +7,23 @@ RETURNING *;
 SELECT * FROM api_keys
 WHERE lookup = $1 AND revoked_at IS NULL;
 
+-- name: GetAPIKeyByName :one
+SELECT * FROM api_keys
+WHERE organisation_id = $1 AND name = $2 AND revoked_at IS NULL;
+
+-- name: RenameAPIKey :one
+UPDATE api_keys
+SET name = $3
+WHERE api_keys.id = $1 AND api_keys.organisation_id = $2 AND api_keys.revoked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM api_keys AS other
+    WHERE other.organisation_id = $2
+      AND other.name = $3
+      AND other.revoked_at IS NULL
+      AND other.id <> $1
+  )
+RETURNING *;
+
 -- name: ListAPIKeys :many
 SELECT * FROM api_keys
 WHERE organisation_id = $1
