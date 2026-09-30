@@ -472,7 +472,7 @@ type TriggerScheduleResponse struct {
 	WorkflowID *string `json:"workflow_id"`
 }
 
-// QueueOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// QueueOutput provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type QueueOutput struct {
 	Name               string   `json:"name"`
 	Concurrency        *int     `json:"concurrency"`
@@ -483,6 +483,11 @@ type QueueOutput struct {
 	PartitionQueue     bool     `json:"partition_queue"`
 	PollingIntervalSec float64  `json:"polling_interval_sec"`
 	ApplicationName    *string  `json:"application_name"`
+
+	PartitionConcurrency        *int     `json:"partition_concurrency"`
+	PartitionWorkerConcurrency  *int     `json:"partition_worker_concurrency"`
+	PartitionRateLimitMax       *int     `json:"partition_rate_limit_max"`
+	PartitionRateLimitPeriodSec *float64 `json:"partition_rate_limit_period_sec"`
 }
 
 // ListQueuesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)

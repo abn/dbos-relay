@@ -163,8 +163,15 @@ The OpenAPI `Queue` schema represents static queue configuration:
 * `rateLimitPeriodSecs`: `number | null`
 * `priorityEnabled`: `boolean`
 * `partitionQueue`: `boolean`
+* `partitionConcurrency`: `integer | null`
+* `partitionWorkerConcurrency`: `integer | null`
+* `partitionRateLimitMax`: `integer | null`
+* `partitionRateLimitPeriodSecs`: `number | null`
 * `pollingIntervalSecs`: `number`
 * `applicationName`: `string | null`
+
+Relay maps the four partition fields from executor-reported queue
+configuration; they are null when a queue has no per-partition limit.
 
 OpenAPI `Queue` objects do not contain dynamic runtime counts (`pending`,
 `running`, `failed`). Populating `@dbos-argus/ui`'s `QueueTable` would require

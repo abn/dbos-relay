@@ -67,15 +67,19 @@ func TestListQueues(t *testing.T) {
 					},
 					Output: []protocol.QueueOutput{
 						{
-							Name:               "queue-1",
-							Concurrency:        ptr(10),
-							WorkerConcurrency:  ptr(5),
-							RateLimitMax:       ptr(100),
-							RateLimitPeriodSec: ptr(60.0),
-							PriorityEnabled:    true,
-							PartitionQueue:     false,
-							PollingIntervalSec: 1.5,
-							ApplicationName:    ptr("my-app"),
+							Name:                        "queue-1",
+							Concurrency:                 ptr(10),
+							WorkerConcurrency:           ptr(5),
+							RateLimitMax:                ptr(100),
+							RateLimitPeriodSec:          ptr(60.0),
+							PriorityEnabled:             true,
+							PartitionQueue:              false,
+							PollingIntervalSec:          1.5,
+							ApplicationName:             ptr("my-app"),
+							PartitionConcurrency:        ptr(3),
+							PartitionWorkerConcurrency:  ptr(2),
+							PartitionRateLimitMax:       ptr(100),
+							PartitionRateLimitPeriodSec: ptr(60.0),
 						},
 					},
 				}, nil
@@ -119,6 +123,18 @@ func TestListQueues(t *testing.T) {
 		}
 		if q.PartitionQueue {
 			t.Error("expected partitionQueue false")
+		}
+		if q.PartitionConcurrency == nil || *q.PartitionConcurrency != 3 {
+			t.Errorf("expected partitionConcurrency 3, got %v", q.PartitionConcurrency)
+		}
+		if q.PartitionWorkerConcurrency == nil || *q.PartitionWorkerConcurrency != 2 {
+			t.Errorf("expected partitionWorkerConcurrency 2, got %v", q.PartitionWorkerConcurrency)
+		}
+		if q.PartitionRateLimitMax == nil || *q.PartitionRateLimitMax != 100 {
+			t.Errorf("expected partitionRateLimitMax 100, got %v", q.PartitionRateLimitMax)
+		}
+		if q.PartitionRateLimitPeriodSecs == nil || *q.PartitionRateLimitPeriodSecs != 60.0 {
+			t.Errorf("expected partitionRateLimitPeriodSecs 60.0, got %v", q.PartitionRateLimitPeriodSecs)
 		}
 		if q.PollingIntervalSecs != 1.5 {
 			t.Errorf("expected pollingIntervalSecs 1.5, got %f", q.PollingIntervalSecs)
