@@ -36,6 +36,7 @@ func TestAuditDeniedOpMapping(t *testing.T) {
 		{"DELETE", "/v2/orgs/acme/apps/shop/workflows/abc", "workflow.delete", "shop", "workflow", "abc", true},
 		{"POST", "/v2/orgs/acme/apps/shop/workflows/bulk-delete", "workflow.bulk_delete", "shop", "", "", true},
 		{"POST", "/v2/orgs/acme/apps/shop/workflows/abc/fork", "workflow.fork", "shop", "workflow", "abc", true},
+		{"POST", "/v2/orgs/acme/apps/shop/workflows/abc/rewind", "workflow.rewind", "shop", "workflow", "abc", true},
 		{"POST", "/v2/orgs/acme/apps/shop/workflows/bulk-fork-from-failure", "workflow.fork_from_failure", "shop", "", "", true},
 		{"POST", "/v2/orgs/acme/apps/shop/workflows/import", "workflow.import", "shop", "", "", true},
 		{"POST", "/v2/orgs/acme/apps/shop/schedules/nightly/pause", "schedule.pause", "shop", "schedule", "nightly", true},

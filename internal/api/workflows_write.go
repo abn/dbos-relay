@@ -587,11 +587,68 @@ func (s *Server) ImportWorkflow(ctx context.Context, request gen.ImportWorkflowR
 	return gen.ImportWorkflow201Response{}, nil
 }
 
-// RewindWorkflow provenance: Conductor OpenAPI POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind (operation: rewindWorkflow)
-// Relay does not yet implement workflow rewind.
+// RewindWorkflow rewinds a workflow to an earlier step, discarding the history
+// after it. Unlike a fork the workflow keeps its identifier.
+// Provenance: Conductor OpenAPI POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind (operation: rewindWorkflow), vendored from https://cloud.dbos.dev/conductor/v2/openapi.json, fetched 2026-09-30.
 func (s *Server) RewindWorkflow(ctx context.Context, request gen.RewindWorkflowRequestObject) (gen.RewindWorkflowResponseObject, error) {
-	return gen.RewindWorkflowdefaultApplicationProblemPlusJSONResponse{
-		StatusCode: http.StatusNotImplemented,
-		Body:       MakeErrorModel(http.StatusNotImplemented, "Not Implemented", "workflow rewind is not implemented"),
-	}, nil
+	orgName := normalizeOrg(request.OrgName)
+
+	var startStep *int
+	var appVersion, queueName, queuePartitionKey *string
+	if request.Body != nil {
+		if request.Body.StartStep != nil {
+			v := int(*request.Body.StartStep)
+			startStep = &v
+		}
+		appVersion = request.Body.AppVersion
+		queueName = request.Body.QueueName
+		queuePartitionKey = request.Body.QueuePartitionKey
+	}
+
+	msg := &protocol.RewindWorkflowRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeRewindWorkflow,
+			RequestID: uuid.NewString(),
+		},
+		Body: protocol.RewindWorkflowRequestBody{
+			WorkflowID:         request.WorkflowId,
+			StartStep:          startStep,
+			ApplicationVersion: appVersion,
+			QueueName:          queueName,
+			QueuePartitionKey:  queuePartitionKey,
+		},
+	}
+
+	res, err := s.router.Dispatch(ctx, orgName, request.AppName, msg)
+	if err != nil {
+		status, model := RouterErrorToModel(err)
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowRewind, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
+		return gen.RewindWorkflowdefaultApplicationProblemPlusJSONResponse{StatusCode: status, Body: model}, nil
+	}
+
+	rewindRes, ok := res.(*protocol.RewindWorkflowResponse)
+	if !ok {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowRewind, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
+		return gen.RewindWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       MakeErrorModel(http.StatusInternalServerError, "Internal Server Error", "unexpected response type from router"),
+		}, nil
+	}
+	if rewindRes.ErrorMessage != nil && *rewindRes.ErrorMessage != "" {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowRewind, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
+		return gen.RewindWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", *rewindRes.ErrorMessage),
+		}, nil
+	}
+	if !rewindRes.Success {
+		s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowRewind, auditStatusFailure, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
+		return gen.RewindWorkflowdefaultApplicationProblemPlusJSONResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       MakeErrorModel(http.StatusBadRequest, "Bad Request", "workflow rewind failed"),
+		}, nil
+	}
+
+	s.auditOperation(ctx, request.OrgName, request.AppName, auditOpWorkflowRewind, auditStatusSuccess, string(gen.AuditTargetTypeWorkflow), request.WorkflowId, nil)
+	return gen.RewindWorkflow204Response{}, nil
 }

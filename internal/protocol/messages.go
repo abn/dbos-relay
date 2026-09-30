@@ -184,6 +184,28 @@ type ForkWorkflowResponse struct {
 	NewWorkflowID *string `json:"new_workflow_id,omitempty"`
 }
 
+// RewindWorkflowRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
+type RewindWorkflowRequestBody struct {
+	WorkflowID         string  `json:"workflow_id"`
+	StartStep          *int    `json:"start_step,omitempty"`
+	ApplicationVersion *string `json:"application_version,omitempty"`
+	QueueName          *string `json:"queue_name,omitempty"`
+	QueuePartitionKey  *string `json:"queue_partition_key,omitempty"`
+}
+
+// RewindWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
+type RewindWorkflowRequest struct {
+	Envelope
+	Body RewindWorkflowRequestBody `json:"body"`
+}
+
+// RewindWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
+// The workflow keeps its identifier; unlike a fork there is no new ID to report.
+type RewindWorkflowResponse struct {
+	Envelope
+	Success bool `json:"success"`
+}
+
 // ForkFromFailureRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
 type ForkFromFailureRequestBody struct {
 	WorkflowIDs        []string `json:"workflow_ids"`

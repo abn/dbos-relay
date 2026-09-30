@@ -41,6 +41,18 @@ Wire `ListWorkflowsResponseBody` maps to OpenAPI `#/components/schemas/Workflow`
 * `WasForkedFrom` / `ForkedFrom` -> `wasForkedFrom` (boolean) / `forkedFrom` (null if absent)
 * `ParentWorkflowID` -> `parentWorkflowId` (null if absent)
 
+## Workflow Rewind
+
+REST `POST /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/rewind` maps to `RewindWorkflowRequest`:
+* Path `workflowId` -> `WorkflowID`
+* Body `startStep` -> `StartStep` (integer, optional; omitted replays from the first step)
+* Body `appVersion` -> `ApplicationVersion` (null if absent)
+* Body `queueName` -> `QueueName` (null if absent)
+* Body `queuePartitionKey` -> `QueuePartitionKey` (null if absent)
+
+Unlike a fork, rewind keeps the workflow identifier, so there is no new id in the response.
+Wire `RewindWorkflowResponse.Success` maps to HTTP 204 No Content; failures map to RFC 9457 Problem Details.
+
 ## Workflow Steps
 
 REST query `GET /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/steps` maps to `ListStepsRequest`:
