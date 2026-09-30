@@ -97,6 +97,10 @@ Wire `QueueOutput` maps to OpenAPI `#/components/schemas/Queue`:
 * `RateLimitPeriodSec` -> `rateLimitPeriodSecs`
 * `PriorityEnabled` -> `priorityEnabled`
 * `PartitionQueue` -> `partitionQueue`
+* `PartitionConcurrency` -> `partitionConcurrency`
+* `PartitionWorkerConcurrency` -> `partitionWorkerConcurrency`
+* `PartitionRateLimitMax` -> `partitionRateLimitMax`
+* `PartitionRateLimitPeriodSec` -> `partitionRateLimitPeriodSecs`
 * `PollingIntervalSec` -> `pollingIntervalSecs`
 * `ApplicationName` -> `applicationName`
 

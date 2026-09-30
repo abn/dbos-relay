@@ -11,7 +11,11 @@
       "priority_enabled": false,
       "partition_queue": false,
       "polling_interval_sec": 1,
-      "application_name": "sample-app"
+      "application_name": "sample-app",
+      "partition_concurrency": 3,
+      "partition_worker_concurrency": 2,
+      "partition_rate_limit_max": 100,
+      "partition_rate_limit_period_sec": 60
     }
   ]
 }

@@ -37,15 +37,19 @@ func intToInt32Ptr(i *int) *int32 {
 
 func queueOutputToModel(q protocol.QueueOutput) gen.Queue {
 	return gen.Queue{
-		ApplicationName:     q.ApplicationName,
-		Concurrency:         intToInt32Ptr(q.Concurrency),
-		Name:                q.Name,
-		PartitionQueue:      q.PartitionQueue,
-		PollingIntervalSecs: q.PollingIntervalSec,
-		PriorityEnabled:     q.PriorityEnabled,
-		RateLimitMax:        intToInt32Ptr(q.RateLimitMax),
-		RateLimitPeriodSecs: q.RateLimitPeriodSec,
-		WorkerConcurrency:   intToInt32Ptr(q.WorkerConcurrency),
+		ApplicationName:              q.ApplicationName,
+		Concurrency:                  intToInt32Ptr(q.Concurrency),
+		Name:                         q.Name,
+		PartitionQueue:               q.PartitionQueue,
+		PartitionConcurrency:         intToInt32Ptr(q.PartitionConcurrency),
+		PartitionWorkerConcurrency:   intToInt32Ptr(q.PartitionWorkerConcurrency),
+		PartitionRateLimitMax:        intToInt32Ptr(q.PartitionRateLimitMax),
+		PartitionRateLimitPeriodSecs: q.PartitionRateLimitPeriodSec,
+		PollingIntervalSecs:          q.PollingIntervalSec,
+		PriorityEnabled:              q.PriorityEnabled,
+		RateLimitMax:                 intToInt32Ptr(q.RateLimitMax),
+		RateLimitPeriodSecs:          q.RateLimitPeriodSec,
+		WorkerConcurrency:            intToInt32Ptr(q.WorkerConcurrency),
 	}
 }
 
