@@ -18,7 +18,7 @@ specification.
 All specifications in this document are derived from permitted sources:
 
 * **dbosctl client source and OpenAPI specification**:
-  Repository `https://github.com/dbos-inc/dbos-ctl`, commit `9d14ed3f0ccddb84cd3390e0bddbcfb9ea9a32a6`
+  Repository `https://github.com/dbos-inc/dbos-ctl`, commit `1e6d20e3201588ff67d6157f3808c933b3ed5811`
   * API key management: `internal/cli/apikey.go` (lines 13-19, 48-50, 78-118, 141-156)
   * Permission inspection: `internal/cli/permission.go` (lines 9-20, 27-48)
   * Identity resolution: `internal/cli/whoami.go` (lines 37-41, 61-94)
@@ -36,27 +36,27 @@ All specifications in this document are derived from permitted sources:
     `internal/cli/permission_test.go` (lines 45-61, 79-97),
     `internal/cli/integration_test.go` (lines 133-174, 403-429)
 
-* **dbos-transact-go**:
-  Repository `https://github.com/dbos-inc/dbos-transact-go`, commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`
+* **dbos-transact-golang**:
+  Repository `https://github.com/dbos-inc/dbos-transact-golang`, commit `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5`
   * WebSocket connection URL and key transmission: `dbos/conductor.go` (lines 40, 78-95)
-  * Configuration defaults: `dbos/dbos.go` (lines 674, 690)
-  * Role tracking in workflow contexts: `dbos/workflow.go` (lines 36, 1228, 1491, 1513, 1833, 2040)
-  * System database persistence: `dbos/internal/sysdb/system_database.go` (lines 1421, 1716-1772)
+  * Configuration defaults: `dbos/dbos.go` (lines 711, 727)
+  * Role tracking in workflow contexts: `dbos/workflow.go` (lines 37, 1507, 1529, 2117)
+  * System database persistence: `dbos/internal/sysdb/system_database.go` (lines 1487, 1792-1848)
 
 * **dbos-transact-py**:
-  Repository `https://github.com/dbos-inc/dbos-transact-py`, commit `833794f7a1138bacf75ff6d88647a33eb5e35e52`
-  * WebSocket connection URL: `dbos/_conductor/conductor.py` (lines 51-53)
-  * Configuration options: `dbos/_dbos.py` (lines 443-477, 744-776), `dbos/_dbos_config.py` (lines 46-48, 84-86)
+  Repository `https://github.com/dbos-inc/dbos-transact-py`, commit `2b93e1467a5464f817ef5d11aa5f10d3d2253761`
+  * WebSocket connection URL: `dbos/_conductor/conductor.py` (line 63)
+  * Configuration options: `dbos/_dbos.py` (`DBOS` configuration), `dbos/_dbos_config.py` (`DBOSConfig` line 17, `RuntimeConfig` line 92)
 
 * **dbos-transact-ts**:
-  Repository `https://github.com/dbos-inc/dbos-transact-ts`, commit `d8c4974cca6cc84b296f3b8edfbbb41627ddd47e`
-  * Protocol serialization: `src/conductor/protocol.ts` (line 276)
-  * Context and execution roles: `src/context.ts` (line 26), `src/system_database.ts` (lines 311, 653)
+  Repository `https://github.com/dbos-inc/dbos-transact-ts`, commit `749a4d420127e97715bf1f5d8caabf496a40af0b`
+  * Protocol serialization: `src/conductor/protocol.ts` (`WorkflowsOutput` line 195, `WorkflowSteps` line 264)
+  * Context and execution roles: `src/context.ts` (`DBOSContextOptions` line 25), `src/system_database.ts` (`authenticatedUser` line 307, `authenticatedRoles` line 346)
 
 * **dbos-transact-java**:
-  Repository `https://github.com/dbos-inc/dbos-transact-java`, commit `1248174f393bd97f9973ec83cbc6e42b6e319ed1`
-  * Default role strings: `transact/src/test/java/dev/dbos/transact/database/SystemDatabaseTest.java` (lines 721-722, 831-832)
-  * Queue role validation: `transact/src/test/java/dev/dbos/transact/queue/DynamicQueuesTest.java` (lines 756-757)
+  Repository `https://github.com/dbos-inc/dbos-transact-java`, commit `ecc2bda4deb57e3ba38c55cca150e95c99eb9d64`
+  * Default role strings: `transact/src/test/java/dev/dbos/transact/database/SystemDatabaseTest.java` (lines 818-819, 838-839)
+  * Queue role validation: `transact/src/test/java/dev/dbos/transact/queue/DynamicQueuesTest.java` (lines 1028-1029)
 
 ## 1. Specification summary
 
@@ -175,7 +175,7 @@ clients and SDK executors.
      `POST /v2/orgs/{orgName}/tokens/{tokenName}` (`TokenCreated.token`).
    * The CLI outputs the raw key on stdout and prints a warning on stderr:
      `API key "..." created: store this secret now, it is not shown again`
-     (`apikey.go:115`).
+     (`apikey.go:123`).
    * The plaintext is never persisted in Relay's database and never logged.
 4. **Password hash vs cryptographic hash**:
    * High-entropy keys (256 bits of CSPRNG entropy) have no dictionary or
@@ -203,7 +203,7 @@ In `CreateTokenInputBody`:
 * **Unscoped keys (`(all)`)**:
   * When `appNames` is omitted or empty (`nil`), the key is unscoped.
   * An unscoped key is valid for all applications within the owning organization.
-  * In CLI output: displayed as `(all)` (`apikey.go:150-156`).
+  * In CLI output: displayed as `(all)` (`apikey.go:179-185`).
 * **Scoped keys**:
   * When `appNames` contains one or more application identifiers, the key is
     strictly restricted to the specified applications.

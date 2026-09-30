@@ -25,13 +25,13 @@ All specifications in this document are derived from permitted public sources:
   * Schemas: `Metric` (`#/components/schemas/Metric`), `AlertingRule` (`#/components/schemas/AlertingRule`), `CreateAlertInputBody` (`#/components/schemas/CreateAlertInputBody`)
   * Paths: `#/paths/~1v2~1orgs~1{orgName}~1apps~1{appName}~1metrics`, `#/paths/~1v2~1orgs~1{orgName}~1apps~1{appName}~1alerting-rules`, `#/paths/~1v2~1orgs~1{orgName}~1apps~1{appName}~1alerting-rules~1{ruleId}`
 * **DBOS Transact SDKs**:
-  * Go SDK (`https://github.com/dbos-inc/dbos-transact-go`, commit `ab56911fdd78552e1e7fe648cff7c831a1e760c8`):
+  * Go SDK (`https://github.com/dbos-inc/dbos-transact-golang`, commit `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5`):
     * `dbos/conductor_protocol.go`: `alertMessage` ("alert"), `getMetricsMessage` ("get_metrics"), `alertRequest`, `alertConductorResponse`, `getMetricsConductorRequest`, `getMetricsConductorResponse`
-    * `dbos/conductor.go`: `handleAlertRequest` (lines 1229-1269)
-    * `dbos/internal/sysdb/system_database.go`: `MetricData`, `GetMetrics` (lines 5449-5480)
-  * Python SDK (`https://github.com/dbos-inc/dbos-transact-py`, commit `833794f7a1138bacf75ff6d88647a33eb5e35e52`):
+    * `dbos/conductor.go`: `handleAlertRequest` (lines 1295-1336)
+    * `dbos/internal/sysdb/system_database.go`: `MetricData`, `GetMetrics` (lines 5767, 5773)
+  * Python SDK (`https://github.com/dbos-inc/dbos-transact-py`, commit `2b93e1467a5464f817ef5d11aa5f10d3d2253761`):
     * Alert handler decorator: `@DBOS.alert_handler`
-  * TypeScript SDK (`https://github.com/dbos-inc/dbos-transact-ts`, commit `d8c4974cca6cc84b296f3b8edfbbb41627ddd47e`):
+  * TypeScript SDK (`https://github.com/dbos-inc/dbos-transact-ts`, commit `749a4d420127e97715bf1f5d8caabf496a40af0b`):
     * Alert handler hook: `DBOS.setAlertHandler`
 
 ## OpenMetrics scrape surface
@@ -265,7 +265,7 @@ When an alert condition is met and the minimum interval (`minIntervalSecs`) has 
 }
 ```
 
-Per the normative WebSocket protocol specification (`docs/protocol/executor-ws.md:209-212`), `alert` is a unidirectional notification frame dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:590-595`). No response frame is required or expected. If an envelope error occurs during delivery, the wire envelope error field is `error_message` (never `error` or `payload`).
+Per the normative WebSocket protocol specification (`docs/protocol/executor-ws.md:214-217`), `alert` is a notification frame dispatched by Relay to connected executors with `{name, message, metadata}` (`conductor_protocol.go:613-618`). The executor acknowledges with `alertConductorResponse` carrying `success`; Relay waits for the acknowledgement with a short timeout and ignores its payload, logging only dispatch failures. If an envelope error occurs during delivery, the wire envelope error field is `error_message` (never `error` or `payload`).
 
 If the application has registered an alert handler (`@DBOS.alert_handler`, `dbos.SetAlertHandler`, `DBOS.setAlertHandler`), the handler executes. If no handler is registered, the SDK automatically logs the alert as a warning.
 

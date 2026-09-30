@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Provenance: Go SDK: dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// Provenance: Go SDK: dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 
 // StringOrList is a custom JSON type that accepts either a single string
 // or an array of strings, matching the conductor's StringOrList for filter fields.
@@ -29,12 +29,12 @@ func (s *StringOrList) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ExecutorInfoRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ExecutorInfoRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ExecutorInfoRequest struct {
 	Envelope
 }
 
-// ExecutorInfoResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ExecutorInfoResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ExecutorInfoResponse struct {
 	Envelope
 	ExecutorID         string         `json:"executor_id"`
@@ -45,7 +45,7 @@ type ExecutorInfoResponse struct {
 	ExecutorMetadata   map[string]any `json:"executor_metadata,omitempty"`
 }
 
-// ListWorkflowsRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListWorkflowsRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListWorkflowsRequestBody struct {
 	WorkflowUUIDs      []string       `json:"workflow_uuids,omitempty"`
 	WorkflowName       StringOrList   `json:"workflow_name,omitempty"`
@@ -76,13 +76,13 @@ type ListWorkflowsRequestBody struct {
 	ApplicationName    StringOrList   `json:"application_name,omitempty"`
 }
 
-// ListWorkflowsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListWorkflowsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListWorkflowsRequest struct {
 	Envelope
 	Body ListWorkflowsRequestBody `json:"body"`
 }
 
-// ListWorkflowsResponseBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListWorkflowsResponseBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListWorkflowsResponseBody struct {
 	WorkflowUUID            string  `json:"WorkflowUUID"`
 	Status                  *string `json:"Status,omitempty"`
@@ -116,13 +116,13 @@ type ListWorkflowsResponseBody struct {
 	ApplicationName         *string `json:"ApplicationName,omitempty"`
 }
 
-// ListWorkflowsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListWorkflowsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListWorkflowsResponse struct {
 	Envelope
 	Output []ListWorkflowsResponseBody `json:"output"`
 }
 
-// ListStepsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListStepsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListStepsRequest struct {
 	Envelope
 	WorkflowID string `json:"workflow_id"`
@@ -131,7 +131,7 @@ type ListStepsRequest struct {
 	Offset     *int   `json:"offset,omitempty"`
 }
 
-// WorkflowStepsResponseBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// WorkflowStepsResponseBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type WorkflowStepsResponseBody struct {
 	FunctionID         int     `json:"function_id"`
 	FunctionName       string  `json:"function_name"`
@@ -142,13 +142,13 @@ type WorkflowStepsResponseBody struct {
 	CompletedAtEpochMs *string `json:"completed_at_epoch_ms,omitempty"`
 }
 
-// ListStepsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListStepsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListStepsResponse struct {
 	Envelope
 	Output *[]WorkflowStepsResponseBody `json:"output,omitempty"`
 }
 
-// GetWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowRequest struct {
 	Envelope
 	WorkflowID string `json:"workflow_id"`
@@ -156,13 +156,13 @@ type GetWorkflowRequest struct {
 	LoadOutput bool   `json:"load_output"`
 }
 
-// GetWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowResponse struct {
 	Envelope
 	Output *ListWorkflowsResponseBody `json:"output,omitempty"`
 }
 
-// ForkWorkflowRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ForkWorkflowRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ForkWorkflowRequestBody struct {
 	WorkflowID         string  `json:"workflow_id"`
 	StartStep          int     `json:"start_step"`
@@ -172,13 +172,13 @@ type ForkWorkflowRequestBody struct {
 	QueuePartitionKey  *string `json:"queue_partition_key,omitempty"`
 }
 
-// ForkWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ForkWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ForkWorkflowRequest struct {
 	Envelope
 	Body ForkWorkflowRequestBody `json:"body"`
 }
 
-// ForkWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ForkWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ForkWorkflowResponse struct {
 	Envelope
 	NewWorkflowID *string `json:"new_workflow_id,omitempty"`
@@ -206,7 +206,7 @@ type RewindWorkflowResponse struct {
 	Success bool `json:"success"`
 }
 
-// ForkFromFailureRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ForkFromFailureRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ForkFromFailureRequestBody struct {
 	WorkflowIDs        []string `json:"workflow_ids"`
 	ApplicationVersion *string  `json:"application_version,omitempty"`
@@ -218,19 +218,19 @@ type ForkFromFailureRequestBody struct {
 	FromStepName       *string  `json:"from_step_name,omitempty"`
 }
 
-// ForkFromFailureRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ForkFromFailureRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ForkFromFailureRequest struct {
 	Envelope
 	Body ForkFromFailureRequestBody `json:"body"`
 }
 
-// ForkFromFailureResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ForkFromFailureResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ForkFromFailureResponse struct {
 	Envelope
 	ForkedWorkflowIDs []string `json:"forked_workflow_ids,omitempty"`
 }
 
-// CancelWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// CancelWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type CancelWorkflowRequest struct {
 	Envelope
 	CancelChildren bool     `json:"cancel_children"`
@@ -238,38 +238,38 @@ type CancelWorkflowRequest struct {
 	WorkflowIDs    []string `json:"workflow_ids"`
 }
 
-// CancelWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// CancelWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type CancelWorkflowResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// RecoveryRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// RecoveryRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type RecoveryRequest struct {
 	Envelope
 	ExecutorIDs []string `json:"executor_ids"`
 }
 
-// RecoveryResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// RecoveryResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type RecoveryResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// ExistPendingWorkflowsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ExistPendingWorkflowsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ExistPendingWorkflowsRequest struct {
 	Envelope
 	ExecutorID         string `json:"executor_id"`
 	ApplicationVersion string `json:"application_version"`
 }
 
-// ExistPendingWorkflowsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ExistPendingWorkflowsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ExistPendingWorkflowsResponse struct {
 	Envelope
 	Exist bool `json:"exist"`
 }
 
-// ResumeWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ResumeWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ResumeWorkflowRequest struct {
 	Envelope
 	WorkflowID  string   `json:"workflow_id"`
@@ -277,13 +277,13 @@ type ResumeWorkflowRequest struct {
 	QueueName   *string  `json:"queue_name,omitempty"`
 }
 
-// ResumeWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ResumeWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ResumeWorkflowResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// RetentionRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// RetentionRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type RetentionRequestBody struct {
 	GCCutoffEpochMs      *int `json:"gc_cutoff_epoch_ms,omitempty"`
 	GCRowsThreshold      *int `json:"gc_rows_threshold,omitempty"`
@@ -291,19 +291,19 @@ type RetentionRequestBody struct {
 	TimeoutCutoffEpochMs *int `json:"timeout_cutoff_epoch_ms,omitempty"`
 }
 
-// RetentionRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// RetentionRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type RetentionRequest struct {
 	Envelope
 	Body RetentionRequestBody `json:"body"`
 }
 
-// RetentionResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// RetentionResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type RetentionResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// GetMetricsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetMetricsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetMetricsRequest struct {
 	Envelope
 	StartTime   string `json:"start_time"`
@@ -313,38 +313,38 @@ type GetMetricsRequest struct {
 	ApplicationName []string `json:"application_name,omitempty"`
 }
 
-// GetMetricsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetMetricsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetMetricsResponse struct {
 	Envelope
 	Metrics []MetricData `json:"metrics"`
 }
 
-// ExportWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ExportWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ExportWorkflowRequest struct {
 	Envelope
 	WorkflowID     string `json:"workflow_id"`
 	ExportChildren bool   `json:"export_children"`
 }
 
-// ExportWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ExportWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ExportWorkflowResponse struct {
 	Envelope
 	SerializedWorkflow *string `json:"serialized_workflow,omitempty"`
 }
 
-// ImportWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ImportWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ImportWorkflowRequest struct {
 	Envelope
 	SerializedWorkflow string `json:"serialized_workflow"`
 }
 
-// ImportWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ImportWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ImportWorkflowResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// DeleteWorkflowRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// DeleteWorkflowRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type DeleteWorkflowRequest struct {
 	Envelope
 	WorkflowID     string   `json:"workflow_id"`
@@ -352,13 +352,13 @@ type DeleteWorkflowRequest struct {
 	DeleteChildren bool     `json:"delete_children"`
 }
 
-// DeleteWorkflowResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// DeleteWorkflowResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type DeleteWorkflowResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// AlertRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// AlertRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type AlertRequest struct {
 	Envelope
 	Name     string            `json:"name"`
@@ -366,13 +366,13 @@ type AlertRequest struct {
 	Metadata map[string]string `json:"metadata"`
 }
 
-// AlertResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// AlertResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type AlertResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// ScheduleOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ScheduleOutput provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ScheduleOutput struct {
 	ScheduleID        string  `json:"schedule_id"`
 	ScheduleName      string  `json:"schedule_name"`
@@ -388,7 +388,7 @@ type ScheduleOutput struct {
 	ApplicationName   *string `json:"application_name"`
 }
 
-// ListSchedulesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListSchedulesRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListSchedulesRequestBody struct {
 	Status             StringOrList `json:"status,omitempty"`
 	WorkflowName       StringOrList `json:"workflow_name,omitempty"`
@@ -397,56 +397,56 @@ type ListSchedulesRequestBody struct {
 	LoadContext        *bool        `json:"load_context,omitempty"`
 }
 
-// ListSchedulesRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListSchedulesRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListSchedulesRequest struct {
 	Envelope
 	Body ListSchedulesRequestBody `json:"body"`
 }
 
-// ListSchedulesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListSchedulesResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListSchedulesResponse struct {
 	Envelope
 	Output []ScheduleOutput `json:"output"`
 }
 
-// GetScheduleRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetScheduleRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetScheduleRequest struct {
 	Envelope
 	ScheduleName string `json:"schedule_name"`
 	LoadContext  *bool  `json:"load_context,omitempty"`
 }
 
-// GetScheduleResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetScheduleResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetScheduleResponse struct {
 	Envelope
 	Output *ScheduleOutput `json:"output"`
 }
 
-// PauseScheduleRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// PauseScheduleRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type PauseScheduleRequest struct {
 	Envelope
 	ScheduleName string `json:"schedule_name"`
 }
 
-// PauseScheduleResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// PauseScheduleResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type PauseScheduleResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// ResumeScheduleRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ResumeScheduleRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ResumeScheduleRequest struct {
 	Envelope
 	ScheduleName string `json:"schedule_name"`
 }
 
-// ResumeScheduleResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ResumeScheduleResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ResumeScheduleResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// BackfillScheduleRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// BackfillScheduleRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type BackfillScheduleRequest struct {
 	Envelope
 	ScheduleName string `json:"schedule_name"`
@@ -454,19 +454,19 @@ type BackfillScheduleRequest struct {
 	End          string `json:"end"`   // ISO 8601
 }
 
-// BackfillScheduleResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// BackfillScheduleResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type BackfillScheduleResponse struct {
 	Envelope
 	WorkflowIDs []string `json:"workflow_ids"`
 }
 
-// TriggerScheduleRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// TriggerScheduleRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type TriggerScheduleRequest struct {
 	Envelope
 	ScheduleName string `json:"schedule_name"`
 }
 
-// TriggerScheduleResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// TriggerScheduleResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type TriggerScheduleResponse struct {
 	Envelope
 	WorkflowID *string `json:"workflow_id"`
@@ -490,43 +490,43 @@ type QueueOutput struct {
 	PartitionRateLimitPeriodSec *float64 `json:"partition_rate_limit_period_sec"`
 }
 
-// ListQueuesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListQueuesRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListQueuesRequestBody struct {
 	ApplicationName StringOrList `json:"application_name,omitempty"`
 }
 
-// ListQueuesRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListQueuesRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListQueuesRequest struct {
 	Envelope
 	// Absent
 	Body ListQueuesRequestBody `json:"body,omitempty"`
 }
 
-// ListQueuesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListQueuesResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListQueuesResponse struct {
 	Envelope
 	Output []QueueOutput `json:"output"`
 }
 
-// GetQueueRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetQueueRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetQueueRequest struct {
 	Envelope
 	Name string `json:"name"`
 }
 
-// GetQueueResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetQueueResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetQueueResponse struct {
 	Envelope
 	Output *QueueOutput `json:"output"`
 }
 
-// EventOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// EventOutput provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type EventOutput struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
-// NotificationOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// NotificationOutput provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type NotificationOutput struct {
 	Topic            *string `json:"topic"`
 	Message          string  `json:"message"`
@@ -534,49 +534,49 @@ type NotificationOutput struct {
 	Consumed         bool    `json:"consumed"`
 }
 
-// StreamEntryOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// StreamEntryOutput provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type StreamEntryOutput struct {
 	Key    string   `json:"key"`
 	Values []string `json:"values"`
 }
 
-// GetWorkflowEventsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowEventsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowEventsRequest struct {
 	Envelope
 	WorkflowID string `json:"workflow_id"`
 }
 
-// GetWorkflowEventsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowEventsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowEventsResponse struct {
 	Envelope
 	Events []EventOutput `json:"events"`
 }
 
-// GetWorkflowNotificationsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowNotificationsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowNotificationsRequest struct {
 	Envelope
 	WorkflowID string `json:"workflow_id"`
 }
 
-// GetWorkflowNotificationsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowNotificationsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowNotificationsResponse struct {
 	Envelope
 	Notifications []NotificationOutput `json:"notifications"`
 }
 
-// GetWorkflowStreamsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowStreamsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowStreamsRequest struct {
 	Envelope
 	WorkflowID string `json:"workflow_id"`
 }
 
-// GetWorkflowStreamsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowStreamsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowStreamsResponse struct {
 	Envelope
 	Streams []StreamEntryOutput `json:"streams"`
 }
 
-// GetWorkflowAggregatesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowAggregatesRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowAggregatesRequestBody struct {
 	GroupByStatus             bool           `json:"group_by_status"`
 	GroupByName               bool           `json:"group_by_name"`
@@ -611,14 +611,14 @@ type GetWorkflowAggregatesRequestBody struct {
 	Attributes                map[string]any `json:"attributes,omitempty"`
 }
 
-// GetWorkflowAggregatesRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowAggregatesRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowAggregatesRequest struct {
 	Envelope
 	Body GetWorkflowAggregatesRequestBody `json:"body"`
 }
 
 // WorkflowAggregateRow mirrors the Go SDK dbos.WorkflowAggregateRow shape.
-// Provenance: dbos-inc/dbos-transact-golang dbos/internal/sysdb/system_database.go:3414 (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// Provenance: dbos-inc/dbos-transact-golang dbos/internal/sysdb/system_database.go:3531 (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type WorkflowAggregateRow struct {
 	Group             map[string]*string `json:"group"`
 	Count             *int64             `json:"count"`
@@ -627,21 +627,21 @@ type WorkflowAggregateRow struct {
 	MaxTotalLatencyMs *int64             `json:"max_total_latency_ms"`
 }
 
-// GetWorkflowAggregatesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetWorkflowAggregatesResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetWorkflowAggregatesResponse struct {
 	Envelope
 	Output []WorkflowAggregateRow `json:"output"`
 }
 
 // StepAggregateRow mirrors the Go SDK dbos.StepAggregateRow shape.
-// Provenance: dbos-inc/dbos-transact-golang dbos/internal/sysdb/system_database.go:3708 (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// Provenance: dbos-inc/dbos-transact-golang dbos/internal/sysdb/system_database.go:3825 (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type StepAggregateRow struct {
 	Group         map[string]*string `json:"group"`
 	Count         *int64             `json:"count"`
 	MaxDurationMs *int64             `json:"max_duration_ms"`
 }
 
-// GetStepAggregatesRequestBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetStepAggregatesRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetStepAggregatesRequestBody struct {
 	GroupByFunctionName bool         `json:"group_by_function_name"`
 	GroupByStatus       bool         `json:"group_by_status"`
@@ -656,19 +656,19 @@ type GetStepAggregatesRequestBody struct {
 	ApplicationName     StringOrList `json:"application_name,omitempty"`
 }
 
-// GetStepAggregatesRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetStepAggregatesRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetStepAggregatesRequest struct {
 	Envelope
 	Body GetStepAggregatesRequestBody `json:"body"`
 }
 
-// GetStepAggregatesResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// GetStepAggregatesResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type GetStepAggregatesResponse struct {
 	Envelope
 	Output []StepAggregateRow `json:"output"`
 }
 
-// ApplicationVersionOutput provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ApplicationVersionOutput provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ApplicationVersionOutput struct {
 	ID        string `json:"version_id"`
 	Name      string `json:"version_name"`
@@ -676,30 +676,30 @@ type ApplicationVersionOutput struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
-// ListApplicationVersionsRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListApplicationVersionsRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListApplicationVersionsRequest struct {
 	Envelope
 }
 
-// ListApplicationVersionsResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// ListApplicationVersionsResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type ListApplicationVersionsResponse struct {
 	Envelope
 	Output []ApplicationVersionOutput `json:"output"`
 }
 
-// SetLatestApplicationVersionRequest provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// SetLatestApplicationVersionRequest provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type SetLatestApplicationVersionRequest struct {
 	Envelope
 	VersionName string `json:"version_name"`
 }
 
-// SetLatestApplicationVersionResponse provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// SetLatestApplicationVersionResponse provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type SetLatestApplicationVersionResponse struct {
 	Envelope
 	Success bool `json:"success"`
 }
 
-// MetricData provenance: Go SDK dbos-transact-go/dbos/internal/sysdb/system_database.go:5449 (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// MetricData provenance: Go SDK dbos-transact-golang/dbos/internal/sysdb/system_database.go:5767 (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 type MetricData struct {
 	MetricName string  `json:"metric_name"`
 	MetricType string  `json:"metric_type"`

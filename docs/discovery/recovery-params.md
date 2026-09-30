@@ -32,45 +32,45 @@ Every specification in this document is cited from permitted sources:
     `getApp` (`GET /v2/orgs/{orgName}/apps/{appName}`),
     `listExecutors` (`GET /v2/orgs/{orgName}/apps/{appName}/executors`)
 
-* **dbos-transact-go**:
-  * Repository: `https://github.com/dbos-inc/dbos-transact-go`
-  * Commit: `ab56911fdd78552e1e7fe648cff7c831a1e760c8` (MIT)
+* **dbos-transact-golang**:
+  * Repository: `https://github.com/dbos-inc/dbos-transact-golang`
+  * Commit: `fb3e33e0b4c3c709b9271eb935adce5eaf9386f5` (MIT)
   * Heartbeat and timeouts: `dbos/conductor.go` (lines 28-35: `_PING_INTERVAL = 20 * time.Second`,
     `_PING_TIMEOUT = 30 * time.Second // Should be slightly greater than server's executorPingWait (25s)`,
     `_INITIAL_RECONNECT_WAIT = 1 * time.Second`, `_MAX_RECONNECT_WAIT = 30 * time.Second`,
     `_HANDSHAKE_TIMEOUT = 10 * time.Second`, `_WRITE_DEADLINE = 5 * time.Second`)
-  * Connection management and ping loop: `dbos/conductor.go` (lines 285-357)
-  * Recovery request dispatch handling: `dbos/conductor.go` (lines 470-503)
+  * Connection management and ping loop: `dbos/conductor.go` (lines 262, 346)
+  * Recovery request dispatch handling: `dbos/conductor.go` (lines 482-516)
   * System database re-enqueue: `dbos/recovery.go` (lines 8-22)
-  * Retention request and body schemas: `dbos/conductor_protocol.go` (lines 514-532)
+  * Retention request and body schemas: `dbos/conductor_protocol.go` (lines 537-552)
 
 * **dbos-transact-py**:
   * Repository: `https://github.com/dbos-inc/dbos-transact-py`
-  * Commit: `833794f7a1138bacf75ff6d88647a33eb5e35e52` (MIT)
-  * Ping interval and pong timeout: `dbos/_conductor/conductor.py` (lines 54-55:
+  * Commit: `2b93e1467a5464f817ef5d11aa5f10d3d2253761` (MIT)
+  * Ping interval and pong timeout: `dbos/_conductor/conductor.py` (lines 65-66:
     `self.ping_interval = 20`, `self.ping_timeout = 15`)
-  * Keepalive thread loop: `dbos/_conductor/conductor.py` (lines 65-95)
-  * Recovery request handling: `dbos/_conductor/conductor.py` (lines 148-165)
-  * Retention and global timeout dispatch: `dbos/_conductor/conductor.py` (lines 600-630)
+  * Keepalive thread loop: `dbos/_conductor/conductor.py` (lines 83-113)
+  * Recovery request handling: `dbos/_conductor/conductor.py` (lines 175-192)
+  * Retention and global timeout dispatch: `dbos/_conductor/conductor.py` (lines 651-711)
 
 * **dbos-transact-ts**:
   * Repository: `https://github.com/dbos-inc/dbos-transact-ts`
-  * Commit: `d8c4974cca6cc84b296f3b8edfbbb41627ddd47e` (MIT)
-  * Ping period and timeout: `src/conductor/conductor.ts` (lines 28-32:
+  * Commit: `749a4d420127e97715bf1f5d8caabf496a40af0b` (MIT)
+  * Ping period and timeout: `src/conductor/conductor.ts` (lines 36-40, 132:
     `pingPeriodMs = 20000`, `pingTimeoutMs = 15000`, `reconnectDelayMs = 1000`,
     `handshakeTimeout = 5000`)
-  * Ping interval timer and socket reset: `src/conductor/conductor.ts` (lines 48-89)
-  * Recovery handler: `src/conductor/conductor.ts` (lines 150-161)
+  * Ping interval timer and socket reset: `src/conductor/conductor.ts` (lines 119-138)
+  * Recovery handler: `src/conductor/conductor.ts` (lines 180-189)
 
 * **dbos-transact-java**:
   * Repository: `https://github.com/dbos-inc/dbos-transact-java`
-  * Commit: `1248174f393bd97f9973ec83cbc6e42b6e319ed1` (MIT)
+  * Commit: `ecc2bda4deb57e3ba38c55cca150e95c99eb9d64` (MIT)
   * Builder defaults: `transact/src/main/java/dev/dbos/transact/conductor/Conductor.java`
-    (lines 88-90, 525: `pingPeriodMs = 20000`, `pingTimeoutMs = 15000`, `reconnectDelayMs = 1000`)
+    (lines 545-547: `pingPeriodMs = 20000`, `pingTimeoutMs = 15000`, `reconnectDelayMs = 1000`)
 
 * **dbos-ctl**:
   * Repository: `https://github.com/dbos-inc/dbos-ctl`
-  * Commit: `9d14ed3f0ccddb84cd3390e0bddbcfb9ea9a32a6` (MIT)
+  * Commit: `1e6d20e3201588ff67d6157f3808c933b3ed5811` (MIT)
   * App fields display: `internal/cli/app.go` (lines 382-396)
   * App update command and flag tests: `internal/cli/app_test.go` (lines 587-616)
 
@@ -82,15 +82,15 @@ connections and recovery.
 | Parameter | Default Value | Measured In | Initiator / Owner | Permitted Source |
 | --- | --- | --- | --- | --- |
 | Server ping interval | 10 seconds | seconds (`s`) | Control plane (Relay) | `internal/hub/conn.go:18`, `docs/protocol/executor-ws.md:221` |
-| Client ping interval | 20 seconds | seconds (`s` or `ms`) | Executor SDK | Go SDK (`dbos/conductor.go:28`), Python SDK (`conductor.py:54`), TS SDK (`conductor.ts:28`), Java SDK (`Conductor.java:525`) |
+| Client ping interval | 20 seconds | seconds (`s` or `ms`) | Executor SDK | Go SDK (`dbos/conductor.go:28`), Python SDK (`conductor.py:65`), TS SDK (`conductor.ts:36`), Java SDK (`Conductor.java:545`) |
 | Server ping wait (`executorPingWait`) | 25 seconds | seconds (`s`) | Control plane (Relay) | Go SDK (`dbos/conductor.go:29`) |
-| Client pong timeout | 15s (Py, TS, Java) / 30s (Go) | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:29`), Python SDK (`conductor.py:55`), TS SDK (`conductor.ts:29`), Java SDK (`Conductor.java:89`) |
-| Initial reconnect delay | 1 second | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:30`), TS SDK (`conductor.ts:31`), Java SDK (`Conductor.java:90`) |
+| Client pong timeout | 15s (Py, TS, Java) / 30s (Go) | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:29`), Python SDK (`conductor.py:66`), TS SDK (`conductor.ts:37`), Java SDK (`Conductor.java:546`) |
+| Initial reconnect delay | 1 second | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:30`), TS SDK (`conductor.ts:39`), Java SDK (`Conductor.java:547`) |
 | Maximum reconnect delay | 30 seconds | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:31`) |
-| Handshake timeout | 5s (TS) / 10s (Go) | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:32`), TS SDK (`conductor.ts:112`) |
+| Handshake timeout | 5s (TS) / 10s (Go) | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:32`), TS SDK (`conductor.ts:132`) |
 | Write deadline | 5 seconds | seconds (`s`) | Executor SDK | Go SDK (`dbos/conductor.go:33`) |
 | Executor timeout grace period | 60 seconds | seconds (`s`) | Control plane (Relay) | DBOS docs (`/production/workflow-recovery`), OpenAPI `executorTimeoutSecs` |
-| Default GC batch size | 10,000 rows | count | SDK / Control plane | Go SDK (`conductor.go:34`), Python SDK (`_sys_db.py:DEFAULT_GC_BATCH_SIZE`) |
+| Default GC batch size | 50,000 rows | count | SDK / Control plane | Go SDK (`dbos/internal/sysdb/retention.go:17`), Python SDK (`_sys_db.py:DEFAULT_GC_BATCH_SIZE`) |
 
 ### Heartbeat and liveness protocol
 

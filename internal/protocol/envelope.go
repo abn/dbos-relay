@@ -3,7 +3,7 @@ package protocol
 import "time"
 
 // Heartbeat timing constants for the executor WebSocket protocol.
-// Provenance: Go SDK dbos-transact-go/dbos/conductor.go (commit ab56911fdd78552e1e7fe648cff7c831a1e760c8)
+// Provenance: Go SDK dbos-transact-golang/dbos/conductor.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
 const (
 	DefaultPingInterval = 10 * time.Second
 	DefaultPongDeadline = 25 * time.Second

@@ -7,7 +7,7 @@ fixes a protocol conformance discrepancy between Relay and DBOS Conductor.
 
 ## Scenario: Upstream SDK Introduces New Field in `ListWorkflowsResponse`
 
-Suppose a new release of `dbos-transact-go` adds an optional `ExecutionTimeMs`
+Suppose a new release of `dbos-transact-golang` adds an optional `ExecutionTimeMs`
 field to `ListWorkflowsResponseBody`. Conformance check `3.1` fails or produces an
 unmarshaling error.
 
@@ -30,7 +30,7 @@ $ ./bin/relay test-conformance --target http://localhost:8090 --key "$RELAY_API_
 
 Check the open-source SDK repository to inspect the exact wire type definition:
 
-File: `dbos-transact-go/dbos/conductor_protocol.go`
+File: `dbos-transact-golang/dbos/conductor_protocol.go`
 ```go
 type ListWorkflowsResponseBody struct {
     WorkflowUUID    string  `json:"WorkflowUUID"`
@@ -41,7 +41,7 @@ type ListWorkflowsResponseBody struct {
 ```
 
 Provenance citation confirmed:
-- Source: `github.com/dbos-inc/dbos-transact-go`
+- Source: `github.com/dbos-inc/dbos-transact-golang`
 - File: `dbos/conductor_protocol.go`
 - Commit: `<upstream-commit-hash>`
 
@@ -92,7 +92,7 @@ Edit `internal/protocol/messages.go` to add the field with exact JSON tags and
 updated provenance comment:
 
 ```go
-// ListWorkflowsResponseBody provenance: Go SDK dbos-transact-go/dbos/conductor_protocol.go
+// ListWorkflowsResponseBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go
 type ListWorkflowsResponseBody struct {
     WorkflowUUID    string  `json:"WorkflowUUID"`
     Status          *string `json:"Status,omitempty"`

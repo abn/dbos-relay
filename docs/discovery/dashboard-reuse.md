@@ -17,7 +17,7 @@ dashboard components directly against Relay's vendored OpenAPI specifications.
 
 All findings in this document are derived from the following permitted sources:
 * Repository: `https://github.com/tmarkovski/dbos-argus`
-* Commit: `53cf15bdbea0b68f8ac2dd1e593539e864c08788`
+* Commit: `66ae6da2a7679dfaf8c332cbec8ffa5d31af4314`
 * License: MIT (`LICENSE` confirms Copyright (c) 2024-2025 Tomislav Markovski)
 * OpenAPI Specifications: `api/spec/openapi.json` and `api/spec/openapi-3.0.json`
 * DBOS Transact Public Documentation: `https://docs.dbos.dev/`
