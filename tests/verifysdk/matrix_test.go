@@ -547,10 +547,12 @@ func waitForExecutors(t *testing.T, containers map[string]containerInfo, timeout
 // waitForSecondaryExecutor polls the executors API until the app reports both
 // executors in a healthy state. Each sample app runs exactly two (a primary
 // and a secondary), so this waits out the survivor's delayed launch and
-// handshake instead of sleeping a fixed interval that can race it.
-func waitForSecondaryExecutor(t *testing.T, info containerInfo) {
+// handshake instead of sleeping a fixed interval that can race it. It reports
+// whether the survivor registered before the deadline, leaving the decision
+// about a container restart to the caller.
+func waitForSecondaryExecutor(t *testing.T, info containerInfo, timeout time.Duration) bool {
 	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		execs, err := fetchExecutors(info.AppName)
 		if err != nil {
@@ -566,12 +568,12 @@ func waitForSecondaryExecutor(t *testing.T, info containerInfo) {
 		}
 		if healthy >= 2 {
 			t.Logf("[%s] Both executors registered healthy for app %s", info.Language, info.AppName)
-			return
+			return true
 		}
 		t.Logf("[%s] Waiting for secondary executor to register healthy (%d/%d)...", info.Language, healthy, len(execs))
 		time.Sleep(1 * time.Second)
 	}
-	t.Fatalf("[%s] Timed out waiting for secondary executor of app %s to register healthy", info.Language, info.AppName)
+	return false
 }
 
 func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
@@ -1256,9 +1258,24 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				_ = runCmd(t, "podman", "start", primaryContainer)
 				_ = runCmd(t, "podman", "start", secondaryContainer)
 
-				// Wait until the survivor registers healthy before relying on
-				// it again; a fixed sleep races its delayed launch.
-				waitForSecondaryExecutor(t, primaryInfo)
+				// The cell kills the primary and relies on the secondary to
+				// recover, so wait for both executors to register healthy
+				// before starting. A survivor that has not finished its
+				// launch handshake cannot take the recovery dispatch, and
+				// podman start is a no-op on a container that is already
+				// running, so a survivor wedged mid-launch needs an explicit
+				// restart rather than a longer wait. The first window covers
+				// a normal launch; the second covers a restart, and both keep
+				// margin for loaded runners.
+				if !waitForSecondaryExecutor(t, primaryInfo, 30*time.Second) {
+					t.Logf("[%s] Secondary executor did not register healthy, restarting %s", lang, secondaryContainer)
+					_ = runCmd(t, "podman", "restart", secondaryContainer)
+					if !waitForSecondaryExecutor(t, primaryInfo, 90*time.Second) {
+						secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+						t.Logf("[%s] Secondary logs on failed recovery registration:\n%s", lang, secLogs)
+						t.Fatalf("[%s] Timed out waiting for secondary executor of app %s to register healthy", lang, primaryInfo.AppName)
+					}
+				}
 
 				// Ensure secondary container is up
 				secondaryLogs := runCmd(t, "podman", "logs", secondaryContainer)
@@ -1268,21 +1285,37 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				chaosWfID := triggerAppWorkflow(t, primaryInfo.TriggerPort)
 				t.Logf("[%s] Started chaos workflow %s on primary (sleeping after step 1)", lang, chaosWfID)
 
-				// Retrieve the active executor ID that actually executed the chaos workflow
-				execDeadline := time.Now().Add(10 * time.Second)
+				// Retrieve the active executor ID that actually executed the
+				// chaos workflow. The sample starts the workflow directly
+				// rather than through a queue, so the assignment surfaces
+				// through the API only once the executor has persisted the
+				// workflow's status, which is not immediate on a loaded
+				// runner.
+				var assignedExecID string
+				execDeadline := time.Now().Add(30 * time.Second)
 				for time.Now().Before(execDeadline) {
 					_, curExecID := getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
 					if curExecID != "" {
-						primaryInfo.ExecutorID = curExecID
+						assignedExecID = curExecID
 						break
 					}
 					time.Sleep(200 * time.Millisecond)
 				}
+				if assignedExecID == "" {
+					t.Fatalf("[%s] Chaos workflow %s was not assigned to an executor within the deadline", lang, chaosWfID)
+				}
+				primaryInfo.ExecutorID = assignedExecID
 				t.Logf("[%s] Confirmed active primary executor ID before chaos: %s", lang, primaryInfo.ExecutorID)
 
-				// Wait for Step 1 to be recorded
+				// Wait for Step 1 to be recorded. The step writes its marker
+				// through the app's own Postgres pool, which retries a failed
+				// insert for 45s before giving up, so the wait has to outlast
+				// that window plus the dispatch and execution it sits behind
+				// or the harness gives up while the app is still legitimately
+				// retrying. The deadline keeps margin for loaded runners.
 				var step1Recorded bool
-				for i := 0; i < 50; i++ {
+				step1Deadline := time.Now().Add(75 * time.Second)
+				for time.Now().Before(step1Deadline) {
 					var count int
 					row := dbConn.QueryRow(context.Background(), `
 						SELECT COUNT(*) FROM test_step_executions
@@ -1414,7 +1447,11 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to scan step1Count: %v", err)
 				}
-				for i := 0; i < 50; i++ {
+				// Step 2 lands on the recovered executor and shares the
+				// step-marker retry window described above, so it gets the
+				// same deadline rather than a shorter fixed count.
+				step2Deadline := time.Now().Add(75 * time.Second)
+				for time.Now().Before(step2Deadline) {
 					err = dbConn.QueryRow(context.Background(), `
 						SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
 					`, chaosWfID).Scan(&step2Count)
