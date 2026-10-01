@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/abn/dbos-relay/compare/v0.4.0...v0.5.0) (2026-10-01)
+
+
+### Features
+
+* **api:** allow renaming an api key ([b7fdeb5](https://github.com/abn/dbos-relay/commit/b7fdeb59d0ea3f09c98f8e9ababbd8ac424b2fe8))
+* **api:** support workflow rewind ([d7d655a](https://github.com/abn/dbos-relay/commit/d7d655a0f663091fbbe7d2a742ebb1172620a126))
+* **protocol:** carry queue partition limits ([25cbfa9](https://github.com/abn/dbos-relay/commit/25cbfa90930aa92d153b00cddeea70b13119e010))
+
+
+### Bug Fixes
+
+* **compose-sdk:** add healthchecks to sample apps ([34f2333](https://github.com/abn/dbos-relay/commit/34f233304ab0ee535a987950a0a7dd30d0a70ceb))
+* **examples:** back off step-record DB retries ([#47](https://github.com/abn/dbos-relay/issues/47)) ([76cb6ae](https://github.com/abn/dbos-relay/commit/76cb6aec19fc0b615981842f4e52734e6fd95457))
+* **examples:** fail loud on go http bind failure ([895d883](https://github.com/abn/dbos-relay/commit/895d8830d8c968d0e05e2a3b9f3051293f814ca1))
+* **examples:** set config for both roles ([#59](https://github.com/abn/dbos-relay/issues/59)) ([21775a3](https://github.com/abn/dbos-relay/commit/21775a3e944050695f1eb8c5d5203074939ff9ae))
+* **liveness:** sweep stranded dead executors ([1311300](https://github.com/abn/dbos-relay/commit/131130065dfe398406c1b471d6da66e48659e82c))
+* **verify:** handle TypeScript out-of-line inputs ([#61](https://github.com/abn/dbos-relay/issues/61)) ([0057098](https://github.com/abn/dbos-relay/commit/0057098435de88bf09523fb9428b995d053dd296))
+* **verify:** wait out chaos cell startup races ([#60](https://github.com/abn/dbos-relay/issues/60)) ([1bf099e](https://github.com/abn/dbos-relay/commit/1bf099ebd35aacca7acfc4b35af53c32f6bc593a))
+
 ## [0.4.0](https://github.com/abn/dbos-relay/compare/v0.3.0...v0.4.0) (2026-09-22)
 
 
