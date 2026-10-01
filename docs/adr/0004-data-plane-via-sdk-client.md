@@ -117,3 +117,12 @@ The implementation follows these rules:
 - Protects live executors from heavy fleet aggregation queries.
 - Applications without a configured `data_plane` block retain complete drop-in
   compatibility with no database access.
+
+## Addendum (2026-10-01)
+
+Point 7 assumes payload columns live on `workflow_status`. DBOS Transact SDK v5
+moved workflow inputs and outputs into the out-of-line `workflow_input` and
+`workflow_output` tables, which the pinned Go client (`v1.3.0`) does not read.
+Point 11's pin therefore leaves out-of-line payloads unavailable to the data
+plane. [ADR 0013](0013-out-of-line-workflow-payloads.md) records the decision to
+keep the pin and treat that as a documented capability gap.

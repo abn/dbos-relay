@@ -21,5 +21,7 @@ consequences. One decision per file, added as the project makes them.
 * [ADR 0010](0010-openapi-redistribution.md) - redistribution of OpenAPI interface specifications
 * [ADR 0011](0011-dual-engine-storage-architecture.md) - dual-engine storage architecture and embedded mode
 * [ADR 0012](0012-autoscaling-policy-support.md) - autoscaling policy support
+* [ADR 0013](0013-out-of-line-workflow-payloads.md) - out-of-line workflow
+  payloads in the data plane
 
 Open decisions that have not been made yet are not recorded here.
