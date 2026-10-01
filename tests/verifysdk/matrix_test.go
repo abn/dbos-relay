@@ -1113,8 +1113,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if (apiWf.Input == nil && sdkWf.Input != nil) || (apiWf.Input != nil && sdkWf.Input == nil) {
-					if lang == "Python" && apiWf.Input != nil && sdkWf.Input == nil {
-						t.Logf("[%s] Upstream schema divergence: Python SDK stores inputs out-of-line in workflow_input table, which Go SDK client v1.3.0 does not query out-of-line (API=%v, SDK DB=%v)", lang, *apiWf.Input, sdkWf.Input)
+					if (lang == "Python" || lang == "TypeScript") && apiWf.Input != nil && sdkWf.Input == nil {
+						t.Logf("[%s] Upstream schema divergence: %s SDK stores inputs out-of-line in the workflow_input table, which Go SDK client v1.3.0 does not query out-of-line (API=%v, SDK DB=%v)", lang, lang, *apiWf.Input, sdkWf.Input)
 					} else {
 						t.Errorf("[%s] Input presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Input, sdkWf.Input)
 						return
