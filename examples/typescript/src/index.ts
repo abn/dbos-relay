@@ -109,14 +109,22 @@ function startHttpServer(): void {
 async function main(): Promise<void> {
   if (role === "secondary") {
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    // Migrate-once leader: only the primary runs system-database DDL.
-    // Concurrent migrators deadlock in DDL under load, and the SDK
-    // swallows the error and starts half-migrated. Secondaries verify
-    // the schema instead; the launch retry loop below absorbs the
-    // window while the primary migrates. Name and URL are explicit
-    // because setConfig bypasses dbos-config.yaml entirely.
-    DBOS.setConfig({ name: appName, systemDatabaseUrl: dbURL, runMigrations: false });
   }
+
+  // Migrate-once leader: only the primary runs system-database DDL.
+  // Concurrent migrators deadlock in DDL under load, and the SDK
+  // swallows the error and starts half-migrated. Secondaries verify
+  // the schema instead; the launch retry loop below absorbs the
+  // window while the primary migrates. Name and URL are explicit for
+  // both roles because launch() takes its configuration from
+  // setConfig and does not fall back to dbos-config.yaml, so a
+  // primary that relied on the file would otherwise start without a
+  // configuration.
+  DBOS.setConfig({
+    name: appName,
+    systemDatabaseUrl: dbURL,
+    runMigrations: role !== "secondary",
+  });
 
   startHttpServer();
 
