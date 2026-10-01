@@ -22,3 +22,4 @@ No claim is derived from proprietary binaries or non-public materials.
 | API key format & prefix | Key generation, lookup, and hash verification | dbosctl auth, dbos-transact-ts conductor client | 2026-09-08 |
 | Unauthenticated public OpenAPI access | API spec serving | HTTP 200 without auth or license click-through from cloud.dbos.dev | 2026-09-30 |
 | Workflow cancellation & resume SQL semantics | Architecture dataplane | https://github.com/dbos-inc/dbos-transact-golang commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5 (dbos/internal/sysdb/system_database.go) | 2026-09-30 |
+| Out-of-line workflow payload tables and client schema floors | Architecture dataplane, ADR 0013 | https://github.com/dbos-inc/dbos-transact-golang v1.3.0 commit ab56911fdd78552e1e7fe648cff7c831a1e760c8, v1.4.0 commit 5387dd34db00b1762a2367ab4bf1de935afa09f7, v1.5.0 commit 7e9d7c1658ae45ddfe068315a48fe8dc509d7752 (dbos/internal/sysdb/system_database.go, dbos/dbos.go) | 2026-10-01 |
