@@ -8,6 +8,7 @@
     "sort_desc": false,
     "load_input": false,
     "load_output": false,
+    "is_fork": false,
     "queues_only": true
   }
 }

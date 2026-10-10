@@ -46,6 +46,7 @@ type ExecutorInfoResponse struct {
 }
 
 // ListWorkflowsRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
+// IsFork provenance: Java SDK dbos-transact-java/transact/src/main/java/dev/dbos/transact/conductor/protocol/ListWorkflowsRequest.java and ListQueuedWorkflowsRequest.java (commit 0f4fe18); Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit de29e53); released in dbos-transact-java 1.2.0 and dbos-transact-golang v1.6.0. It is forwarded to executors as-is; an executor that predates the field ignores it and returns a superset.
 type ListWorkflowsRequestBody struct {
 	WorkflowUUIDs      []string       `json:"workflow_uuids,omitempty"`
 	WorkflowName       StringOrList   `json:"workflow_name,omitempty"`
@@ -61,6 +62,7 @@ type ListWorkflowsRequestBody struct {
 	ForkedFrom         StringOrList   `json:"forked_from,omitempty"`
 	ParentWorkflowID   StringOrList   `json:"parent_workflow_id,omitempty"`
 	WasForkedFrom      *bool          `json:"was_forked_from,omitempty"`
+	IsFork             *bool          `json:"is_fork,omitempty"`
 	HasParent          *bool          `json:"has_parent,omitempty"`
 	QueueName          StringOrList   `json:"queue_name,omitempty"`
 	Limit              *int           `json:"limit,omitempty"`
@@ -577,6 +579,7 @@ type GetWorkflowStreamsResponse struct {
 }
 
 // GetWorkflowAggregatesRequestBody provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5)
+// IsFork provenance: Go SDK dbos-transact-golang/dbos/conductor_protocol.go getWorkflowAggregatesConductorRequestBody (commit de29e53); released in dbos-transact-golang v1.6.0. It is forwarded to executors as-is; an executor that predates the field ignores it and returns a superset.
 type GetWorkflowAggregatesRequestBody struct {
 	GroupByStatus             bool           `json:"group_by_status"`
 	GroupByName               bool           `json:"group_by_name"`
@@ -607,6 +610,7 @@ type GetWorkflowAggregatesRequestBody struct {
 	User                      StringOrList   `json:"user,omitempty"`
 	ApplicationName           StringOrList   `json:"application_name,omitempty"`
 	WasForkedFrom             *bool          `json:"was_forked_from,omitempty"`
+	IsFork                    *bool          `json:"is_fork,omitempty"`
 	HasParent                 *bool          `json:"has_parent,omitempty"`
 	Attributes                map[string]any `json:"attributes,omitempty"`
 }

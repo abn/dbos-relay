@@ -436,6 +436,12 @@ func (r *Runner) runBattery2Handshake(ctx context.Context) BatteryResult {
 func (r *Runner) runBattery3Observability(ctx context.Context) BatteryResult {
 	var checks []CheckResult
 
+	var (
+		mu           sync.Mutex
+		lastListBody protocol.ListWorkflowsRequestBody
+		lastAggBody  protocol.GetWorkflowAggregatesRequestBody
+	)
+
 	wfName := "conformance_workflow"
 	wfStatus := "SUCCESS"
 
@@ -451,6 +457,9 @@ func (r *Runner) runBattery3Observability(ctx context.Context) BatteryResult {
 
 	fe.SetHandler(protocol.MessageTypeListWorkflows, func(msg protocol.Message) (protocol.Message, error) {
 		req, _ := msg.(*protocol.ListWorkflowsRequest)
+		mu.Lock()
+		lastListBody = req.Body
+		mu.Unlock()
 		return &protocol.ListWorkflowsResponse{
 			Envelope: protocol.Envelope{
 				Type:      protocol.MessageTypeListWorkflows,
@@ -463,6 +472,20 @@ func (r *Runner) runBattery3Observability(ctx context.Context) BatteryResult {
 					Status:       &wfStatus,
 				},
 			},
+		}, nil
+	})
+
+	fe.SetHandler(protocol.MessageTypeGetWorkflowAggregates, func(msg protocol.Message) (protocol.Message, error) {
+		req, _ := msg.(*protocol.GetWorkflowAggregatesRequest)
+		mu.Lock()
+		lastAggBody = req.Body
+		mu.Unlock()
+		return &protocol.GetWorkflowAggregatesResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeGetWorkflowAggregates,
+				RequestID: req.RequestID,
+			},
+			Output: []protocol.WorkflowAggregateRow{},
 		}, nil
 	})
 
@@ -600,6 +623,62 @@ func (r *Runner) runBattery3Observability(ctx context.Context) BatteryResult {
 		}
 		if len(steps) != 2 {
 			return fmt.Errorf("expected 2 steps, got %d", len(steps))
+		}
+		return nil
+	}))
+
+	// Check 3.4: Search Workflows forwards the is_fork filter
+	checks = append(checks, executeCheck("3.4 Search Workflows is_fork Forwarding", func() error {
+		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/search", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"isFork": true}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.cfg.ConductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		mu.Lock()
+		body := lastListBody
+		mu.Unlock()
+		if body.IsFork == nil || !*body.IsFork {
+			return fmt.Errorf("executor did not receive is_fork=true, got %v", body.IsFork)
+		}
+		return nil
+	}))
+
+	// Check 3.5: Workflow Aggregates forwards the is_fork filter
+	checks = append(checks, executeCheck("3.5 Workflow Aggregates is_fork Forwarding", func() error {
+		url := fmt.Sprintf("%s/v2/orgs/%s/apps/%s/workflows/aggregates", r.httpURL, r.cfg.OrgName, r.cfg.AppName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(`{"isFork": true, "selectCount": true}`))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if r.cfg.ConductorKey != "" {
+			req.Header.Set("Authorization", "Bearer "+r.cfg.ConductorKey)
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		mu.Lock()
+		body := lastAggBody
+		mu.Unlock()
+		if body.IsFork == nil || !*body.IsFork {
+			return fmt.Errorf("executor did not receive is_fork=true, got %v", body.IsFork)
 		}
 		return nil
 	}))

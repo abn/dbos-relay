@@ -246,6 +246,7 @@ func TestSearchWorkflows(t *testing.T) {
 		loadInput := true
 		loadOutput := true
 		wasForked := false
+		isFork := true
 		hasParent := true
 		queuesOnly := false
 		now := time.Now().UTC()
@@ -271,6 +272,7 @@ func TestSearchWorkflows(t *testing.T) {
 				LoadInput:        &loadInput,
 				LoadOutput:       &loadOutput,
 				WasForkedFrom:    &wasForked,
+				IsFork:           &isFork,
 				HasParent:        &hasParent,
 				QueuesOnly:       &queuesOnly,
 				StartTime:        &now,
@@ -315,6 +317,9 @@ func TestSearchWorkflows(t *testing.T) {
 		}
 		if !req.Body.LoadOutput {
 			t.Error("expected LoadOutput true")
+		}
+		if req.Body.IsFork == nil || !*req.Body.IsFork {
+			t.Errorf("unexpected IsFork: %v", req.Body.IsFork)
 		}
 
 		if _, ok := respObj.(gen.SearchWorkflows200JSONResponse); !ok {
@@ -816,6 +821,9 @@ func TestGetWorkflowAggregates(t *testing.T) {
 			if !req.Body.GroupByStatus {
 				t.Error("expected GroupByStatus true")
 			}
+			if req.Body.IsFork == nil || !*req.Body.IsFork {
+				t.Errorf("unexpected IsFork: %v", req.Body.IsFork)
+			}
 			return &protocol.GetWorkflowAggregatesResponse{
 				Envelope: protocol.Envelope{
 					Type:      protocol.MessageTypeGetWorkflowAggregates,
@@ -836,6 +844,7 @@ func TestGetWorkflowAggregates(t *testing.T) {
 
 	groupByStatus := true
 	selectCount := true
+	isFork := true
 	server := api.NewServer(r, nil, nil)
 	respObj, err := server.GetWorkflowAggregates(context.Background(), gen.GetWorkflowAggregatesRequestObject{
 		OrgName: "my-org",
@@ -843,6 +852,7 @@ func TestGetWorkflowAggregates(t *testing.T) {
 		Body: &gen.WorkflowAggregatesBody{
 			GroupByStatus: &groupByStatus,
 			SelectCount:   &selectCount,
+			IsFork:        &isFork,
 		},
 	})
 	if err != nil {
