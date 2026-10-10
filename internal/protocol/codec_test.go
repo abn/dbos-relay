@@ -309,6 +309,7 @@ func getAllGoldenFixtures() map[string]struct {
 					SelectMinCreatedAt:      true,
 					SelectMaxQueueWaitMs:    true,
 					SelectMaxTotalLatencyMs: true,
+					IsFork:                  boolPtr(true),
 					Status:                  StringOrList{"SUCCESS"},
 				},
 			},
@@ -468,6 +469,7 @@ func getAllGoldenFixtures() map[string]struct {
 				Envelope: Envelope{Type: MessageTypeListQueuedWorkflows, RequestID: "req-uuid"},
 				Body: ListWorkflowsRequestBody{
 					QueueName:  StringOrList{"order-queue"},
+					IsFork:     boolPtr(false),
 					QueuesOnly: true,
 				},
 			},
@@ -540,6 +542,7 @@ func getAllGoldenFixtures() map[string]struct {
 				Body: ListWorkflowsRequestBody{
 					WorkflowName: StringOrList{"my_workflow"},
 					Limit:        intPtr(10),
+					IsFork:       boolPtr(true),
 				},
 			},
 		},
@@ -686,6 +689,50 @@ func TestDecodeEncodeRoundTrip(t *testing.T) {
 			}
 			if string(encoded) != string(reEncoded) {
 				t.Errorf("Roundtrip mismatch: got %s, want %s", string(reEncoded), string(encoded))
+			}
+		})
+	}
+}
+
+// TestListWorkflowsRequest_IsForkWire asserts the is_fork filter encodes and
+// decodes for both boolean values on the list_workflows message type.
+func TestListWorkflowsRequest_IsForkWire(t *testing.T) {
+	for _, want := range []bool{true, false} {
+		name := "false"
+		if want {
+			name = "true"
+		}
+		t.Run(name, func(t *testing.T) {
+			req := &ListWorkflowsRequest{
+				Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
+				Body:     ListWorkflowsRequestBody{IsFork: boolPtr(want)},
+			}
+			encoded, err := Encode(req)
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+			var wire struct {
+				Body struct {
+					IsFork *bool `json:"is_fork"`
+				} `json:"body"`
+			}
+			if err := json.Unmarshal(encoded, &wire); err != nil {
+				t.Fatalf("Unmarshal failed: %v", err)
+			}
+			if wire.Body.IsFork == nil || *wire.Body.IsFork != want {
+				t.Fatalf("encoded is_fork = %v, want %v (wire: %s)", wire.Body.IsFork, want, encoded)
+			}
+
+			decoded, err := DecodeRequest(encoded)
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+			got, ok := decoded.(*ListWorkflowsRequest)
+			if !ok {
+				t.Fatalf("decoded type = %T, want *ListWorkflowsRequest", decoded)
+			}
+			if got.Body.IsFork == nil || *got.Body.IsFork != want {
+				t.Fatalf("decoded is_fork = %v, want %v", got.Body.IsFork, want)
 			}
 		})
 	}

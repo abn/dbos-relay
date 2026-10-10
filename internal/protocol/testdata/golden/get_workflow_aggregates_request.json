@@ -12,6 +12,7 @@
     "select_min_created_at": true,
     "select_max_queue_wait_ms": true,
     "select_max_total_latency_ms": true,
+    "is_fork": true,
     "status": [
       "SUCCESS"
     ]

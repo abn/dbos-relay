@@ -13,7 +13,9 @@ import (
 	"github.com/abn/relay/internal/protocol"
 )
 
-// TestListWorkflowsRequestBody_FieldCoverage guards against unmapped request filter fields.
+// TestListWorkflowsRequestBody_FieldCoverage guards against request filter fields
+// that are neither applied by the local data plane nor knowingly forwarded without
+// local application.
 func TestListWorkflowsRequestBody_FieldCoverage(t *testing.T) {
 	expectedMappedFields := map[string]bool{
 		"WorkflowUUIDs":      true,
@@ -45,16 +47,24 @@ func TestListWorkflowsRequestBody_FieldCoverage(t *testing.T) {
 		"ApplicationName":    true,
 	}
 
+	// Fields forwarded to executors on the wire but not applied by the local
+	// SDK-client fallback. The pinned DBOS Go SDK (v1.3.0) predates
+	// WithFilterIsFork (v1.6.0), so this fallback returns a superset.
+	knownUnmappedFields := map[string]bool{
+		"IsFork": true,
+	}
+
 	typ := reflect.TypeOf(protocol.ListWorkflowsRequestBody{})
-	if typ.NumField() != len(expectedMappedFields) {
-		t.Fatalf("ListWorkflowsRequestBody field count mismatch: struct has %d fields, expected %d", typ.NumField(), len(expectedMappedFields))
+	if got := typ.NumField(); got != len(expectedMappedFields)+len(knownUnmappedFields) {
+		t.Fatalf("ListWorkflowsRequestBody field count mismatch: struct has %d fields, expected %d mapped and %d knowingly unmapped", got, len(expectedMappedFields), len(knownUnmappedFields))
 	}
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if !expectedMappedFields[field.Name] {
-			t.Errorf("ListWorkflowsRequestBody field %q is not in the mapped filter options set", field.Name)
+		if expectedMappedFields[field.Name] || knownUnmappedFields[field.Name] {
+			continue
 		}
+		t.Errorf("ListWorkflowsRequestBody field %q is neither mapped by the data plane nor knowingly unmapped", field.Name)
 	}
 }
 

@@ -153,6 +153,9 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if req.Body.HasParent != nil {
 			opts = append(opts, dbos.WithFilterHasParent(*req.Body.HasParent))
 		}
+		// IsFork is not applied here: the pinned DBOS Go SDK predates
+		// WithFilterIsFork, so this local fallback returns a superset. Relay
+		// forwards is_fork to executors on the wire.
 		if len(req.Body.QueueName) > 0 {
 			opts = append(opts, dbos.WithFilterQueueName(req.Body.QueueName...))
 		}

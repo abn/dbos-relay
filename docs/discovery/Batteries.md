@@ -65,6 +65,10 @@ executors and serialize responses according to OpenAPI schemas.
   dispatches `get_workflow` and validates the returned workflow object.
 - **Check 3.3 (List Workflow Steps)**: `GET /v2/orgs/{org}/apps/{app}/workflows/{workflowId}/steps`
   dispatches `list_steps` and verifies step execution metadata.
+- **Check 3.4 (Search Workflows)**: `POST /v2/orgs/{org}/apps/{app}/workflows/search` with `isFork`
+  dispatches `list_workflows` and verifies the executor received the `is_fork` filter.
+- **Check 3.5 (Workflow Aggregates)**: `POST /v2/orgs/{org}/apps/{app}/workflows/aggregates` with
+  `isFork` dispatches `get_workflow_aggregates` and verifies the executor received the `is_fork` filter.
 
 ### Battery 4: Workflow Control Operations
 

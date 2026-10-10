@@ -15,6 +15,7 @@ Relay decouples HTTP clients from live executors through an internal router. The
 Incoming REST search parameters map to `ListWorkflowsRequest` body:
 * `workflowIds` -> `WorkflowUUIDs` (`workflow_uuids`, list)
 * `workflowName` -> `WorkflowName`
+* `isFork` -> `IsFork` (boolean filter; forwarded to executors as-is)
 * `status` -> `Status` (list or string)
 * `user` -> `AuthenticatedUser`
 * `startTime` / `endTime` -> `StartTime` / `EndTime`

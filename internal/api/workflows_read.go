@@ -261,6 +261,7 @@ func (s *Server) SearchWorkflows(ctx context.Context, request gen.SearchWorkflow
 			body.ParentWorkflowID = protocol.StringOrList(*b.ParentWorkflowId)
 		}
 		body.WasForkedFrom = b.WasForkedFrom
+		body.IsFork = b.IsFork
 		body.HasParent = b.HasParent
 		if b.QueueName != nil {
 			body.QueueName = protocol.StringOrList(*b.QueueName)
@@ -659,6 +660,7 @@ func (s *Server) GetWorkflowAggregates(ctx context.Context, request gen.GetWorkf
 			body.User = protocol.StringOrList(*b.User)
 		}
 		body.WasForkedFrom = b.WasForkedFrom
+		body.IsFork = b.IsFork
 		body.HasParent = b.HasParent
 		if b.Attributes != nil {
 			body.Attributes = *b.Attributes

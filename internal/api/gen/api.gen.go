@@ -1079,6 +1079,7 @@ type WorkflowAggregatesBody struct {
 	GroupByStatus           *bool                   `json:"groupByStatus,omitempty"`
 	GroupByWorkflowName     *bool                   `json:"groupByWorkflowName,omitempty"`
 	HasParent               *bool                   `json:"hasParent,omitempty"`
+	IsFork                  *bool                   `json:"isFork,omitempty"`
 	ParentWorkflowId        *[]string               `json:"parentWorkflowId,omitempty"`
 	QueueName               *[]string               `json:"queueName,omitempty"`
 	ScheduleName            *[]string               `json:"scheduleName,omitempty"`
@@ -1112,6 +1113,7 @@ type WorkflowSearchBody struct {
 	ExecutorId       *[]string               `json:"executorId,omitempty"`
 	ForkedFrom       *[]string               `json:"forkedFrom,omitempty"`
 	HasParent        *bool                   `json:"hasParent,omitempty"`
+	IsFork           *bool                   `json:"isFork,omitempty"`
 	Limit            *int64                  `json:"limit,omitempty"`
 	LoadInput        *bool                   `json:"loadInput,omitempty"`
 	LoadOutput       *bool                   `json:"loadOutput,omitempty"`
