@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/abn/dbos-relay/compare/v0.5.0...v0.6.0) (2026-10-11)
+
+
+### Features
+
+* **protocol:** forward is_fork workflow filter ([8162426](https://github.com/abn/dbos-relay/commit/8162426584adfe7d2833f9d52185d8fc3880abdf))
+
+
+### Bug Fixes
+
+* **dataplane:** record is_fork fallback gap and pin wire shape ([a67d944](https://github.com/abn/dbos-relay/commit/a67d944ce4759db7ce22b70808ebfa6ce02b55a0))
+
 ## [0.5.0](https://github.com/abn/dbos-relay/compare/v0.4.0...v0.5.0) (2026-10-01)
 
 
