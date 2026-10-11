@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk
+.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk watch/java-connector
 
 ##@ Bootstrap
 
@@ -104,6 +104,15 @@ check: lint vet drift ## Full quality gate
 
 clean: ## Remove build artefacts
 	rm -rf bin dist out
+
+##@ Upstream watches
+
+# Network gate, so it stays out of `make check` and out of every offline test.
+# Run it on a schedule, or by hand before a release. It fails when the Java SDK
+# stops publishing its public Conductor connector, which is the last public
+# source of the wire protocol. See docs/usage/supported-sdks.md.
+watch/java-connector: ## Fail when the Java SDK drops its public Conductor connector (needs network)
+	./scripts/watch-java-connector.py
 
 ##@ Utilities
 

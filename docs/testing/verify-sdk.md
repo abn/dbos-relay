@@ -66,3 +66,7 @@ steps, and records the outcome.
 ## Lagging cells policy
 
 Cells marked "may lag" are explicitly permitted to lag by at most one iteration. For Java, Cell 4 (field parity) and Cell 6 (offline cancel and resume) lag because upstream DBOS Java SDK 0.8.0 system databases use migration sequence 19, which lacks schema elements (such as `completed_at` and `application_name`) expected by the Go SDK data-plane client (version 107). Under ADR 0004 schema safety, Relay's Go data-plane client refuses connection to older schemas rather than attempting uncoordinated DDL. Lagging tests must never be silently omitted: the test runner explicitly reports them as skipped by name in its execution summary. Any required cell without a passing test causes the test runner to fail.
+
+## SDK version ceiling
+
+The sample applications in `examples/` are pinned inside the supported SDK range, and `tests/verifysdk/sdk_ceiling_test.go` enforces it: the test reads the example manifests and fails when a pin has moved past the ceiling. That check reads files only, so it runs offline and fast as part of `make test`, and a future SDK bump cannot leave the supported window silently. The ceiling itself, and the evidence behind it, lives in [Supported SDKs](../usage/supported-sdks.md).
