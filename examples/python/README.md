@@ -20,7 +20,7 @@ Dependencies are declared directly inside `main.py` via inline script metadata (
 
    Alternatively, with standard `pip` (pinned to match `main.py`):
    ```bash
-   pip install "dbos==3.0.0" "psycopg-binary>=3.3.0"
+   pip install "dbos==3.2.0" "psycopg-binary>=3.3.0"
    python main.py
    ```
 

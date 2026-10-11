@@ -30,6 +30,7 @@ and operational usage of Relay.
 * [Declarative operations](usage/declarative.md) - fleet configuration with relay.yaml, apply, and diff
 * [Operations and migrations](usage/operations.md) - schema migrations, rolling upgrades, and rollbacks
 * [Conformance testing](usage/conformance.md) - run the automated Conductor conformance test suite
+* [Supported SDKs](usage/supported-sdks.md) - the supported executor SDK range and why it has a ceiling
 
 ## Testing
 

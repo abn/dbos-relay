@@ -9,3 +9,4 @@ How to run and operate Relay.
 * [Autoscaling](autoscaling.md) - queue-driven executor recommendations for external scalers
 * [Production hardening](hardening.md) - TLS termination and reverse proxy security
 * [Conformance testing](conformance.md) - run the automated Conductor conformance test suite
+* [Supported SDKs](supported-sdks.md) - the supported executor SDK range, why it has a ceiling, and how the ceiling is enforced
