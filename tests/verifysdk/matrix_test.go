@@ -649,6 +649,28 @@ func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
 	return fmt.Sprintf("%d/%d D5 REST endpoints verified conformant", passedOps, totalOps)
 }
 
+// storesPayloadsOutOfLine reports whether an SDK language stores workflow
+// payloads in the workflow_input and workflow_output tables rather than on
+// workflow_status. The Go SDK moved them in v1.4.0 (migration 109, "Workflow
+// payload tables"), so the Go sample application at v1.6.0 hits the same
+// divergence as Python and TypeScript: the pinned Go SDK client v1.3.0 reads
+// payloads from workflow_status only. The executor answers payload reads over
+// the wire, so only a data-plane read is blind. Recorded in ADR 0013.
+func storesPayloadsOutOfLine(lang string) bool {
+	return lang == "Go" || lang == "Python" || lang == "TypeScript"
+}
+
+func TestStoresPayloadsOutOfLine(t *testing.T) {
+	for _, lang := range []string{"Go", "Python", "TypeScript"} {
+		if !storesPayloadsOutOfLine(lang) {
+			t.Errorf("%s stores payloads out of line at or below the SDK ceiling, so Cell 4 must tolerate the data-plane payload blind spot", lang)
+		}
+	}
+	if storesPayloadsOutOfLine("Java") {
+		t.Error("Java has no split and no out-of-line payload tables at the pinned version, so Cell 4 must not tolerate the divergence for it")
+	}
+}
+
 func TestVerifySDK_Matrix(t *testing.T) {
 	if os.Getenv("RELAY_VERIFY_SDK") != "1" {
 		t.Skip("skipping SDK verification matrix: set RELAY_VERIFY_SDK=1 (or run make verify-sdk) to run")
@@ -1115,8 +1137,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if (apiWf.Input == nil && sdkWf.Input != nil) || (apiWf.Input != nil && sdkWf.Input == nil) {
-					if (lang == "Python" || lang == "TypeScript") && apiWf.Input != nil && sdkWf.Input == nil {
-						t.Logf("[%s] Upstream schema divergence: %s SDK stores inputs out-of-line in the workflow_input table, which Go SDK client v1.3.0 does not query out-of-line (API=%v, SDK DB=%v)", lang, lang, *apiWf.Input, sdkWf.Input)
+					if storesPayloadsOutOfLine(lang) && apiWf.Input != nil && sdkWf.Input == nil {
+						t.Logf("[%s] Upstream schema divergence: the %s SDK stores inputs out-of-line in the workflow_input table, which the pinned Go SDK client v1.3.0 does not read; only a data-plane read is blind (ADR 0013) (API=%v, SDK DB=%v)", lang, lang, *apiWf.Input, sdkWf.Input)
 					} else {
 						t.Errorf("[%s] Input presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Input, sdkWf.Input)
 						return
@@ -1167,8 +1189,12 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if (apiWf.Output == nil && sdkWf.Output != nil) || (apiWf.Output != nil && sdkWf.Output == nil) {
-					t.Errorf("[%s] Output presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Output, sdkWf.Output)
-					return
+					if storesPayloadsOutOfLine(lang) && apiWf.Output != nil && sdkWf.Output == nil {
+						t.Logf("[%s] Upstream schema divergence: the %s SDK stores outputs out-of-line in the workflow_output table, which the pinned Go SDK client v1.3.0 does not read; only a data-plane read is blind (ADR 0013) (API=%v, SDK DB=%v)", lang, lang, apiWf.Output, sdkWf.Output)
+					} else {
+						t.Errorf("[%s] Output presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Output, sdkWf.Output)
+						return
+					}
 				}
 				if apiWf.Output != nil && sdkWf.Output != nil {
 					var sdkOutputStr string
@@ -1212,8 +1238,12 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				}
 
 				if (apiWf.Error == nil && sdkWf.Error != nil) || (apiWf.Error != nil && sdkWf.Error == nil) {
-					t.Errorf("[%s] Error presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Error, sdkWf.Error)
-					return
+					if storesPayloadsOutOfLine(lang) && apiWf.Error != nil && sdkWf.Error == nil {
+						t.Logf("[%s] Upstream schema divergence: the %s SDK stores errors out-of-line in the workflow_output table, which the pinned Go SDK client v1.3.0 does not read; only a data-plane read is blind (ADR 0013) (API=%v, SDK DB=%v)", lang, lang, apiWf.Error, sdkWf.Error)
+					} else {
+						t.Errorf("[%s] Error presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Error, sdkWf.Error)
+						return
+					}
 				}
 				if apiWf.Error != nil && sdkWf.Error != nil {
 					sdkErrStr := sdkWf.Error.Error()

@@ -70,3 +70,8 @@ Cells marked "may lag" are explicitly permitted to lag by at most one iteration.
 ## SDK version ceiling
 
 The sample applications in `examples/` are pinned inside the supported SDK range, and `tests/verifysdk/sdk_ceiling_test.go` enforces it: the test reads the example manifests and fails when a pin has moved past the ceiling. That check reads files only, so it runs offline and fast as part of `make test`, and a future SDK bump cannot leave the supported window silently. The ceiling itself, and the evidence behind it, lives in [Supported SDKs](../usage/supported-sdks.md).
+
+### Payload parity at the ceiling
+
+Cell 4 compares a workflow's fields from the executor's response with a data-plane read of the same workflow. The Go SDK moved workflow inputs, outputs and errors into the `workflow_input` and `workflow_output` tables in v1.4.0 (migration 109), so a Go sample application at v1.6.0 stores payloads out of line exactly as Python and TypeScript already did. The pinned Go SDK client v1.3.0 reads payloads from `workflow_status` only, so the data-plane read returns no payload while the executor's response still carries it. The cell logs that divergence and continues, comparing the remaining fields byte for byte. The gap and the reasoning for keeping the pin are recorded in
+[ADR 0013](../adr/0013-out-of-line-workflow-payloads.md).
