@@ -22,7 +22,14 @@ large input" (`dbos-transact-ts` commit `749a4d4`,
 `109_workflow_payload_tables`). The Python SDK has the same layout
 (`dbos-transact-py` commit `2b93e14`, `dbos/_migration.py`). The TypeScript
 v5.1.10 migration list ends at `122_workflow_status_deadline_index`, and the
-Python source reaches migration 123.
+Python source reaches migration 123. The Go SDK made the same move: migration
+`109_create_workflow_payload_tables` landed in commit
+`ed914c49231128a3456992f606bfacc3013e990e` (2026-09-14, "Workflow payload
+tables", #470) and first released in v1.4.0, so every Go application at v1.4.0
+or above stores payloads out of line as well. The DBOS September 2026 release
+post records the change as one release across Python 3.0, TypeScript 5.0, Go 1.4
+and Java 1.1 (https://dbos.dev/blog/whats-new-in-dbos-september-2026, read
+2026-10-11).
 
 Relay's data-plane client is constructed with `dbos.NewClient`
 (`internal/dataplane/client.go`). `NewClient` hardcodes `SkipMigrations: true`,
