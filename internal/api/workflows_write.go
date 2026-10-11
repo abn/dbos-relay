@@ -589,7 +589,7 @@ func (s *Server) ImportWorkflow(ctx context.Context, request gen.ImportWorkflowR
 
 // RewindWorkflow rewinds a workflow to an earlier step, discarding the history
 // after it. Unlike a fork the workflow keeps its identifier.
-// Provenance: Conductor OpenAPI POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind (operation: rewindWorkflow), vendored from https://cloud.dbos.dev/conductor/v2/openapi.json, fetched 2026-09-30.
+// Provenance: Conductor OpenAPI POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/rewind (operation: rewindWorkflow), vendored from https://cloud.dbos.dev/conductor/v2/openapi.json, fetched 2026-10-11.
 func (s *Server) RewindWorkflow(ctx context.Context, request gen.RewindWorkflowRequestObject) (gen.RewindWorkflowResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 

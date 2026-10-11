@@ -104,7 +104,7 @@ Relay supports 33 distinct protocol message types, matching the upstream Go SDK 
 ### Workflow Inspection and Queries
 
 8. `list_workflows`
-   * Request body: `workflow_uuids` (array of strings, optional), `workflow_name` (string or array, optional), `authenticated_user` (string or array, optional), `start_time` (timestamp, optional), `end_time` (timestamp, optional), `status` (string or array, optional), `application_version` (string or array, optional), `limit` (integer, optional), `offset` (integer, optional), `sort_desc` (boolean), `load_input` (boolean), `load_output` (boolean), `queues_only` (boolean).
+   * Request body: `workflow_uuids` (array of strings, optional), `workflow_name` (string or array, optional), `authenticated_user` (string or array, optional), `start_time` (timestamp, optional), `end_time` (timestamp, optional), `status` (string or array, optional), `application_version` (string or array, optional), `is_fork` (boolean, optional), `limit` (integer, optional), `offset` (integer, optional), `sort_desc` (boolean), `load_input` (boolean), `load_output` (boolean), `queues_only` (boolean).
    * Response: `output` (array of workflow status records).
 
 9. `list_queued_workflows`
