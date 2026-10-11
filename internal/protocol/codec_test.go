@@ -695,7 +695,9 @@ func TestDecodeEncodeRoundTrip(t *testing.T) {
 }
 
 // TestListWorkflowsRequest_IsForkWire asserts the is_fork filter encodes and
-// decodes for both boolean values on the list_workflows message type.
+// decodes for both boolean values on the list_workflows message type, and that
+// a nil filter leaves the key off the wire, which is what lets an executor
+// that predates the field ignore it.
 func TestListWorkflowsRequest_IsForkWire(t *testing.T) {
 	for _, want := range []bool{true, false} {
 		name := "false"
@@ -736,6 +738,26 @@ func TestListWorkflowsRequest_IsForkWire(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("omitted", func(t *testing.T) {
+		req := &ListWorkflowsRequest{
+			Envelope: Envelope{Type: MessageTypeListWorkflows, RequestID: "req-uuid"},
+			Body:     ListWorkflowsRequestBody{},
+		}
+		encoded, err := Encode(req)
+		if err != nil {
+			t.Fatalf("Encode failed: %v", err)
+		}
+		var wire struct {
+			Body map[string]json.RawMessage `json:"body"`
+		}
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatalf("Unmarshal failed: %v", err)
+		}
+		if _, present := wire.Body["is_fork"]; present {
+			t.Fatalf("nil IsFork encoded an is_fork key: %s", encoded)
+		}
+	})
 }
 
 func TestGoldenFiles(t *testing.T) {

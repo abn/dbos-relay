@@ -123,6 +123,12 @@ and executes remaining steps.
 
 WebSocket fork requests (`fork_workflow`) and data-plane fork mutations apply identical workflow initialization semantics. The data-plane client invokes `client.ForkWorkflow` (`internal/dataplane/client.go`), creating a new workflow record with state copied up to the requested step index and enqueued for execution on `_dbos_internal_queue`.
 
+### Fork filtering
+
+The `is_fork` filter is applied by the executor, not by Relay: `list_workflows` and `list_queued_workflows` carry it on the wire and the SDK evaluates it against its own system database. Upstream added the filter in Go SDK v1.6.0 (source: `https://github.com/dbos-inc/dbos-transact-golang` commit `de29e534d9bd788e85f77dd3dce63b20571b8f1b`) and in Java 1.2.0 (source: `https://github.com/dbos-inc/dbos-transact-java` commit `0f4fe187b20bd6f5f735d8f99d810aeb90b8314d`).
+
+The local SDK-client data plane does not apply the filter, because the pinned Go SDK (v1.3.0) predates `WithFilterIsFork`. A read served from the data plane therefore returns a superset: it loses no rows and fails only to narrow the result set. Live executors filter correctly, so the gap appears only when a read falls back to the data plane during an outage, and the same pinning reasoning applies as for out-of-line payloads in [ADR 0013](../adr/0013-out-of-line-workflow-payloads.md).
+
 ### Durable sleep and message receive during cancellation
 
 When a running workflow is cancelled via the data plane while suspended in a durable sleep (`sleep`)

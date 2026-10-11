@@ -250,7 +250,7 @@ func (s *Server) DeleteToken(ctx context.Context, request gen.DeleteTokenRequest
 }
 
 // UpdateToken renames an existing API key. The key secret is unchanged.
-// Provenance: Conductor OpenAPI PATCH /v2/orgs/{orgName}/tokens/{tokenName} (operation: updateToken), vendored from https://cloud.dbos.dev/conductor/v2/openapi.json, fetched 2026-09-30.
+// Provenance: Conductor OpenAPI PATCH /v2/orgs/{orgName}/tokens/{tokenName} (operation: updateToken), vendored from https://cloud.dbos.dev/conductor/v2/openapi.json, fetched 2026-10-11.
 func (s *Server) UpdateToken(ctx context.Context, request gen.UpdateTokenRequestObject) (gen.UpdateTokenResponseObject, error) {
 	orgName := normalizeOrg(request.OrgName)
 

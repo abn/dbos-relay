@@ -1,8 +1,10 @@
 package dataplane
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"strconv"
 	"testing"
@@ -57,6 +59,25 @@ func TestListWorkflowsRequestBody_FieldCoverage(t *testing.T) {
 	typ := reflect.TypeOf(protocol.ListWorkflowsRequestBody{})
 	if got := typ.NumField(); got != len(expectedMappedFields)+len(knownUnmappedFields) {
 		t.Fatalf("ListWorkflowsRequestBody field count mismatch: struct has %d fields, expected %d mapped and %d knowingly unmapped", got, len(expectedMappedFields), len(knownUnmappedFields))
+	}
+
+	// A knowingly unmapped field must genuinely stay unapplied. When the SDK pin
+	// moves and the data plane starts applying one, this fails until the coverage
+	// sets are updated, so the guard cannot go stale in that direction.
+	knownUnmappedSDKSymbols := map[string]string{
+		"IsFork": "dbos.WithFilterIsFork",
+	}
+	for name, symbol := range knownUnmappedSDKSymbols {
+		if !knownUnmappedFields[name] {
+			continue
+		}
+		source, err := os.ReadFile("client.go")
+		if err != nil {
+			t.Fatalf("reading client.go: %v", err)
+		}
+		if bytes.Contains(source, []byte(symbol)) {
+			t.Errorf("ListWorkflowsRequestBody field %q is listed as knowingly unmapped but client.go applies %s; map it in the data plane and drop the entry", name, symbol)
+		}
 	}
 
 	for i := 0; i < typ.NumField(); i++ {
