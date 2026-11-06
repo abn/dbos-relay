@@ -607,10 +607,10 @@ class DashboardApp {
         <div class="sidebar-header">
           <a href="#/fleet" class="brand-logo" aria-label="Relay Home" title="Relay Home">
             <svg width="24" height="24" viewBox="0 0 32 32" fill="none" class="brand-logo-svg" aria-hidden="true">
-              <path d="M9 6.5V25.5" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round"/>
-              <path d="M9 7.5H17C20.5899 7.5 23.5 10.4101 23.5 14C23.5 17.5899 20.5899 20.5 17 20.5H9" stroke="var(--color-primary)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M15.5 19.5L22.5 25.5" stroke="var(--color-purple)" stroke-width="3" stroke-linecap="round"/>
-              <circle cx="23" cy="25" r="2" fill="var(--color-purple)"/>
+              <rect width="32" height="32" rx="8" fill="#1f4ed8"/>
+              <rect x="6.5" y="6.5" width="9" height="9" rx="2.5" fill="#ffffff"/>
+              <rect x="17" y="17" width="9" height="9" rx="2.5" fill="#ffffff"/>
+              <path d="M13.5 13.5L15.5 15.5" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
             </svg>
             <span class="brand-text">Relay</span>
             <span class="sidebar-hover-expand" data-action="toggleSidebarFold" title="Expand sidebar" aria-label="Expand sidebar">
