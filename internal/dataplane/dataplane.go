@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -66,6 +67,9 @@ type AppConfig struct {
 	Integration      Integration
 	MaxConnections   int
 	StatementTimeout time.Duration
+	// Logger receives the SDK client's diagnostics. A nil logger leaves the
+	// SDK default in place.
+	Logger *slog.Logger
 }
 
 // EnqueueWorkflowInput describes a workflow to enqueue through the application

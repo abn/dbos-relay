@@ -30,6 +30,7 @@ and operational usage of Relay.
 * [Direct mode](usage/direct.md) - run against the application system database with no connector
 * [Declarative operations](usage/declarative.md) - fleet configuration with relay.yaml, apply, and diff
 * [Operations and migrations](usage/operations.md) - schema migrations, rolling upgrades, and rollbacks
+* [Doctor preflight](usage/doctor.md) - read-only migration and production readiness checks
 * [Conformance testing](usage/conformance.md) - run the automated Conductor conformance test suite
 * [Supported SDKs](usage/supported-sdks.md) - the Attached mode ceiling and the Direct mode schema window
 

@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,12 +17,14 @@ import (
 
 	"github.com/abn/relay/internal/dataplane"
 	"github.com/abn/relay/internal/declarative"
+	"github.com/abn/relay/internal/doctor"
+	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
 )
 
 func TestCommandTreeSubcommandsExist(t *testing.T) {
 	cmd := newRootCommand()
-	expected := []string{"version", "serve", "migrate", "apikey", "apply", "diff", "openapi", "test-conformance"}
+	expected := []string{"version", "serve", "migrate", "apikey", "apply", "diff", "openapi", "test-conformance", "probe", "doctor"}
 	for _, name := range expected {
 		sub, _, err := cmd.Find([]string{name})
 		if err != nil || sub == nil || sub.Name() != name {
@@ -215,6 +221,99 @@ func TestDiffRequiresFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "required flag") && !strings.Contains(err.Error(), "file") {
 		t.Fatalf("expected flag error, got: %v", err)
+	}
+}
+
+func TestDoctorCommandRequiresDatabaseURL(t *testing.T) {
+	t.Setenv("RELAY_DATABASE_URL", "")
+	t.Setenv("RELAY_EMBEDDED", "")
+
+	cmd := newRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected doctor to fail when the database URL is unset")
+	}
+	var usage *doctor.UsageError
+	if !errors.As(err, &usage) || usage.ExitCode() != 2 {
+		t.Fatalf("expected a usage error with exit code 2, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "database URL is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDoctorCommandRuns(t *testing.T) {
+	ctx := context.Background()
+	dbURL := "sqlite://" + filepath.Join(t.TempDir(), "relay.db")
+	s, err := store.Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := s.Migrate(ctx); err != nil {
+		s.Close()
+		t.Fatalf("migrate store: %v", err)
+	}
+	s.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	t.Setenv("RELAY_CONFIG", "")
+	t.Setenv("RELAY_DATABASE_URL", "")
+	t.Setenv("RELAY_EMBEDDED", "")
+	t.Setenv("RELAY_INTERNAL_SECRET", "")
+	t.Setenv("RELAY_OIDC_ISSUER", "")
+
+	cmd := newRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"doctor", "--database-url", dbURL, "--relay-url", server.URL})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("doctor failed: %v\n%s", err, buf.String())
+	}
+	if !strings.Contains(buf.String(), "Relay doctor") || !strings.Contains(buf.String(), "control-plane.migrations") {
+		t.Fatalf("unexpected output:\n%s", buf.String())
+	}
+}
+
+func TestDoctorCommandFailsOnBadDatabase(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	t.Setenv("RELAY_DATABASE_URL", "")
+	t.Setenv("RELAY_EMBEDDED", "")
+
+	cmd := newRootCommand()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"doctor",
+		"--database-url", "sqlite://" + filepath.Join(t.TempDir(), "missing", "relay.db"),
+		"--relay-url", server.URL,
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected doctor to fail when the database is not reachable")
+	}
+	var failure *doctor.FailureError
+	if !errors.As(err, &failure) || failure.ExitCode() != 1 {
+		t.Fatalf("expected a failure error with exit code 1, got %v", err)
+	}
+	if !strings.Contains(buf.String(), "FAIL") {
+		t.Fatalf("expected a FAIL line in the report:\n%s", buf.String())
 	}
 }
 

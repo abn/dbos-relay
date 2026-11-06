@@ -187,6 +187,21 @@ func (b *sqliteBackend) MigrateDown(ctx context.Context, steps int) error {
 	return nil
 }
 
+func (b *sqliteBackend) ProbeWrite(ctx context.Context) error {
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting write probe: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE organisations SET name = name WHERE false"); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("write probe failed: %w", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		return fmt.Errorf("rolling back write probe: %w", err)
+	}
+	return nil
+}
+
 func (b *sqliteBackend) Close() {
 	if b.db != nil {
 		_ = b.db.Close()

@@ -6,6 +6,7 @@ How to run and operate Relay.
 * [Direct mode](direct.md) - run against the application system database with no connector
 * [Declarative operations](declarative.md) - fleet configuration with relay.yaml, apply, and diff
 * [Operations and migrations](operations.md) - schema migrations, rolling upgrades, and rollbacks
+* [Doctor preflight](doctor.md) - read-only migration and production readiness checks
 * [Workflow retention](retention.md) - retention thresholds, global timeouts, and shared-database semantics
 * [Autoscaling](autoscaling.md) - queue-driven executor recommendations for external scalers
 * [Production hardening](hardening.md) - TLS termination and reverse proxy security

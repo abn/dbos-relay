@@ -14,6 +14,7 @@ type backend interface {
 	MigrateVersion(ctx context.Context) (uint, bool, error)
 	MigrateForce(ctx context.Context, version int) error
 	MigrateDown(ctx context.Context, steps int) error
+	ProbeWrite(ctx context.Context) error
 	Close()
 	Truncate(ctx context.Context) error
 }

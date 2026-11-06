@@ -117,6 +117,7 @@ The project wiki is maintained in [`docs/`](docs/index.md) as an Open Knowledge 
 - [Overview](docs/overview.md): Project scope, architecture, and background
 - [Design & Compatibility Tiers](docs/design/compatibility-tiers.md): Verification tiers and conformance gates
 - [Architecture](docs/architecture/index.md): Module boundaries, recovery lifecycle, and data-plane access
+- [Doctor preflight](docs/usage/doctor.md): Read-only migration and production readiness checks
 - [Executor WebSocket Protocol](docs/protocol/executor-ws.md): Wire specification and frame formats
 - [Architecture Decision Records (ADRs)](docs/adr/index.md): Technical decisions and design rationale
 - [Software Changelog](docs/changelog.md): Release history managed by Release Please

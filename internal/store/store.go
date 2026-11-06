@@ -69,6 +69,12 @@ func (s *Store) MigrateDown(ctx context.Context, steps int) error {
 	return s.b.MigrateDown(ctx, steps)
 }
 
+// ProbeWrite verifies that the control-plane role can write without changing
+// any row. It runs a no-op update in a transaction and rolls it back.
+func (s *Store) ProbeWrite(ctx context.Context) error {
+	return s.b.ProbeWrite(ctx)
+}
+
 func (s *Store) Close() {
 	if s.b != nil {
 		s.b.Close()
