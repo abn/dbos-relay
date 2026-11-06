@@ -426,8 +426,8 @@ func TestDashboard_LiveServerRootServesUI(t *testing.T) {
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	body := string(bodyBytes)
-	if !strings.Contains(body, "Relay Dashboard") {
-		t.Errorf("expected HTML body to contain 'Relay Dashboard'")
+	if !strings.Contains(body, "Relay Console") {
+		t.Errorf("expected HTML body to contain 'Relay Console'")
 	}
 	if !strings.Contains(body, `<div id="app"></div>`) {
 		t.Errorf("expected HTML body to contain app root element")
@@ -503,7 +503,7 @@ func TestDashboard_StaticAssetsAndSPARoutes(t *testing.T) {
 		if !strings.Contains(ct, "text/html") {
 			t.Errorf("expected content type text/html for SPA route %s, got %s", sp, ct)
 		}
-		if !strings.Contains(string(bodyBytes), "Relay Dashboard") {
+		if !strings.Contains(string(bodyBytes), "Relay Console") {
 			t.Errorf("expected SPA route %s to serve index.html", sp)
 		}
 	}
@@ -1050,14 +1050,14 @@ func TestDashboard_FleetWideAndPerSectionFiltering(t *testing.T) {
 	bundle := string(bundleBytes)
 
 	// Ensure fleet-wide option and single authoritative title bar filter exist
-	if !strings.Contains(bundle, "All Applications") {
-		t.Errorf("bundle should include 'All Applications' option")
+	if !strings.Contains(bundle, "All applications") {
+		t.Errorf("bundle should include 'All applications' option")
 	}
 	if !strings.Contains(bundle, "header-app-select") {
 		t.Errorf("bundle should include header-app-select in title bar")
 	}
-	if !strings.Contains(bundle, "Show All Applications") {
-		t.Errorf("bundle should include 'Show All Applications' reset button")
+	if !strings.Contains(bundle, "Show all applications") {
+		t.Errorf("bundle should include 'Show all applications' reset button")
 	}
 	if !strings.Contains(bundle, "workflowAppMap") {
 		t.Errorf("bundle should include workflowAppMap for cross-app workflow routing")
@@ -1074,8 +1074,8 @@ func TestDashboard_ApplicationDataAccessIndicator(t *testing.T) {
 	if !strings.Contains(bundle, "Data Access Mode") {
 		t.Errorf("bundle should include 'Data Access Mode' label in Application Details")
 	}
-	if !strings.Contains(bundle, "Application Data Plane") {
-		t.Errorf("bundle should include 'Application Data Plane' info section")
+	if !strings.Contains(bundle, "Application data plane") {
+		t.Errorf("bundle should include 'Application data plane' info section")
 	}
 	if !strings.Contains(bundle, "Executor Hub") {
 		t.Errorf("bundle should include 'Executor Hub' access status pill")

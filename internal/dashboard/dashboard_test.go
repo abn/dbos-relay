@@ -51,8 +51,8 @@ func TestRootServesIndexHtml(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "Relay Dashboard") {
-		t.Errorf("expected body to contain 'Relay Dashboard', got %s", body)
+	if !strings.Contains(body, "Relay Console") {
+		t.Errorf("expected body to contain 'Relay Console', got %s", body)
 	}
 	if !strings.Contains(body, `<div id="app">`) {
 		t.Errorf("expected body to contain '<div id=\"app\">', got %s", body)
@@ -154,7 +154,7 @@ func TestSPAFallback(t *testing.T) {
 		if !strings.Contains(ct, "text/html") {
 			t.Errorf("expected text/html for %s, got %s", path, ct)
 		}
-		if !strings.Contains(w.Body.String(), "Relay Dashboard") {
+		if !strings.Contains(w.Body.String(), "Relay Console") {
 			t.Errorf("expected %s to serve index.html", path)
 		}
 	}

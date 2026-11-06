@@ -91,6 +91,12 @@ if (fs.existsSync(PLAYGROUND_ASSETS)) {
   cleanStaleBundles(PLAYGROUND_ASSETS, "app");
   fs.copyFileSync(path.join(ASSETS_DIST, jsName), path.join(PLAYGROUND_ASSETS, jsName));
   fs.copyFileSync(path.join(ASSETS_DIST, cssName), path.join(PLAYGROUND_ASSETS, cssName));
+  for (const file of ["archivo-latin.woff2", "OFL.txt"]) {
+    const asset = path.join(srcAssetsDir, file);
+    if (fs.existsSync(asset)) {
+      fs.copyFileSync(asset, path.join(PLAYGROUND_ASSETS, file));
+    }
+  }
   const consoleHtmlPath = path.join(__dirname, "..", "site", "playground", "console.html");
   let consoleHtml = fs.readFileSync(consoleHtmlPath, "utf-8");
   consoleHtml = consoleHtml

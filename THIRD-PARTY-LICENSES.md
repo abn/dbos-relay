@@ -230,12 +230,12 @@ See the LICENSE file in the source repository for detailed terms.
 
 ## Archivo
 
-* **Package**: Archivo variable font, `site/assets/fonts/archivo-latin.woff2`
+* **Package**: Archivo variable font, `site/assets/fonts/archivo-latin.woff2` and `console/src/assets/archivo-latin.woff2`
 * **License**: SIL Open Font License 1.1
 * **Copyright**: Copyright 2020 The Archivo Project Authors
 * **Source**: `https://fonts.gstatic.com/s/archivo/v25/k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2`, Archivo v25, latin subset
 * **SHA-256**: `8f704806dbedeaaeca334b11ec348bc3ac3a439d6431544b3afb54f534ee4967`
 * **Fetched**: 2026-11-06
-* **OFL**: `site/assets/fonts/OFL.txt`, SHA-256 `1778201b7bd33e8c08a2eda32a4ad2f69bc38ced9731b01cc3fc47f268c8ef3c` (upstream copy with trailing whitespace normalized)
+* **OFL**: `site/assets/fonts/OFL.txt` and `console/src/assets/OFL.txt`, SHA-256 `1778201b7bd33e8c08a2eda32a4ad2f69bc38ced9731b01cc3fc47f268c8ef3c` (upstream copy with trailing whitespace normalized)
 
 The full license text is in `site/assets/fonts/OFL.txt`.

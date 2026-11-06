@@ -7,6 +7,7 @@ Release Please maintains from the commit history.
 
 ## Unreleased
 
+* **Update**: Overhauled the Relay console. Replaced the GitHub-like shell with a light-first ledger layout and a matching dark theme: Archivo, hairline sections, grouped navigation, quiet status markers, responsive tables, and a redrawn workflow DAG. Refreshed the dashboard screenshots and added the Archivo font and OFL to the dashboard bundle and playground.
 * **Update**: Added dark mode to the landing page. The page follows the operating system preference through `prefers-color-scheme` until a glyph-only toggle selects light or dark; choosing the theme that matches the system restores automatic following. The palette uses a near-black surface, light text, a lighter cobalt accent, and adjusted inline code, selection, and button states. The browser theme colour follows the preference.
 * **Update**: Redesigned the landing page around the two-mode story. Replaced the dark gradient hero, icon-card grid, and long comparison table with a restrained editorial layout, a direct Attached/Direct comparison, and a short quickstart. Added a self-hosted Archivo variable font and its OFL license.
 * **Update**: Replaced the Circuit Handoff mark with a simpler two-node handoff tile across the landing page, documentation header, dashboard, playground, favicon, and product screenshots. Renamed the favicon to a new URL so the immutable asset cache does not keep the old mark, and shortened the screenshot cache so the refreshed images replace the old ones within an hour.
