@@ -339,3 +339,92 @@ func TestRecoverDeadExecutor_RecorderCapturesBothSuccessAndFailure(t *testing.T)
 		t.Errorf("expected peer-3 dispatch recorded with success=true")
 	}
 }
+
+type mockDirectRecovery struct {
+	has              bool
+	ids              []string
+	err              error
+	pending          bool
+	checkErr         error
+	calls            int
+	lastCheckVersion string
+}
+
+func (m *mockDirectRecovery) HasDirectRecovery(appID pgtype.UUID) bool { return m.has }
+func (m *mockDirectRecovery) Recover(ctx context.Context, appID pgtype.UUID, executorIDs []string, appVersion string) ([]string, error) {
+	m.calls++
+	return m.ids, m.err
+}
+func (m *mockDirectRecovery) CheckPendingWorkflows(ctx context.Context, appID pgtype.UUID, executorID, appVersion string) (bool, error) {
+	m.lastCheckVersion = appVersion
+	return m.pending, m.checkErr
+}
+
+func TestRecoverDeadExecutor_DirectDatabasePath(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	ctx := context.Background()
+
+	t.Run("database recovery deletes the dead executor", func(t *testing.T) {
+		finder := &mockPeerFinder{err: errors.New("peer finder should not be called")}
+		deleter := &mockDeleter{}
+		recorder := &mockRecoveryRecorder{}
+		direct := &mockDirectRecovery{has: true, ids: []string{"wf-1"}}
+		d := liveness.NewRecoveryDispatcher(finder, &mockTransport{}, deleter, liveness.DispatcherOptions{})
+		d.SetDirectRecovery(direct)
+		d.SetRecorder(recorder)
+
+		if err := d.RecoverDeadExecutor(ctx, appID, "exec-dead", "v1"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if direct.calls != 1 {
+			t.Fatalf("expected one direct recovery call, got %d", direct.calls)
+		}
+		if len(deleter.deleted) != 1 || deleter.deleted[0] != "exec-dead" {
+			t.Fatalf("expected dead executor deletion, got %v", deleter.deleted)
+		}
+		if len(recorder.records) != 1 || recorder.records[0].TargetExecutorID != "database" {
+			t.Fatalf("expected a database recovery record, got %+v", recorder.records)
+		}
+	})
+
+	t.Run("database failure falls back to peers", func(t *testing.T) {
+		finder := &mockPeerFinder{peers: []liveness.Peer{
+			{AppID: appID, ExecutorID: "peer", ApplicationVersion: "v1"},
+		}}
+		transport := &mockTransport{responses: map[string]*protocol.RecoveryResponse{
+			"peer": {Success: true},
+		}}
+		direct := &mockDirectRecovery{has: true, err: errors.New("read-only")}
+		d := liveness.NewRecoveryDispatcher(finder, transport, &mockDeleter{}, liveness.DispatcherOptions{})
+		d.SetDirectRecovery(direct)
+
+		if err := d.RecoverDeadExecutor(ctx, appID, "exec-dead", "v1"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if direct.calls != 1 {
+			t.Fatalf("expected one direct attempt, got %d", direct.calls)
+		}
+		if len(transport.calls) != 1 || transport.calls[0] != "peer" {
+			t.Fatalf("expected peer fallback, got %v", transport.calls)
+		}
+	})
+}
+
+func TestRecoverDeadExecutor_DirectPendingStopsDeletion(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	direct := &mockDirectRecovery{has: true, ids: []string{"wf-1"}, pending: true}
+	deleter := &mockDeleter{}
+	d := liveness.NewRecoveryDispatcher(&mockPeerFinder{}, &mockTransport{}, deleter, liveness.DispatcherOptions{})
+	d.SetDirectRecovery(direct)
+
+	err := d.RecoverDeadExecutor(context.Background(), appID, "exec-dead", "v1")
+	if !errors.Is(err, liveness.ErrRecoveryFailed) {
+		t.Fatalf("expected ErrRecoveryFailed, got %v", err)
+	}
+	if len(deleter.deleted) != 0 {
+		t.Fatalf("dead executor must not be deleted while pending work remains: %v", deleter.deleted)
+	}
+	if direct.lastCheckVersion != "" {
+		t.Fatalf("pending check must be version-agnostic, got version %q", direct.lastCheckVersion)
+	}
+}
