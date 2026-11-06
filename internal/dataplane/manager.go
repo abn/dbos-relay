@@ -249,6 +249,22 @@ func (m *DefaultManager) Dispatch(ctx context.Context, appID pgtype.UUID, msg pr
 	return client.Dispatch(dispatchCtx, msg)
 }
 
+// GetEvent reads a single event value through the application's data plane. It
+// is a read, so it works in read-only mode.
+func (m *DefaultManager) GetEvent(ctx context.Context, appID pgtype.UUID, workflowID, key string) (WorkflowEvent, error) {
+	client, cfg, err := m.getOrInitClient(appID)
+	if err != nil {
+		return WorkflowEvent{}, err
+	}
+	dispatchCtx := ctx
+	if cfg.StatementTimeout > 0 {
+		var cancel context.CancelFunc
+		dispatchCtx, cancel = context.WithTimeout(ctx, cfg.StatementTimeout)
+		defer cancel()
+	}
+	return client.GetEvent(dispatchCtx, workflowID, key)
+}
+
 // Enqueue writes a workflow row through the application's data plane. It is a
 // mutation and therefore requires read-write mode.
 func (m *DefaultManager) Enqueue(ctx context.Context, appID pgtype.UUID, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error) {

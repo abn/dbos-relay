@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/abn/relay/internal/dataplane"
 	"github.com/abn/relay/internal/problem"
@@ -34,6 +35,11 @@ type sendWorkflowMessageRequest struct {
 	Topic          string          `json:"topic,omitempty"`
 	Payload        json.RawMessage `json:"payload"`
 	IdempotencyKey *string         `json:"idempotencyKey,omitempty"`
+}
+
+type workflowEventResponse struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
 }
 
 // ServeEnqueueWorkflow handles POST .../workflows/enqueue.
@@ -77,6 +83,35 @@ func (s *Server) ServeEnqueueWorkflow(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", fmt.Sprintf("/v2/orgs/%s/apps/%s/workflows/%s", orgName, appName, res.WorkflowID))
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(enqueueWorkflowResponse{WorkflowID: res.WorkflowID})
+}
+
+// ServeGetWorkflowEvent handles GET .../workflows/{workflowId}/event?key=.
+func (s *Server) ServeGetWorkflowEvent(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if strings.TrimSpace(key) == "" {
+		writeProblem(w, http.StatusBadRequest, "Bad Request", "event key is required")
+		return
+	}
+
+	router, ok := s.router.(interface {
+		GetWorkflowEvent(ctx context.Context, orgName, appName, workflowID, key string) (dataplane.WorkflowEvent, error)
+	})
+	if !ok {
+		writeProblem(w, http.StatusNotImplemented, "Not Implemented", "event lookup is not supported by this server")
+		return
+	}
+
+	orgName := normalizeOrg(r.PathValue("orgName"))
+	appName := r.PathValue("appName")
+	event, err := router.GetWorkflowEvent(r.Context(), orgName, appName, r.PathValue("workflowId"), key)
+	if err != nil {
+		writeRouterProblem(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(workflowEventResponse{Key: event.Key, Value: event.Value})
 }
 
 // ServeSendWorkflowMessage handles POST .../workflows/{workflowId}/send.

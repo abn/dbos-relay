@@ -16,6 +16,7 @@ var (
 	ErrNoDataPlaneConfigured = errors.New("no data-plane configured for application")
 	ErrReadOnlyMode          = errors.New("data-plane is in read-only mode")
 	ErrUnsupportedOperation  = errors.New("operation not supported by data-plane")
+	ErrEventNotFound         = errors.New("workflow event not found")
 )
 
 // Mode defines the access mode for an application's data plane connection.
@@ -93,6 +94,12 @@ type SendWorkflowMessageInput struct {
 	IdempotencyKey *string
 }
 
+// WorkflowEvent is the decoded value stored under a workflow event key.
+type WorkflowEvent struct {
+	Key   string
+	Value any
+}
+
 // Validate checks that the input can be written without re-encoding an opaque
 // value. Writes accept JSON only so a value Relay cannot decode is rejected
 // rather than reinterpreted.
@@ -154,6 +161,7 @@ func NonDatabaseReason(msgType protocol.MessageType) string {
 // Client represents the data-plane interface to an application's system database.
 type Client interface {
 	Dispatch(ctx context.Context, msg protocol.Message) (protocol.Message, error)
+	GetEvent(ctx context.Context, workflowID, key string) (WorkflowEvent, error)
 	Enqueue(ctx context.Context, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error)
 	Send(ctx context.Context, input SendWorkflowMessageInput) error
 	Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error)
@@ -169,6 +177,7 @@ type Manager interface {
 	GetMode(appID pgtype.UUID) (Mode, bool)
 	GetIntegration(appID pgtype.UUID) (Integration, bool)
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	GetEvent(ctx context.Context, appID pgtype.UUID, workflowID, key string) (WorkflowEvent, error)
 	Enqueue(ctx context.Context, appID pgtype.UUID, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error)
 	Send(ctx context.Context, appID pgtype.UUID, input SendWorkflowMessageInput) error
 	Recover(ctx context.Context, appID pgtype.UUID, executorIDs []string, appVersion string) ([]string, error)

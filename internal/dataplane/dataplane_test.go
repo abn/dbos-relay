@@ -17,6 +17,7 @@ import (
 
 type mockClient struct {
 	onDispatch func(ctx context.Context, msg protocol.Message) (protocol.Message, error)
+	onGetEvent func(ctx context.Context, workflowID, key string) (dataplane.WorkflowEvent, error)
 	onEnqueue  func(ctx context.Context, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
 	onSend     func(ctx context.Context, input dataplane.SendWorkflowMessageInput) error
 	onRecover  func(ctx context.Context, executorIDs []string, appVersion string) ([]string, error)
@@ -28,6 +29,13 @@ func (m *mockClient) Dispatch(ctx context.Context, msg protocol.Message) (protoc
 		return m.onDispatch(ctx, msg)
 	}
 	return nil, nil
+}
+
+func (m *mockClient) GetEvent(ctx context.Context, workflowID, key string) (dataplane.WorkflowEvent, error) {
+	if m.onGetEvent != nil {
+		return m.onGetEvent(ctx, workflowID, key)
+	}
+	return dataplane.WorkflowEvent{Key: key}, nil
 }
 
 func (m *mockClient) Enqueue(ctx context.Context, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
@@ -652,5 +660,38 @@ func TestManager_WriteOperationsRequireReadWrite(t *testing.T) {
 	}
 	if enqueueCalls != 1 || sendCalls != 1 {
 		t.Fatalf("expected one write each, got enqueue=%d send=%d", enqueueCalls, sendCalls)
+	}
+}
+
+func TestManager_GetEventWorksInReadOnlyMode(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{31, 1, 1}, Valid: true}
+	mock := &mockClient{
+		onGetEvent: func(ctx context.Context, workflowID, key string) (dataplane.WorkflowEvent, error) {
+			if workflowID != "wf-1" || key != "status" {
+				t.Fatalf("unexpected arguments: workflow=%q key=%q", workflowID, key)
+			}
+			return dataplane.WorkflowEvent{Key: key, Value: map[string]any{"ready": true}}, nil
+		},
+	}
+
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return mock, nil
+	})
+	if err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://localhost:5432/test",
+		Mode:          dataplane.ModeRead,
+		Integration:   dataplane.IntegrationDirect,
+	}); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	event, err := mgr.GetEvent(context.Background(), appID, "wf-1", "status")
+	if err != nil {
+		t.Fatalf("read-only event lookup failed: %v", err)
+	}
+	value, ok := event.Value.(map[string]any)
+	if event.Key != "status" || !ok || value["ready"] != true {
+		t.Fatalf("unexpected event: %+v", event)
 	}
 }

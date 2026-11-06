@@ -338,6 +338,7 @@ type mockDataPlaneManager struct {
 	hasDataPlane bool
 	integration  dataplane.Integration
 	onDispatch   func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	onGetEvent   func(ctx context.Context, appID pgtype.UUID, workflowID, key string) (dataplane.WorkflowEvent, error)
 	onEnqueue    func(ctx context.Context, appID pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
 	onSend       func(ctx context.Context, appID pgtype.UUID, input dataplane.SendWorkflowMessageInput) error
 }
@@ -358,6 +359,13 @@ func (m *mockDataPlaneManager) Dispatch(ctx context.Context, appID pgtype.UUID, 
 		return m.onDispatch(ctx, appID, msg)
 	}
 	return nil, nil
+}
+
+func (m *mockDataPlaneManager) GetEvent(ctx context.Context, appID pgtype.UUID, workflowID, key string) (dataplane.WorkflowEvent, error) {
+	if m.onGetEvent != nil {
+		return m.onGetEvent(ctx, appID, workflowID, key)
+	}
+	return dataplane.WorkflowEvent{}, errors.New("unexpected call to GetEvent")
 }
 
 func (m *mockDataPlaneManager) Enqueue(ctx context.Context, appID pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
@@ -1134,6 +1142,111 @@ func TestWriteOperations_Routing(t *testing.T) {
 		})
 		if !errors.Is(err, router.ErrOperationUnsupported) {
 			t.Fatalf("expected ErrOperationUnsupported, got %v", err)
+		}
+	})
+}
+
+func TestGetWorkflowEvent_Routing(t *testing.T) {
+	orgID := testUUID(1)
+	appID := testUUID(2)
+
+	store := &mockStore{
+		getOrgFunc: func(ctx context.Context, name string) (gen.Organisation, error) {
+			return gen.Organisation{ID: orgID, Name: name}, nil
+		},
+		getAppFunc: func(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
+			return gen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+		},
+	}
+	hub := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			t.Fatal("event lookup must not use an executor")
+			return nil, nil
+		},
+	}
+
+	t.Run("direct reads an event in read-only mode", func(t *testing.T) {
+		want := dataplane.WorkflowEvent{Key: "status", Value: map[string]any{"ready": true}}
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationDirect,
+			onGetEvent: func(ctx context.Context, id pgtype.UUID, workflowID, key string) (dataplane.WorkflowEvent, error) {
+				if id != appID || workflowID != "wf-1" || key != "status" {
+					t.Fatalf("unexpected arguments: id=%v workflow=%q key=%q", id, workflowID, key)
+				}
+				return want, nil
+			},
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+		ctx, tracker := router.ContextWithServedFromTracker(context.Background())
+
+		got, err := r.GetWorkflowEvent(ctx, "my-org", "my-app", "wf-1", "status")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		value, ok := got.Value.(map[string]any)
+		if got.Key != "status" || !ok || value["ready"] != true {
+			t.Fatalf("unexpected event: %+v", got)
+		}
+		if tracker.Source != "database" {
+			t.Fatalf("expected served_from database, got %q", tracker.Source)
+		}
+	})
+
+	t.Run("attached refuses", func(t *testing.T) {
+		dp := &mockDataPlaneManager{hasDataPlane: true, integration: dataplane.IntegrationAttached}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+
+		_, err := r.GetWorkflowEvent(context.Background(), "my-org", "my-app", "wf-1", "status")
+		if !errors.Is(err, router.ErrOperationUnsupported) {
+			t.Fatalf("expected ErrOperationUnsupported, got %v", err)
+		}
+	})
+
+	t.Run("no data plane refuses", func(t *testing.T) {
+		r := router.New(store, hub)
+		_, err := r.GetWorkflowEvent(context.Background(), "my-org", "my-app", "wf-1", "status")
+		if !errors.Is(err, router.ErrOperationUnsupported) {
+			t.Fatalf("expected ErrOperationUnsupported, got %v", err)
+		}
+	})
+
+	t.Run("not found is terminal", func(t *testing.T) {
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationDirect,
+			onGetEvent: func(context.Context, pgtype.UUID, string, string) (dataplane.WorkflowEvent, error) {
+				return dataplane.WorkflowEvent{}, dataplane.ErrEventNotFound
+			},
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+
+		_, err := r.GetWorkflowEvent(context.Background(), "my-org", "my-app", "wf-1", "status")
+		if !errors.Is(err, router.ErrEventNotFound) {
+			t.Fatalf("expected ErrEventNotFound, got %v", err)
+		}
+		if !strings.Contains(err.Error(), `event "status" not found for workflow wf-1`) {
+			t.Fatalf("expected a clear not-found detail, got %q", err)
+		}
+	})
+
+	t.Run("database failure is unavailable", func(t *testing.T) {
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationDirect,
+			onGetEvent: func(context.Context, pgtype.UUID, string, string) (dataplane.WorkflowEvent, error) {
+				return dataplane.WorkflowEvent{}, errors.New("connection refused")
+			},
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+
+		_, err := r.GetWorkflowEvent(context.Background(), "my-org", "my-app", "wf-1", "status")
+		if !errors.Is(err, router.ErrDataPlaneUnavailable) {
+			t.Fatalf("expected ErrDataPlaneUnavailable, got %v", err)
 		}
 	})
 }

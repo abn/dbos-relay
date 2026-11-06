@@ -25,6 +25,7 @@ var (
 	ErrOperationUnsupported = errors.New("operation not supported")
 	ErrStoreUnavailable     = errors.New("store unavailable")
 	ErrDataPlaneUnavailable = errors.New("data-plane unavailable")
+	ErrEventNotFound        = errors.New("workflow event not found")
 	ErrReadOnlyMode         = dataplane.ErrReadOnlyMode
 )
 
@@ -50,6 +51,7 @@ type DataPlaneManager interface {
 	HasDataPlane(appID pgtype.UUID) bool
 	GetIntegration(appID pgtype.UUID) (dataplane.Integration, bool)
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	GetEvent(ctx context.Context, appID pgtype.UUID, workflowID, key string) (dataplane.WorkflowEvent, error)
 	Enqueue(ctx context.Context, appID pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
 	Send(ctx context.Context, appID pgtype.UUID, input dataplane.SendWorkflowMessageInput) error
 }
@@ -314,6 +316,26 @@ func (r *DefaultRouter) resolveApplication(ctx context.Context, orgName, appName
 	return app, nil
 }
 
+// GetWorkflowEvent reads one event value from the application system database.
+// It is a read, so a read-only data plane serves it. Attached mode and a
+// missing data plane refuse the operation instead of reading an executor, which
+// has no keyed event operation in the vendored contract.
+func (r *DefaultRouter) GetWorkflowEvent(ctx context.Context, orgName, appName, workflowID, key string) (dataplane.WorkflowEvent, error) {
+	app, err := r.resolveApplication(ctx, orgName, appName)
+	if err != nil {
+		return dataplane.WorkflowEvent{}, err
+	}
+	if !r.databaseRouteAvailable(app.ID) {
+		return dataplane.WorkflowEvent{}, fmt.Errorf("%w: event lookup requires a Direct or Hybrid data plane", ErrOperationUnsupported)
+	}
+	event, err := r.dataplane.GetEvent(ctx, app.ID, workflowID, key)
+	if err != nil {
+		return dataplane.WorkflowEvent{}, mapEventReadError(err, workflowID, key)
+	}
+	SetServedFrom(ctx, "database")
+	return event, nil
+}
+
 // EnqueueWorkflow writes a workflow row through the application system
 // database. The operation has no executor equivalent in the Conductor
 // protocol, so hybrid mode uses the database as its only path and Attached
@@ -324,7 +346,7 @@ func (r *DefaultRouter) EnqueueWorkflow(ctx context.Context, orgName, appName st
 	if err != nil {
 		return dataplane.EnqueueWorkflowResult{}, err
 	}
-	if !r.writeRouteAvailable(app.ID) {
+	if !r.databaseRouteAvailable(app.ID) {
 		return dataplane.EnqueueWorkflowResult{}, fmt.Errorf("%w: enqueue requires a Direct or Hybrid data plane", ErrOperationUnsupported)
 	}
 	res, err := r.dataplane.Enqueue(ctx, app.ID, input)
@@ -342,7 +364,7 @@ func (r *DefaultRouter) SendWorkflowMessage(ctx context.Context, orgName, appNam
 	if err != nil {
 		return err
 	}
-	if !r.writeRouteAvailable(app.ID) {
+	if !r.databaseRouteAvailable(app.ID) {
 		return fmt.Errorf("%w: send requires a Direct or Hybrid data plane", ErrOperationUnsupported)
 	}
 	if err := r.dataplane.Send(ctx, app.ID, input); err != nil {
@@ -352,7 +374,7 @@ func (r *DefaultRouter) SendWorkflowMessage(ctx context.Context, orgName, appNam
 	return nil
 }
 
-func (r *DefaultRouter) writeRouteAvailable(appID pgtype.UUID) bool {
+func (r *DefaultRouter) databaseRouteAvailable(appID pgtype.UUID) bool {
 	if r.dataplane == nil || !r.dataplane.HasDataPlane(appID) {
 		return false
 	}
@@ -361,6 +383,21 @@ func (r *DefaultRouter) writeRouteAvailable(appID pgtype.UUID) bool {
 		return false
 	}
 	return integration == dataplane.IntegrationDirect || integration == dataplane.IntegrationHybrid
+}
+
+func mapEventReadError(err error, workflowID, key string) error {
+	switch {
+	case errors.Is(err, dataplane.ErrEventNotFound):
+		return fmt.Errorf("%w: event %q not found for workflow %s", ErrEventNotFound, key, workflowID)
+	case errors.Is(err, dataplane.ErrReadOnlyMode):
+		return fmt.Errorf("%w: %w", ErrReadOnlyMode, err)
+	case errors.Is(err, dataplane.ErrUnsupportedOperation):
+		return fmt.Errorf("%w: %w", ErrOperationUnsupported, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%w: data-plane statement timeout: %w", ErrExecutorTimeout, err)
+	default:
+		return fmt.Errorf("%w: %w", ErrDataPlaneUnavailable, err)
+	}
 }
 
 func mapWriteError(err error) error {

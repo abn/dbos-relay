@@ -87,6 +87,11 @@ export interface Event {
   value: string;
 }
 
+export interface WorkflowEvent {
+  key: string;
+  value: unknown;
+}
+
 export interface Notification {
   topic?: string | null;
   message: string;
