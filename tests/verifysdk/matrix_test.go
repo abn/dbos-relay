@@ -199,7 +199,7 @@ func getSDKVersion(lang string, container string) string {
 		}
 	case "Java":
 		if data, err := os.ReadFile("../../examples/java/pom.xml"); err == nil {
-			re := regexp.MustCompile(`<version>(0\.[0-9]+\.[0-9]+)</version>`)
+			re := regexp.MustCompile(`<version>(\d+\.\d+\.\d+)</version>`)
 			if m := re.FindStringSubmatch(string(data)); len(m) > 1 {
 				return m[1]
 			}
@@ -1287,245 +1287,8 @@ func TestVerifySDK_Matrix(t *testing.T) {
 						cellResults[5][lang] = CellResult{Status: CellStatusFail}
 					}
 				}()
-				primaryInfo := containers[lang]
-				primaryContainer := primaryInfo.Name
-				secondaryContainer := primaryInfo.SecondaryName
-				dbConn := getAppDBConn(t, primaryInfo.DBName)
-				defer func() { _ = dbConn.Close(context.Background()) }()
-
-				// Ensure both primary and secondary containers are running
-				_ = runCmd(t, "podman", "start", primaryContainer)
-				_ = runCmd(t, "podman", "start", secondaryContainer)
-
-				// The cell kills the primary and relies on the secondary to
-				// recover, so wait for both executors to register healthy
-				// before starting. A survivor that has not finished its
-				// launch handshake cannot take the recovery dispatch, and
-				// podman start is a no-op on a container that is already
-				// running, so a survivor wedged mid-launch needs an explicit
-				// restart rather than a longer wait. The first window covers
-				// a normal launch; the second covers a restart, and both keep
-				// margin for loaded runners.
-				if !waitForSecondaryExecutor(t, primaryInfo, 30*time.Second) {
-					t.Logf("[%s] Secondary executor did not register healthy, restarting %s", lang, secondaryContainer)
-					_ = runCmd(t, "podman", "restart", secondaryContainer)
-					if !waitForSecondaryExecutor(t, primaryInfo, 90*time.Second) {
-						secLogs := runCmd(t, "podman", "logs", secondaryContainer)
-						t.Logf("[%s] Secondary logs on failed recovery registration:\n%s", lang, secLogs)
-						t.Fatalf("[%s] Timed out waiting for secondary executor of app %s to register healthy", lang, primaryInfo.AppName)
-					}
-				}
-
-				// Ensure secondary container is up
-				secondaryLogs := runCmd(t, "podman", "logs", secondaryContainer)
-				t.Logf("[%s] Secondary container logs before chaos:\n%s", lang, secondaryLogs)
-
-				// Trigger workflow on primary container
-				chaosWfID := triggerAppWorkflow(t, primaryInfo.TriggerPort)
-				t.Logf("[%s] Started chaos workflow %s on primary (sleeping after step 1)", lang, chaosWfID)
-
-				// Retrieve the active executor ID that actually executed the
-				// chaos workflow. The sample starts the workflow directly
-				// rather than through a queue, so the assignment surfaces
-				// through the API only once the executor has persisted the
-				// workflow's status, which is not immediate on a loaded
-				// runner.
-				var assignedExecID string
-				execDeadline := time.Now().Add(30 * time.Second)
-				for time.Now().Before(execDeadline) {
-					_, curExecID := getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
-					if curExecID != "" {
-						assignedExecID = curExecID
-						break
-					}
-					time.Sleep(200 * time.Millisecond)
-				}
-				if assignedExecID == "" {
-					t.Fatalf("[%s] Chaos workflow %s was not assigned to an executor within the deadline", lang, chaosWfID)
-				}
-				primaryInfo.ExecutorID = assignedExecID
-				t.Logf("[%s] Confirmed active primary executor ID before chaos: %s", lang, primaryInfo.ExecutorID)
-
-				// Wait for Step 1 to be recorded. The step writes its marker
-				// through the app's own Postgres pool, which retries a failed
-				// insert for 45s before giving up, so the wait has to outlast
-				// that window plus the dispatch and execution it sits behind
-				// or the harness gives up while the app is still legitimately
-				// retrying. The deadline keeps margin for loaded runners.
-				var step1Recorded bool
-				step1Deadline := time.Now().Add(75 * time.Second)
-				for time.Now().Before(step1Deadline) {
-					var count int
-					row := dbConn.QueryRow(context.Background(), `
-						SELECT COUNT(*) FROM test_step_executions
-						WHERE workflow_id = $1 AND step_name = 'step1';
-					`, chaosWfID)
-					err := row.Scan(&count)
-					if err != nil {
-						t.Fatalf("failed to scan step1 count: %v", err)
-					}
-					if count >= 1 {
-						step1Recorded = true
-						break
-					}
-					time.Sleep(500 * time.Millisecond)
-				}
-				if !step1Recorded {
-					primLogs := runCmd(t, "podman", "logs", primaryContainer)
-					t.Logf("[%s] Primary container logs on step1 failure:\n%s", lang, primLogs)
-					t.Fatalf("[%s] Step 1 not recorded in test_step_executions table", lang)
-				}
-
-				// (a) Kill timestamp from harness
-				killTime := time.Now()
-				primaryInfo.KillTimestamp = killTime
-				t.Logf("[%s] Executing SIGKILL on primary container %s at %s", lang, primaryContainer, killTime.Format(time.RFC3339))
-				killOut := runCmd(t, "podman", "kill", "-s", "KILL", primaryContainer)
-				t.Logf("[%s] podman kill output: %s", lang, strings.TrimSpace(killOut))
-				defer func() {
-					_ = runCmd(t, "podman", "start", primaryContainer)
-				}()
-
-				// (b) Relay's DISCONNECTED then DEAD transitions
-				var deadObserved bool
-				var deadTime, discTime time.Time
-				executorTimeout := 10 * time.Second
-				gracePeriod := executorTimeout
-
-				// Worst-case detection is ping interval (10s) plus pong
-				// wait (25s) plus grace (10s); the deadline keeps margin
-				// for loaded runners.
-				deadline := time.Now().Add(75 * time.Second)
-				for time.Now().Before(deadline) {
-					execs := getExecutorsFromAPI(t, primaryInfo.AppName)
-					found := false
-					for _, e := range execs {
-						if e.ExecutorID == primaryInfo.ExecutorID {
-							found = true
-							if discTime.IsZero() && e.Status != "HEALTHY" && e.Status != "connected" {
-								discTime = time.Now()
-							}
-							if e.Status == "DEAD" {
-								deadObserved = true
-								deadTime = time.Now()
-								if discTime.IsZero() {
-									discTime = deadTime.Add(-gracePeriod)
-								}
-								break
-							}
-						}
-					}
-					if deadObserved {
-						break
-					}
-					// If the executor was observed DISCONNECTED and is now removed from the active fleet,
-					// it reached DEAD and was pruned following recovery dispatch.
-					if !discTime.IsZero() && !found {
-						deadObserved = true
-						deadTime = time.Now()
-						break
-					}
-					time.Sleep(500 * time.Millisecond)
-				}
-
-				if !deadObserved {
-					t.Fatalf("[%s] Primary executor %s failed to transition to DEAD within deadline", lang, primaryInfo.ExecutorID)
-				}
-				if discTime.IsZero() {
-					t.Fatalf("[%s] Primary executor %s was never observed in DISCONNECTED status before DEAD", lang, primaryInfo.ExecutorID)
-				}
-				primaryInfo.DisconnectedTimestamp = discTime
-				primaryInfo.DeadTimestamp = deadTime
-				elapsed := deadTime.Sub(killTime)
-				primaryInfo.DeadKillDelta = elapsed
-				t.Logf("[%s] DEAD state confirmed at %s (elapsed %v >= grace %v)",
-					lang, deadTime.Format(time.RFC3339), elapsed, gracePeriod)
-				if elapsed < gracePeriod {
-					t.Fatalf("DEAD transition occurred too quickly: %v < configured grace %v", elapsed, gracePeriod)
-				}
-
-				// (c) Secondary's container log shows recovery received
-				time.Sleep(3 * time.Second)
-				secondaryLogsAfter := runCmd(t, "podman", "logs", secondaryContainer)
-				t.Logf("[%s] Secondary container logs after recovery dispatch:\n%s", lang, secondaryLogsAfter)
-
-				// Extract relevant recovery line
-				for _, line := range strings.Split(secondaryLogsAfter, "\n") {
-					if strings.Contains(line, "Recovering") || strings.Contains(line, "recovery") || strings.Contains(line, "workflows to recover") || strings.Contains(line, "recovered") {
-						primaryInfo.SurvivorRecoveryLog = strings.TrimSpace(line)
-					}
-				}
-				if primaryInfo.SurvivorRecoveryLog == "" {
-					primaryInfo.SurvivorRecoveryLog = "(no explicit recovery log line matched in container logs)"
-				}
-
-				// (d) Terminal state read through Relay API
-				var chaosStatus string
-				// Anchor the poll to the confirmed DEAD transition: recovery
-				// is redelivered under the ExecutorDeadline (30s default) plus
-				// the survivor's DB reconnect, which exceeds a fixed 25s.
-				statusDeadline := deadTime.Add(90 * time.Second)
-				for time.Now().Before(statusDeadline) {
-					chaosStatus, _ = getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
-					if chaosStatus == "SUCCESS" {
-						break
-					}
-					time.Sleep(1 * time.Second)
-				}
-				if chaosStatus != "SUCCESS" {
-					secLogs := runCmd(t, "podman", "logs", secondaryContainer)
-					t.Logf("[%s] Secondary container logs on chaos failure:\n%s", lang, secLogs)
-					t.Fatalf("[%s] Chaos workflow %s failed to reach terminal SUCCESS, got %s", lang, chaosWfID, chaosStatus)
-				}
-
-				// (e) Exactly-once at outcome level measured by sample workflow steps
-				var step1Count, step2Count int
-				err := dbConn.QueryRow(context.Background(), `
-					SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step1';
-				`, chaosWfID).Scan(&step1Count)
-				if err != nil {
-					t.Fatalf("failed to scan step1Count: %v", err)
-				}
-				// Step 2 lands on the recovered executor and shares the
-				// step-marker retry window described above, so it gets the
-				// same deadline rather than a shorter fixed count.
-				step2Deadline := time.Now().Add(75 * time.Second)
-				for time.Now().Before(step2Deadline) {
-					err = dbConn.QueryRow(context.Background(), `
-						SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
-					`, chaosWfID).Scan(&step2Count)
-					if err == nil && step2Count >= 1 {
-						break
-					}
-					time.Sleep(500 * time.Millisecond)
-				}
-				if err != nil {
-					t.Fatalf("failed to scan step2Count: %v", err)
-				}
-
-				if step1Count != 1 {
-					secLogs := runCmd(t, "podman", "logs", secondaryContainer)
-					t.Logf("[%s] Secondary logs on step1Count assertion failure:\n%s", lang, secLogs)
-					t.Fatalf("[%s] Expected exactly 1 step1 execution, got %d", lang, step1Count)
-				}
-				if step2Count != 1 {
-					secLogs := runCmd(t, "podman", "logs", secondaryContainer)
-					t.Logf("[%s] Secondary logs on step2Count assertion failure:\n%s", lang, secLogs)
-					t.Fatalf("[%s] Expected exactly 1 step2 execution, got %d", lang, step2Count)
-				}
-
-				terminalOutcomes := step2Count
-				stepReExecutions := (step1Count - 1) + (step2Count - 1)
-				if stepReExecutions != 0 {
-					t.Fatalf("[%s] Duplicate step executions detected: %d", lang, stepReExecutions)
-				}
-				primaryInfo.TerminalOutcomes = terminalOutcomes
-				primaryInfo.StepReexecutions = stepReExecutions
-
+				primaryInfo := runChaosRecovery(t, lang, containers[lang])
 				containers[lang] = primaryInfo
-
-				t.Logf("[%s] Outcome report: terminal_outcomes=%d, step1_executions=%d, step2_executions=%d, step_reexecutions_observed=%d",
-					lang, terminalOutcomes, step1Count, step2Count, stepReExecutions)
 				cellResults[5][lang] = CellResult{Status: CellStatusPass}
 			})
 		}
@@ -1818,6 +1581,262 @@ type cellDef struct {
 	ID     int
 	Name   string
 	DurKey string
+}
+
+// runChaosRecovery drives the chaos recovery scenario for one runtime:
+// trigger a workflow that sleeps after its first step, SIGKILL the primary
+// executor, wait for Relay to mark it DEAD, and assert that the secondary
+// executor recovers the workflow exactly once.
+func runChaosRecovery(t *testing.T, lang string, primaryInfo containerInfo) containerInfo {
+	t.Helper()
+	primaryContainer := primaryInfo.Name
+	secondaryContainer := primaryInfo.SecondaryName
+	dbConn := getAppDBConn(t, primaryInfo.DBName)
+	defer func() { _ = dbConn.Close(context.Background()) }()
+
+	// Ensure both primary and secondary containers are running
+	_ = runCmd(t, "podman", "start", primaryContainer)
+	_ = runCmd(t, "podman", "start", secondaryContainer)
+
+	// The cell kills the primary and relies on the secondary to
+	// recover, so wait for both executors to register healthy
+	// before starting. A survivor that has not finished its
+	// launch handshake cannot take the recovery dispatch, and
+	// podman start is a no-op on a container that is already
+	// running, so a survivor wedged mid-launch needs an explicit
+	// restart rather than a longer wait. The first window covers
+	// a normal launch; the second covers a restart, and both keep
+	// margin for loaded runners.
+	if !waitForSecondaryExecutor(t, primaryInfo, 30*time.Second) {
+		t.Logf("[%s] Secondary executor did not register healthy, restarting %s", lang, secondaryContainer)
+		_ = runCmd(t, "podman", "restart", secondaryContainer)
+		if !waitForSecondaryExecutor(t, primaryInfo, 90*time.Second) {
+			secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+			t.Logf("[%s] Secondary logs on failed recovery registration:\n%s", lang, secLogs)
+			t.Fatalf("[%s] Timed out waiting for secondary executor of app %s to register healthy", lang, primaryInfo.AppName)
+		}
+	}
+
+	// Ensure secondary container is up
+	secondaryLogs := runCmd(t, "podman", "logs", secondaryContainer)
+	t.Logf("[%s] Secondary container logs before chaos:\n%s", lang, secondaryLogs)
+
+	// Trigger workflow on primary container
+	chaosWfID := triggerAppWorkflow(t, primaryInfo.TriggerPort)
+	t.Logf("[%s] Started chaos workflow %s on primary (sleeping after step 1)", lang, chaosWfID)
+
+	// Retrieve the active executor ID that actually executed the
+	// chaos workflow. The sample starts the workflow directly
+	// rather than through a queue, so the assignment surfaces
+	// through the API only once the executor has persisted the
+	// workflow's status, which is not immediate on a loaded
+	// runner.
+	var assignedExecID string
+	execDeadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(execDeadline) {
+		_, curExecID := getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
+		if curExecID != "" {
+			assignedExecID = curExecID
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if assignedExecID == "" {
+		t.Fatalf("[%s] Chaos workflow %s was not assigned to an executor within the deadline", lang, chaosWfID)
+	}
+	primaryInfo.ExecutorID = assignedExecID
+	t.Logf("[%s] Confirmed active primary executor ID before chaos: %s", lang, primaryInfo.ExecutorID)
+
+	// Wait for Step 1 to be recorded. The step writes its marker
+	// through the app's own Postgres pool, which retries a failed
+	// insert for 45s before giving up, so the wait has to outlast
+	// that window plus the dispatch and execution it sits behind
+	// or the harness gives up while the app is still legitimately
+	// retrying. The deadline keeps margin for loaded runners.
+	var step1Recorded bool
+	step1Deadline := time.Now().Add(75 * time.Second)
+	for time.Now().Before(step1Deadline) {
+		var count int
+		row := dbConn.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM test_step_executions
+		WHERE workflow_id = $1 AND step_name = 'step1';
+	`, chaosWfID)
+		err := row.Scan(&count)
+		if err != nil {
+			t.Fatalf("failed to scan step1 count: %v", err)
+		}
+		if count >= 1 {
+			step1Recorded = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !step1Recorded {
+		primLogs := runCmd(t, "podman", "logs", primaryContainer)
+		t.Logf("[%s] Primary container logs on step1 failure:\n%s", lang, primLogs)
+		t.Fatalf("[%s] Step 1 not recorded in test_step_executions table", lang)
+	}
+
+	// (a) Kill timestamp from harness
+	killTime := time.Now()
+	primaryInfo.KillTimestamp = killTime
+	t.Logf("[%s] Executing SIGKILL on primary container %s at %s", lang, primaryContainer, killTime.Format(time.RFC3339))
+	killOut := runCmd(t, "podman", "kill", "-s", "KILL", primaryContainer)
+	t.Logf("[%s] podman kill output: %s", lang, strings.TrimSpace(killOut))
+	defer func() {
+		_ = runCmd(t, "podman", "start", primaryContainer)
+	}()
+
+	// (b) Relay's DISCONNECTED then DEAD transitions
+	var deadObserved bool
+	var deadTime, discTime time.Time
+	executorTimeout := 10 * time.Second
+	gracePeriod := executorTimeout
+
+	// Worst-case detection is ping interval (10s) plus pong
+	// wait (25s) plus grace (10s); the deadline keeps margin
+	// for loaded runners.
+	deadline := time.Now().Add(75 * time.Second)
+	for time.Now().Before(deadline) {
+		execs := getExecutorsFromAPI(t, primaryInfo.AppName)
+		found := false
+		for _, e := range execs {
+			if e.ExecutorID == primaryInfo.ExecutorID {
+				found = true
+				if discTime.IsZero() && e.Status != "HEALTHY" && e.Status != "connected" {
+					discTime = time.Now()
+				}
+				if e.Status == "DEAD" {
+					deadObserved = true
+					deadTime = time.Now()
+					if discTime.IsZero() {
+						discTime = deadTime.Add(-gracePeriod)
+					}
+					break
+				}
+			}
+		}
+		if deadObserved {
+			break
+		}
+		// If the executor was observed DISCONNECTED and is now removed from the active fleet,
+		// it reached DEAD and was pruned following recovery dispatch.
+		if !discTime.IsZero() && !found {
+			deadObserved = true
+			deadTime = time.Now()
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if !deadObserved {
+		t.Fatalf("[%s] Primary executor %s failed to transition to DEAD within deadline", lang, primaryInfo.ExecutorID)
+	}
+	if discTime.IsZero() {
+		t.Fatalf("[%s] Primary executor %s was never observed in DISCONNECTED status before DEAD", lang, primaryInfo.ExecutorID)
+	}
+	primaryInfo.DisconnectedTimestamp = discTime
+	primaryInfo.DeadTimestamp = deadTime
+	elapsed := deadTime.Sub(killTime)
+	primaryInfo.DeadKillDelta = elapsed
+	t.Logf("[%s] DEAD state confirmed at %s (elapsed %v >= grace %v)",
+		lang, deadTime.Format(time.RFC3339), elapsed, gracePeriod)
+	if elapsed < gracePeriod {
+		t.Fatalf("DEAD transition occurred too quickly: %v < configured grace %v", elapsed, gracePeriod)
+	}
+
+	// (c) Secondary's container log shows recovery received
+	time.Sleep(3 * time.Second)
+	secondaryLogsAfter := runCmd(t, "podman", "logs", secondaryContainer)
+	t.Logf("[%s] Secondary container logs after recovery dispatch:\n%s", lang, secondaryLogsAfter)
+
+	// Extract relevant recovery line
+	for _, line := range strings.Split(secondaryLogsAfter, "\n") {
+		if strings.Contains(line, "Recovering") || strings.Contains(line, "recovery") || strings.Contains(line, "workflows to recover") || strings.Contains(line, "recovered") {
+			primaryInfo.SurvivorRecoveryLog = strings.TrimSpace(line)
+		}
+	}
+	if primaryInfo.SurvivorRecoveryLog == "" {
+		primaryInfo.SurvivorRecoveryLog = "(no explicit recovery log line matched in container logs)"
+	}
+
+	// (d) Terminal state read through Relay API
+	var chaosStatus string
+	// Anchor the poll to the confirmed DEAD transition: recovery
+	// is redelivered under the ExecutorDeadline (30s default) plus
+	// the survivor's DB reconnect, which exceeds a fixed 25s.
+	statusDeadline := deadTime.Add(90 * time.Second)
+	for time.Now().Before(statusDeadline) {
+		chaosStatus, _ = getWorkflowViaAPI(t, primaryInfo.AppName, chaosWfID)
+		if chaosStatus == "SUCCESS" {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if chaosStatus != "SUCCESS" {
+		secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+		t.Logf("[%s] Secondary container logs on chaos failure:\n%s", lang, secLogs)
+		t.Fatalf("[%s] Chaos workflow %s failed to reach terminal SUCCESS, got %s", lang, chaosWfID, chaosStatus)
+	}
+
+	// Recovery dispatch can land after the first log read when the survivor
+	// reconnects to the database. Re-read now that the workflow is terminal
+	// so the evidence names the request that recovered it.
+	secondaryLogsAfter = runCmd(t, "podman", "logs", secondaryContainer)
+	for _, line := range strings.Split(secondaryLogsAfter, "\n") {
+		if strings.Contains(line, "Recovering") || strings.Contains(line, "recovery") || strings.Contains(line, "workflows to recover") || strings.Contains(line, "recovered") {
+			primaryInfo.SurvivorRecoveryLog = strings.TrimSpace(line)
+		}
+	}
+
+	// (e) Exactly-once at outcome level measured by sample workflow steps
+	var step1Count, step2Count int
+	err := dbConn.QueryRow(context.Background(), `
+	SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step1';
+`, chaosWfID).Scan(&step1Count)
+	if err != nil {
+		t.Fatalf("failed to scan step1Count: %v", err)
+	}
+	// Step 2 lands on the recovered executor and shares the
+	// step-marker retry window described above, so it gets the
+	// same deadline rather than a shorter fixed count.
+	step2Deadline := time.Now().Add(75 * time.Second)
+	for time.Now().Before(step2Deadline) {
+		err = dbConn.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM test_step_executions WHERE workflow_id = $1 AND step_name = 'step2';
+	`, chaosWfID).Scan(&step2Count)
+		if err == nil && step2Count >= 1 {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("failed to scan step2Count: %v", err)
+	}
+
+	if step1Count != 1 {
+		secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+		t.Logf("[%s] Secondary logs on step1Count assertion failure:\n%s", lang, secLogs)
+		t.Fatalf("[%s] Expected exactly 1 step1 execution, got %d", lang, step1Count)
+	}
+	if step2Count != 1 {
+		secLogs := runCmd(t, "podman", "logs", secondaryContainer)
+		t.Logf("[%s] Secondary logs on step2Count assertion failure:\n%s", lang, secLogs)
+		t.Fatalf("[%s] Expected exactly 1 step2 execution, got %d", lang, step2Count)
+	}
+
+	terminalOutcomes := step2Count
+	stepReExecutions := (step1Count - 1) + (step2Count - 1)
+	if stepReExecutions != 0 {
+		t.Fatalf("[%s] Duplicate step executions detected: %d", lang, stepReExecutions)
+	}
+	primaryInfo.TerminalOutcomes = terminalOutcomes
+	primaryInfo.StepReexecutions = stepReExecutions
+
+	t.Logf("[%s] Outcome report: terminal_outcomes=%d, step1_executions=%d, step2_executions=%d, step_reexecutions_observed=%d",
+		lang, terminalOutcomes, step1Count, step2Count, stepReExecutions)
+
+	return primaryInfo
 }
 
 func formatCellResult(res CellResult, ok bool) string {

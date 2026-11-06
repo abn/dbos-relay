@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance test/direct vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk watch/java-connector
+.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance test/direct vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk verify-sdk/java-recovery watch/java-connector
 
 ##@ Bootstrap
 
@@ -167,3 +167,11 @@ verify-sdk: build build/java build/typescript lint/sdk-isolation lint/examples-i
 	RELAY_VERIFY_SDK=1 RELAY_API_KEY=$$(grep RELAY_API_KEY deploy/.env | cut -d= -f2) go test -v -count=1 ./tests/verifysdk/...
 	RELAY_TEST_DATABASE_URL="postgres://relay:relay@localhost:5433/relay?sslmode=disable" go test -v -count=1 -run TestLiveDatabase_SDKClientDataPlane ./internal/dataplane/...
 	RELAY_TEST_DATABASE_URL="postgres://relay:relay@localhost:5433/relay?sslmode=disable" go test -v -count=1 -run TestRouter_LiveDatabase ./internal/router/...
+
+verify-sdk/java-recovery: build build/java ## Run the Java Attached recovery cell under Podman compose
+	@if [ ! -f deploy/.env ] || [ -z "$$(grep RELAY_API_KEY deploy/.env 2>/dev/null)" ]; then \
+		KEY="dbos_sec_$$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"; \
+		echo "RELAY_API_KEY=$$KEY" > deploy/.env; \
+	fi
+	podman compose --env-file deploy/.env -f deploy/compose-sdk-apps.yaml up -d postgres relay app-java app-java-secondary
+	RELAY_VERIFY_JAVA_RECOVERY=1 RELAY_API_KEY=$$(grep RELAY_API_KEY deploy/.env | cut -d= -f2) go test -v -count=1 -run '^TestVerifySDK_JavaAttachedRecovery$$' ./tests/verifysdk/...
