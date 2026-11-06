@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Supported SDKs
-description: The Attached mode ceiling, the planned Direct mode schema window, and the checks for each.
+description: The Attached mode ceiling, the Direct mode schema window, and the checks for each.
 status: draft
 ---
 
@@ -19,15 +19,16 @@ official MIT Go client. It is bounded by the system database schema, not by the
 SDK version. It is the path for applications on post-split SDK releases. See
 [ADR 0015](../adr/0015-direct-mode-system-database.md).
 
-Direct mode is planned, not shipped. The ADRs are accepted; the implementation
-and its conformance matrix land in a separate change. Until then, this page
-records the intended boundary and does not claim Direct mode support.
+Direct mode is implemented for the supported schema window. The engine and
+recovery path are covered by hermetic SQLite tests and live PostgreSQL
+data-plane tests; the probe is covered by liveness tests. The multi-SDK matrix
+extension follows.
 
 The two boundaries are recorded here, with the evidence behind each one.
 
 ## Support matrix
 
-| SDK | Attached mode | Direct mode (planned) |
+| SDK | Attached mode | Direct mode |
 |---|---|---|
 | Go | `v1.6.0` and below | schema 123 through 125, through the Go client |
 | Python | `3.2.0` and below | schema 123 through 125, through the Go client |
@@ -152,8 +153,8 @@ which bounds what an application may run.
 
 ## Enforcement
 
-Two checks exist today. The Direct mode matrix is added with the Direct mode
-implementation.
+The data-plane suite includes a hermetic SQLite test against the real client
+and live PostgreSQL tests. The multi-SDK matrix extension follows.
 
 * `tests/verifysdk/sdk_ceiling_test.go` reads the manifests of the sample
   applications in `examples/` and fails when a pinned Attached SDK version is
@@ -163,9 +164,9 @@ implementation.
   clones the Java SDK and fails when the Conductor connector package is no
   longer present at the recorded baseline. It needs network access, so it is
   not part of `make check`; run it on a schedule or before a release.
-* The planned Direct mode matrix runs sample applications at schema 123 and
-  125 and exercises read, control, enqueue, schedule, and recovery without a
-  connector. It becomes part of the same gate when it lands.
+* The Direct mode tests run the real client against schema 123 and exercise
+  read, control, schedule, and recovery without a connector. The multi-SDK
+  matrix extension adds a schema 125 cell and cross-language coverage.
 
 ## Renewing a boundary
 

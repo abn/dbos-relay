@@ -93,9 +93,9 @@ live executor telemetry. It is no longer the only road.
   are updated with this decision; the landing page change carries rendered
   screenshots and follows as a separate visual change.
 - [Supported SDKs](../usage/supported-sdks.md) records the ceiling as the
-  Attached mode boundary, the Direct mode schema window as planned, and the
-  fact that the Direct implementation and its conformance matrix land in a
-  separate change. Until then the page does not claim Direct mode is shipped.
+  Attached mode boundary and the Direct mode schema window. The Direct
+  implementation, recovery path, and probe are covered by the data-plane test
+  suite; the multi-SDK matrix extension follows.
 - Parity gaps that can only be observed by running the proprietary connector
   or server become documented gap entries. They are not open tasks someone is
   expected to close.

@@ -46,13 +46,22 @@ alert_rules:
           secret: "hmac-signing-secret"
 
 data_plane:
-  # Optional direct database connection via Go SDK client
-  # Sensitive credentials are read from the environment or secret files, never committed plain
+  # Optional database connection through the MIT DBOS Go client.
+  # Sensitive credentials are read from the environment or secret files, never committed plain.
   order-service:
     connection_url: "${ORDER_SERVICE_DB_URL}"
     # Alternatively:
     # connection_string_from:
     #   env: "ORDER_SERVICE_DB_URL"
-    mode: "read"
+    #
+    # integration: "direct" prefers the database for every operation and uses
+    # a live executor only when the database cannot serve the request. The
+    # default, "hybrid", keeps the executor first and uses the database as a
+    # fallback. "attached" ignores the database entirely.
+    integration: "direct"
+    # read-write is required for cancel, resume, fork, rewind, delete, schedule
+    # changes, setting the latest application version, and recovery. Use "read"
+    # when the operator only needs observation.
+    mode: "read-write"
     statement_timeout_secs: 10
     max_connections: 5

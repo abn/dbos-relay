@@ -77,9 +77,9 @@ type containerInfo struct {
 	Cell6ResumeStep2Count  int
 
 	// Cell 7 Fork and Step-Zero Fork Evidence
-	Cell7Duration       time.Duration
-	ForkedWfID          string
-	ForkedExecutorID    string
+	Cell7Duration      time.Duration
+	ForkedWfID         string
+	ForkedExecutorID   string
 	StepZeroWfID       string
 	StepZeroExecutorID string
 }
@@ -652,10 +652,10 @@ func runD5RESTProbes(t *testing.T, info containerInfo, wfID string) string {
 // storesPayloadsOutOfLine reports whether an SDK language stores workflow
 // payloads in the workflow_input and workflow_output tables rather than on
 // workflow_status. The Go SDK moved them in v1.4.0 (migration 109, "Workflow
-// payload tables"), so the Go sample application at v1.6.0 hits the same
-// divergence as Python and TypeScript: the pinned Go SDK client v1.3.0 reads
-// payloads from workflow_status only. The executor answers payload reads over
-// the wire, so only a data-plane read is blind. Recorded in ADR 0013.
+// payload tables"), so the Go sample application at v1.6.0 stores them out of
+// line like Python and TypeScript. The Attached matrix keeps pre-split SDKs and
+// skips the data-plane parity cells; Direct mode uses Go SDK v1.7.0, which
+// reads the out-of-line tables.
 func storesPayloadsOutOfLine(lang string) bool {
 	return lang == "Go" || lang == "Python" || lang == "TypeScript"
 }
@@ -663,11 +663,11 @@ func storesPayloadsOutOfLine(lang string) bool {
 func TestStoresPayloadsOutOfLine(t *testing.T) {
 	for _, lang := range []string{"Go", "Python", "TypeScript"} {
 		if !storesPayloadsOutOfLine(lang) {
-			t.Errorf("%s stores payloads out of line at or below the SDK ceiling, so Cell 4 must tolerate the data-plane payload blind spot", lang)
+			t.Errorf("%s stores payloads out of line at or below the SDK ceiling", lang)
 		}
 	}
 	if storesPayloadsOutOfLine("Java") {
-		t.Error("Java has no split and no out-of-line payload tables at the pinned version, so Cell 4 must not tolerate the divergence for it")
+		t.Error("Java has no split and no out-of-line payload tables at the pinned version")
 	}
 }
 
@@ -775,6 +775,14 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	cellResults := make(map[int]map[string]CellResult)
 	for i := 1; i <= 7; i++ {
 		cellResults[i] = make(map[string]CellResult)
+	}
+	for _, cell := range []int{4, 6, 7} {
+		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
+			cellResults[cell][lang] = CellResult{
+				Status: CellStatusSkip,
+				Reason: "direct mode coverage runs in internal/dataplane",
+			}
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -1058,6 +1066,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	// -------------------------------------------------------------------------
 	c4Start := time.Now()
 	t.Run("Cell_4_Field_Parity", func(t *testing.T) {
+		t.Skip("[SKIPPED: direct-matrix] Attached matrix keeps pre-split SDKs; Direct mode coverage runs in internal/dataplane.")
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				defer func() {
@@ -1068,9 +1077,9 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if lang == "Java" {
 					cellResults[4][lang] = CellResult{
 						Status: CellStatusSkip,
-						Reason: "upstream schema v19 vs v107",
+						Reason: "Java schema 114 is below the Direct mode floor",
 					}
-					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK client v1.3.0 (requires v107)")
+					t.Skip("[SKIPPED: java-schema-floor] Java schema 114 is below the Direct mode floor; use Attached mode")
 				}
 
 				info := containers[lang]
@@ -1138,7 +1147,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				if (apiWf.Input == nil && sdkWf.Input != nil) || (apiWf.Input != nil && sdkWf.Input == nil) {
 					if storesPayloadsOutOfLine(lang) && apiWf.Input != nil && sdkWf.Input == nil {
-						t.Logf("[%s] Upstream schema divergence: the %s SDK stores inputs out-of-line in the workflow_input table, which the pinned Go SDK client v1.3.0 does not read; only a data-plane read is blind (ADR 0013) (API=%v, SDK DB=%v)", lang, lang, *apiWf.Input, sdkWf.Input)
+						t.Logf("[%s] Upstream schema divergence: the %s SDK stores inputs out-of-line in the workflow_input table, which the pinned Go SDK client v1.3.0 does not read; Direct mode reads them with Go SDK v1.7.0 (API=%v, SDK DB=%v)", lang, lang, *apiWf.Input, sdkWf.Input)
 					} else {
 						t.Errorf("[%s] Input presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Input, sdkWf.Input)
 						return
@@ -1190,7 +1199,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				if (apiWf.Output == nil && sdkWf.Output != nil) || (apiWf.Output != nil && sdkWf.Output == nil) {
 					if storesPayloadsOutOfLine(lang) && apiWf.Output != nil && sdkWf.Output == nil {
-						t.Logf("[%s] Upstream schema divergence: the %s SDK stores outputs out-of-line in the workflow_output table, which the pinned Go SDK client v1.3.0 does not read; only a data-plane read is blind (ADR 0013) (API=%v, SDK DB=%v)", lang, lang, apiWf.Output, sdkWf.Output)
+						t.Logf("[%s] Upstream schema divergence: the %s SDK stores outputs out-of-line in the workflow_output table, which the pinned Go SDK client v1.3.0 does not read; Direct mode reads them with Go SDK v1.7.0 (API=%v, SDK DB=%v)", lang, lang, apiWf.Output, sdkWf.Output)
 					} else {
 						t.Errorf("[%s] Output presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Output, sdkWf.Output)
 						return
@@ -1239,7 +1248,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 
 				if (apiWf.Error == nil && sdkWf.Error != nil) || (apiWf.Error != nil && sdkWf.Error == nil) {
 					if storesPayloadsOutOfLine(lang) && apiWf.Error != nil && sdkWf.Error == nil {
-						t.Logf("[%s] Upstream schema divergence: the %s SDK stores errors out-of-line in the workflow_output table, which the pinned Go SDK client v1.3.0 does not read; only a data-plane read is blind (ADR 0013) (API=%v, SDK DB=%v)", lang, lang, apiWf.Error, sdkWf.Error)
+						t.Logf("[%s] Upstream schema divergence: the %s SDK stores errors out-of-line in the workflow_output table, which the pinned Go SDK client v1.3.0 does not read; Direct mode reads them with Go SDK v1.7.0 (API=%v, SDK DB=%v)", lang, lang, apiWf.Error, sdkWf.Error)
 					} else {
 						t.Errorf("[%s] Error presence mismatch: API=%v, SDK DB=%v", lang, apiWf.Error, sdkWf.Error)
 						return
@@ -1528,6 +1537,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	// -------------------------------------------------------------------------
 	c6Start := time.Now()
 	t.Run("Cell_6_Offline_Cancel_Resume", func(t *testing.T) {
+		t.Skip("[SKIPPED: direct-matrix] Attached matrix keeps pre-split SDKs; Direct mode coverage runs in internal/dataplane.")
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				defer func() {
@@ -1538,9 +1548,9 @@ func TestVerifySDK_Matrix(t *testing.T) {
 				if lang == "Java" {
 					cellResults[6][lang] = CellResult{
 						Status: CellStatusSkip,
-						Reason: "upstream schema v19 vs v107",
+						Reason: "Java schema 114 is below the Direct mode floor",
 					}
-					t.Skip("[SKIPPED: upstream-schema-divergence] Java SDK 0.8.0 schema version 19 lacks required columns (completed_at) for Go SDK data-plane fallback v1.3.0 (requires v107)")
+					t.Skip("[SKIPPED: java-schema-floor] Java schema 114 is below the Direct mode floor; use Attached mode")
 				}
 
 				cellLangStart := time.Now()
@@ -1678,6 +1688,7 @@ func TestVerifySDK_Matrix(t *testing.T) {
 	// -------------------------------------------------------------------------
 	c7Start := time.Now()
 	t.Run("Cell_7_Fork_Via_Data_Plane", func(t *testing.T) {
+		t.Skip("[SKIPPED: direct-matrix] Attached matrix keeps pre-split SDKs; Direct mode coverage runs in internal/dataplane.")
 		for _, lang := range []string{"Go", "Python", "TypeScript", "Java"} {
 			t.Run(lang, func(t *testing.T) {
 				defer func() {
@@ -1915,24 +1926,7 @@ func generateReportMarkdown(containers map[string]containerInfo, cellResults map
 		sb.WriteString(fmt.Sprintf("- **Secondary Container Recovery Log Line**: `%s`\n", c.SurvivorRecoveryLog))
 		sb.WriteString(fmt.Sprintf("- **Terminal Outcome Count**: `%d` (exactly 1)\n", c.TerminalOutcomes))
 		sb.WriteString(fmt.Sprintf("- **Step Re-executions**: `%d`\n", c.StepReexecutions))
-		if lang == "Java" {
-			sb.WriteString("- **Cell 6 Status**: Skipped (upstream DBOS Java SDK 0.8.0 schema version 19 lacks completed_at required by Go SDK data-plane client v107)\n")
-			sb.WriteString("- **Cell 7 Status**: Skipped (upstream DBOS Java SDK 0.8.0 schema version 19 lacks completed_at required by Go SDK data-plane client v107)\n\n")
-		} else {
-			if c.Cell6CancelledObserved && c.Cell6ResumedCompleted {
-				sb.WriteString(fmt.Sprintf("- **Cell 6 Duration**: `%v` (honoured cancel [step2=%d] and resume [step2=%d] across container restart)\n",
-					c.Cell6Duration.Round(time.Millisecond), c.Cell6CancelStep2Count, c.Cell6ResumeStep2Count))
-			} else {
-				sb.WriteString(fmt.Sprintf("- **Cell 6 Duration**: `%v`\n", c.Cell6Duration.Round(time.Millisecond)))
-			}
-			if c.StepZeroWfID != "" {
-				sb.WriteString(fmt.Sprintf("- **Cell 7 Duration**: `%v` (forked workflow `%s` by `%s`; step-zero fork `%s` by `%s` executed to SUCCESS)\n\n",
-					c.Cell7Duration.Round(time.Millisecond), c.ForkedWfID, c.ForkedExecutorID, c.StepZeroWfID, c.StepZeroExecutorID))
-			} else {
-				sb.WriteString(fmt.Sprintf("- **Cell 7 Duration**: `%v` (forked workflow `%s` executed to SUCCESS by live executor `%s`)\n\n",
-					c.Cell7Duration.Round(time.Millisecond), c.ForkedWfID, c.ForkedExecutorID))
-			}
-		}
+		sb.WriteString("- **Cell 4/6/7 Status**: Skipped in the Attached matrix. Direct mode coverage runs in `internal/dataplane`.\n\n")
 	}
 
 	sb.WriteString("## Verification Invariants Audit\n\n")
@@ -1945,8 +1939,8 @@ func generateReportMarkdown(containers map[string]containerInfo, cellResults map
 	}
 	sb.WriteString("- **Real External Processes**: All 4 SDK runtimes executed in real containers under Podman compose (`deploy/compose-sdk-apps.yaml`) using official SDK packages (`dbos` PyPI, `@dbos-inc/dbos-sdk` npm, `dev.dbos:transact` Maven Central, `github.com/dbos-inc/dbos-transact-golang`).\n")
 	sb.WriteString("- **Chaos Recovery Assertions**: Harness proved kill timestamp, DISCONNECTED to DEAD transition with elapsed >= grace, secondary log recovery dispatch, and exactly-once terminal outcome.\n")
-	sb.WriteString("- **Offline Cancel & Resume**: Container stopped, data-plane cancel and resume dispatched, container restarted, and restarted executor verified to honor both states.\n")
-	sb.WriteString("- **Fork Dequeue & Terminal Execution**: Workflow forked natively via SDK runtime and verified to dequeue and execute to SUCCESS with live executor ID recorded.\n")
+	sb.WriteString("- **Offline Cancel & Resume**: Skipped in the Attached matrix; covered by `internal/dataplane` Direct mode tests.\n")
+	sb.WriteString("- **Fork Dequeue & Terminal Execution**: Skipped in the Attached matrix; covered by `internal/dataplane` Direct mode tests.\n")
 	sb.WriteString("- **Credential Redaction**: Conductor keys across container logs and verification evidence were redacted as `dbos_***`.\n")
 
 	return redactConductorKey(sb.String())
