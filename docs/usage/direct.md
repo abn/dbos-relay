@@ -100,9 +100,13 @@ The following operations stay on the executor path and return
 - metrics that require in-process telemetry;
 - retention execution.
 
-Payloads are read in their stored format, including DBOS portable JSON. Values
-Relay cannot decode are displayed as opaque and are not written back.
-Enqueue, send, and set-event are not exposed by this release.
+Payloads are read in their stored format, including DBOS portable JSON. Python
+and TypeScript default to native serializers; configure the portable JSON
+serializer when payloads need to be readable across languages. In Python use
+`DBOSPortableJSONSerializer`; in TypeScript use a serializer whose `name()` is
+`portable_json`. The cross-language fixtures in `tests/direct` are a worked
+example. Values Relay cannot decode are displayed as opaque and are not written
+back. Enqueue, send, and set-event are not exposed by this release.
 
 ## Security
 

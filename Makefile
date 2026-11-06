@@ -8,7 +8,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X github.com/abn/relay/internal/cli.Version=$(VERSION)
 GENERATED := internal/store/gen internal/api/gen
 
-.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk watch/java-connector
+.PHONY: help setup build build/java build/typescript dashboard/build dashboard/check site site/clean test test/conformance test/direct vet lint/sdk-isolation lint/examples-isolation gen drift lint fmt docs/check check clean hooks/require hooks/update help db/up db/down db/url verify-live verify-sdk watch/java-connector
 
 ##@ Bootstrap
 
@@ -56,6 +56,10 @@ test: ## Run the test suite
 
 test/conformance: ## Run the end-to-end conformance test suite
 	go test -v ./tests/conformance/...
+
+test/direct: ## Run the cross-language Direct mode test
+	cd tests/direct/fixtures/typescript && npm ci && npm run build
+	go test -count=1 -v ./tests/direct/...
 
 vet: lint/sdk-isolation lint/examples-isolation ## Run static analysis
 	go vet ./...
