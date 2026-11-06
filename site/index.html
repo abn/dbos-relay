@@ -3,1035 +3,818 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Relay: Open-Source Control Plane for DBOS Transact Applications</title>
-<meta name="description" content="Self-hostable control plane for DBOS distributed workflows. Drop-in protocol parity, visual family DAGs, declarative GitOps, and single-binary deployment.">
+<title>Relay: open control plane for DBOS Transact</title>
+<meta name="description" content="Relay is an open-source, self-hostable control plane for DBOS Transact. Attached mode speaks the Conductor protocol. Direct mode uses the application system database with no connector. MIT licensed.">
 <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="preload" href="/assets/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-:root {
-  --bg: #0d1117;
-  --bg-2: #010409;
-  --bg-panel: #161b22;
-  --bg-card: #161b22;
-  --bg-raised: #21262d;
-  --line: #30363d;
-  --line-strong: #484f58;
-  --line-focus: #4493f8;
-  --ink: #f0f6fc;
-  --ink-dim: #8b949e;
-  --ink-faint: #8b949e;
-  --cobalt: #1f6feb;
-  --cobalt-hi: #58a6ff;
-  --cobalt-dark: #0969da;
-  --emerald: #3fb950;
-  --rose: #f85149;
-  --amber: #d29922;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+@font-face {
+  font-family: "Archivo";
+  src: url("/assets/fonts/archivo-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  color-scheme: light;
+  --paper: #f4f5f7;
+  --paper-raised: #ffffff;
+  --ink: #15171a;
+  --muted: #5d636b;
+  --rule: #d7dbe0;
+  --rule-strong: #15171a;
+  --accent: #1f4ed8;
+  --code: #171717;
+  --code-ink: #ece9e2;
+  --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
 html { scroll-behavior: smooth; }
+
 body {
-  background: var(--bg);
+  margin: 0;
+  background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  line-height: 1.6;
+  font-size: 17px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
-a {
-  color: var(--cobalt-hi);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: color .15s, border-color .15s;
-}
-a:hover {
-  color: #79b8ff;
-  border-bottom-color: currentColor;
-}
-pre, code, kbd { font-family: var(--mono); }
-.wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+::selection { background: var(--accent); color: #fff; }
 
-/* Background Depth */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    radial-gradient(1100px 500px at 20% -10%, rgba(31, 111, 235, 0.08), transparent 60%),
-    radial-gradient(900px 500px at 85% 10%, rgba(31, 111, 235, 0.05), transparent 55%),
-    linear-gradient(180deg, var(--bg) 0%, var(--bg) 100%);
+a { color: inherit; text-decoration: none; }
+a:hover { color: var(--accent); }
+
+p a, dd a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 100;
+  padding: 10px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.skip-link:focus { top: 12px; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+img { display: block; max-width: 100%; height: auto; }
+
+.wrap {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
 }
 
 /* Header */
-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: rgba(13, 17, 23, 0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+
+.site-header {
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
 }
-nav.wrap {
+
+.header-inner {
+  min-height: 64px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  height: 64px;
+  gap: 14px;
 }
+
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-weight: 800;
-  font-size: 1.15rem;
-  letter-spacing: -.01em;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.brand a {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--ink);
-  border-bottom: none;
-}
-.brand svg {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
-.brand-tag {
-  font-size: .8rem;
-  font-family: var(--mono);
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 99px;
-  background: rgba(31, 111, 235, 0.15);
-  color: var(--cobalt-hi);
-  border: 1px solid rgba(88, 166, 255, 0.3);
-}
-header nav ul {
-  display: flex;
-  gap: 24px;
-  list-style: none;
-  align-items: center;
-}
-header nav a {
-  font-size: .9rem;
-  color: var(--ink-dim);
-  border-bottom: none;
-  font-weight: 500;
-  transition: color .15s;
-}
-header nav a:hover {
-  color: var(--ink);
-}
-.nav-cta {
-  font-family: var(--mono);
-  font-size: .82rem !important;
-  font-weight: 600 !important;
-  padding: 6px 14px;
-  background: var(--bg-panel);
-  border: 1px solid var(--line) !important;
-  border-radius: 6px;
-  color: var(--ink) !important;
-  transition: all .15s;
-}
-.nav-cta:hover {
-  background: var(--bg-raised);
-  border-color: var(--cobalt-hi) !important;
-}
-
-/* Hero Section */
-.hero {
-  padding: 80px 0 60px;
-  text-align: center;
-}
-.hero-context {
-  font-size: .95rem;
-  font-weight: 600;
-  color: var(--cobalt-hi);
-  margin-bottom: 16px;
-  letter-spacing: .02em;
-}
-h1 {
-  font-size: clamp(2.4rem, 5.5vw, 3.8rem);
-  font-weight: 800;
-  line-height: 1.12;
-  letter-spacing: -.03em;
-  margin-bottom: 20px;
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
-}
-h1 span.highlight {
-  color: var(--cobalt-hi);
-}
-.lede {
-  font-size: clamp(1.05rem, 2vw, 1.22rem);
-  color: var(--ink-dim);
-  max-width: 740px;
-  margin: 0 auto 36px;
-  line-height: 1.65;
-}
-.cta-group {
-  display: flex;
-  gap: 14px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 56px;
-}
-.btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: .9rem;
-  font-weight: 600;
-  padding: 12px 22px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all .15s;
-  border: 1px solid transparent;
-}
-.btn-primary {
-  background: var(--cobalt);
-  color: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-.btn-primary:hover {
-  background: var(--cobalt-hi);
-  color: #0d1117;
-  transform: translateY(-1px);
-}
-.btn-secondary {
-  background: var(--bg-panel);
-  border-color: var(--line);
-  color: var(--ink);
-}
-.btn-secondary:hover {
-  background: var(--bg-raised);
-  border-color: var(--cobalt-hi);
-  color: #ffffff;
-}
-
-/* Showcase & Screenshots */
-.showcase-container {
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 12px rgba(1, 4, 9, 0.5);
-  margin-bottom: 96px;
-}
-.showcase-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--line);
-  gap: 14px;
-  min-width: 0;
-}
-.mac-dots {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.mac-dots span {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-}
-.mac-dots span:nth-child(1) { background: #ef4444; }
-.mac-dots span:nth-child(2) { background: #f59e0b; }
-.mac-dots span:nth-child(3) { background: #10b981; }
-
-.showcase-tabs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  flex-wrap: nowrap;
-  flex: 1 1 auto;
-  min-width: 0;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.showcase-tabs::-webkit-scrollbar {
-  display: none;
-}
-.tab-btn {
-  font-family: var(--mono);
-  font-size: .78rem;
-  padding: 6px 12px;
-  border-radius: 6px;
-  background: none;
-  border: 1px solid transparent;
-  color: var(--ink-dim);
-  cursor: pointer;
-  transition: all .15s;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.tab-btn:hover {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.04);
-}
-.tab-btn.active {
-  color: var(--cobalt-hi);
-  background: var(--bg-card);
-  border-color: var(--line);
-  font-weight: 600;
-}
-.showcase-header-label {
-  font-family: var(--mono);
-  font-size: .8rem;
-  color: var(--ink-dim);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-.showcase-viewport {
-  position: relative;
-  background: #000;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.showcase-img {
-  width: 100%;
-  height: auto;
-  display: none;
-  transition: opacity .2s ease;
-}
-.showcase-img.active {
-  display: block;
-}
-.showcase-img img {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-.showcase-caption {
-  padding: 12px 20px;
-  background: var(--bg-panel);
-  border-top: 1px solid var(--line);
-  font-size: .85rem;
-  color: var(--ink-dim);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.showcase-caption kbd {
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: .75rem;
-  color: var(--cobalt-hi);
-}
-
-/* Feature Grid */
-.section-head {
-  text-align: center;
-  margin-bottom: 54px;
-}
-.section-kicker {
-  font-family: var(--mono);
-  font-size: .78rem;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--cobalt-hi);
-  margin-bottom: 12px;
-}
-.section-title {
-  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
-  font-weight: 800;
-  letter-spacing: -.02em;
-  margin-bottom: 16px;
-}
-.section-desc {
-  font-size: 1.05rem;
-  color: var(--ink-dim);
-  max-width: 680px;
-  margin: 0 auto;
-}
-
-.grid-3 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 24px;
-  margin-bottom: 96px;
-}
-.card {
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 24px;
-  transition: transform .15s, border-color .15s, box-shadow .15s;
-}
-.card:hover {
-  transform: translateY(-2px);
-  border-color: var(--line-strong);
-  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.4);
-}
-.card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--cobalt-hi);
-  flex-shrink: 0;
-}
-.card-icon svg {
-  width: 22px;
-  height: 22px;
-}
-.card-title {
-  font-size: 1.15rem;
-  font-weight: 600;
-  margin-bottom: 0;
-  color: var(--ink);
-}
-.card-text {
-  font-size: .92rem;
-  color: var(--ink-dim);
-  line-height: 1.6;
-}
-
-/* Code & Quickstart */
-.quickstart-section {
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 36px;
-  margin-bottom: 32px;
-}
-.quickstart-section:last-of-type {
-  margin-bottom: 96px;
-}
-.quickstart-step-head {
-  margin-bottom: 18px;
-}
-.quickstart-step-badge {
-  display: inline-block;
-  font-size: .75rem;
-  font-family: var(--mono);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: var(--bg-raised);
-  color: var(--cobalt-hi);
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.quickstart-step-title {
-  font-size: 1.25rem;
+  gap: 10px;
   font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 6px;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
 }
-.quickstart-step-desc {
-  font-size: .9rem;
-  color: var(--ink-dim);
-  margin: 0;
-}
-.code-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 10px;
-}
-.code-tab-btn {
-  font-family: var(--mono);
-  font-size: .82rem;
-  background: none;
-  border: none;
-  color: var(--ink-dim);
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all .15s;
-}
-.code-tab-btn.active {
-  color: var(--cobalt-hi);
-  background: var(--bg-raised);
-  font-weight: 600;
-}
-.code-panes {
-  display: grid;
-  grid-template-columns: 1fr;
-  min-height: 340px;
-}
-.code-pane {
-  grid-area: 1 / 1;
-  visibility: hidden;
-  opacity: 0;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 20px;
-  overflow-x: auto;
-  min-width: 0;
-  transition: opacity .15s ease;
-  pointer-events: none;
-}
-.code-pane.active {
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
-}
-.code-pane pre code {
-  color: var(--ink);
-  font-size: .88rem;
-  line-height: 1.6;
-}
-.code-pane .comment { color: var(--ink-dim); }
-.code-pane .keyword { color: var(--cobalt-hi); }
-.code-pane .string { color: var(--emerald); }
 
-/* Comparison Table */
-.table-wrap {
-  overflow-x: auto;
-  margin-bottom: 96px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg-panel);
-  padding: 12px;
+.brand svg { width: 24px; height: 24px; }
+
+.brand-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 2px 6px;
 }
-table.comparison-table {
+
+.nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-size: 14px;
+}
+
+.nav a { color: var(--muted); }
+.nav a:hover { color: var(--ink); }
+.nav .github { color: var(--ink); font-weight: 600; }
+
+/* Hero */
+
+.hero {
+  padding-top: 76px;
+  padding-bottom: 56px;
+}
+
+.hero-copy {
+  animation: enter 0.5s ease-out both;
+}
+
+.hero h1 {
+  max-width: 980px;
+  margin: 0;
+  font-size: clamp(3rem, 7.2vw, 5.6rem);
+  line-height: 0.96;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+}
+
+.lede {
+  max-width: 720px;
+  margin: 26px 0 0;
+  color: var(--muted);
+  font-size: 1.14rem;
+  line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.button.primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.button.primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.button.secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.button.secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 44px;
+  margin: 42px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.facts div { min-width: 100px; }
+
+.facts dt {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.product-shot {
+  margin: 48px 0 0;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #111;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 18px 40px rgba(0, 0, 0, 0.08);
+  animation: enter 0.55s 0.08s ease-out both;
+}
+
+.product-shot img { width: 100%; }
+
+.product-shot figcaption {
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Sections */
+
+.section {
+  padding: 76px 0;
+  border-top: 1px solid var(--rule);
+  scroll-margin-top: 24px;
+}
+
+.section h2 {
+  max-width: 760px;
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 3.1rem);
+  line-height: 1.04;
+  letter-spacing: -0.026em;
+  font-weight: 700;
+}
+
+.section > .section-lede {
+  max-width: 700px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 1.02rem;
+}
+
+/* Modes */
+
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  margin-top: 44px;
+}
+
+.modes > *, .split > *, .quickstart-grid > * { min-width: 0; }
+
+.mode {
+  border-top: 1px solid var(--rule-strong);
+  padding-top: 18px;
+}
+
+.mode-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mode h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+}
+
+.mode-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.mode p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.mode pre { margin-top: 22px; }
+
+.mode-note {
+  margin: 34px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* Split */
+
+.split {
+  display: grid;
+  grid-template-columns: 1.02fr 0.98fr;
+  gap: 52px;
+  align-items: start;
+  margin-top: 44px;
+}
+
+.feature-list {
+  margin: 0;
+  display: grid;
+  gap: 0;
+}
+
+.feature-list div {
+  padding: 15px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.feature-list div:first-child { border-top: 1px solid var(--rule-strong); }
+
+.feature-list dt {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.feature-list dd {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+.side-shot {
+  margin: 0;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #111;
+}
+
+.side-shot img { width: 100%; }
+
+.side-shot figcaption {
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Quickstart */
+
+.quickstart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  margin-top: 44px;
+}
+
+.step {
+  border-top: 1px solid var(--rule-strong);
+  padding-top: 18px;
+}
+
+.step h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+
+.step p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.step pre { margin-top: 18px; }
+
+.step .subhead {
+  margin: 22px 0 0;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* Code */
+
+pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 6px;
+  background: var(--code);
+  color: var(--code-ink);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+pre code { font: inherit; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+p code, dd code {
+  background: rgba(22, 22, 22, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Comparison */
+
+.comparison { padding-bottom: 88px; }
+
+.table-wrap { margin-top: 40px; overflow-x: auto; }
+
+table {
   width: 100%;
   border-collapse: collapse;
-  font-size: .92rem;
+  font-size: 14px;
+}
+
+th, td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--rule);
   text-align: left;
+  vertical-align: top;
 }
-table.comparison-table th,
-table.comparison-table td {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
+
+th {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 400;
 }
-table.comparison-table th {
-  background: var(--bg-raised);
-  color: var(--ink);
-  font-weight: 600;
-  font-size: .9rem;
-}
-table.comparison-table tr:last-child td {
-  border-bottom: none;
-}
-table.comparison-table td.feature-cell {
-  font-weight: 600;
-  color: var(--ink);
-}
-table.comparison-table .yes {
-  color: var(--emerald);
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-table.comparison-table .no {
-  color: var(--ink-faint);
+
+tbody th { font-weight: 600; width: 28%; text-align: left; }
+
+.note {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 /* Footer */
-footer {
-  border-top: 1px solid var(--line);
-  background: var(--bg-2);
-  padding: 48px 0 32px;
-  font-size: .88rem;
-  color: var(--ink-dim);
+
+.site-footer {
+  border-top: 1px solid var(--rule-strong);
+  padding: 34px 0 40px;
 }
-.footer-wrap {
+
+.footer-inner {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
+  gap: 28px;
+  align-items: flex-start;
 }
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.footer-brand svg { width: 20px; height: 20px; }
+
+.footer-copy {
+  margin: 8px 0 0;
+  max-width: 440px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .footer-links {
   display: flex;
-  gap: 20px;
-  list-style: none;
-}
-.footer-links a {
-  color: var(--ink-dim);
-  border-bottom: none;
-}
-.footer-links a:hover {
-  color: var(--ink);
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
-@media (max-width: 860px) {
-  .showcase-header-label { display: none; }
+.footer-links a:hover { color: var(--ink); }
+
+/* Motion */
+
+@keyframes enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 768px) {
-  header nav ul { display: none; }
-  .grid-3 { grid-template-columns: 1fr; }
-  .quickstart-section { padding: 24px 16px; }
-  .hero { padding: 48px 0 36px; }
-  .table-wrap { padding: 8px; }
-  table.comparison-table th,
-  table.comparison-table td { padding: 12px 14px; font-size: .84rem; }
+/* Responsive */
+
+@media (max-width: 900px) {
+  .hero { padding-top: 56px; }
+  .modes, .split, .quickstart-grid { grid-template-columns: 1fr; gap: 36px; }
+  .split { gap: 40px; }
+  .side-shot { max-width: 720px; }
+}
+
+@media (max-width: 680px) {
+  .wrap { padding: 0 18px; }
+  .header-inner { min-height: 58px; }
+  .nav { gap: 14px; font-size: 13px; }
+  .nav .optional { display: none; }
+  .hero { padding-top: 44px; padding-bottom: 40px; }
+  .hero h1 { font-size: clamp(2.55rem, 12vw, 3.6rem); }
+  .lede { font-size: 1.02rem; }
+  .actions { flex-direction: column; align-items: stretch; }
+  .button { width: 100%; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; margin-top: 32px; }
+  .facts div { min-width: 0; }
+  .product-shot { margin-top: 34px; border-radius: 8px; }
+  .section { padding: 54px 0; }
+  .section h2 { font-size: clamp(1.75rem, 8vw, 2.4rem); }
+  .mode-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .footer-inner { flex-direction: column; }
+  .footer-links { gap: 8px 16px; }
+  pre { font-size: 12px; padding: 14px; }
+
+  table, tbody, tr, th, td { display: block; }
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  tr { padding: 14px 0; border-top: 1px solid var(--rule); }
+  tr:last-child { border-bottom: 1px solid var(--rule); }
+  td { padding: 2px 0; border: 0; }
+  tbody th { width: auto; padding: 0 0 6px; }
+  td:nth-child(2)::before { content: "Relay: "; color: var(--muted); font-weight: 400; }
+  td:nth-child(3)::before { content: "Conductor: "; color: var(--muted); font-weight: 400; }
+}
+
+@media (max-width: 360px) {
+  .brand-tag { display: none; }
+  .header-inner { gap: 8px; }
+  .nav { gap: 10px; font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hero-copy, .product-shot { animation: none; }
+  * { transition: none !important; }
 }
 </style>
 </head>
 <body>
 
-<header>
-  <nav class="wrap">
-    <div class="brand">
-      <a href="/">
-        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="5" y="5" width="10" height="10" rx="3" fill="#3b82f6"/>
-          <path d="M15 10H25C28.866 10 32 13.134 32 17C32 20.866 28.866 24 25 24H15" stroke="#3b82f6" stroke-width="4" stroke-linecap="round"/>
-          <path d="M22 23L32 35" stroke="#3b82f6" stroke-width="4" stroke-linecap="round"/>
-          <rect x="5" y="25" width="10" height="10" rx="3" fill="#3b82f6"/>
-        </svg>
-        <span>Relay</span>
-      </a>
-      <span class="brand-tag">v<!-- x-release-please-version -->0.6.0<!-- /x-release-please-version --></span>
-    </div>
-    <ul>
-      <li><a href="#features">Features</a></li>
-      <li><a href="#showcase">Dashboard UI</a></li>
-      <li><a href="#comparison">Why Relay</a></li>
-      <li><a href="/playground/">Playground</a></li>
-      <li><a href="/wiki/changelog.html">Changelog</a></li>
-      <li><a href="/wiki/">Docs</a></li>
-      <li><a href="https://github.com/abn/dbos-relay" class="nav-cta" target="_blank" rel="noopener">GitHub ↗</a></li>
-    </ul>
-  </nav>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="5" y="5" width="10" height="10" rx="3" fill="#1f4ed8"/>
+        <path d="M15 10H25C28.866 10 32 13.134 32 17C32 20.866 28.866 24 25 24H15" stroke="#1f4ed8" stroke-width="4" stroke-linecap="round"/>
+        <path d="M22 23L32 35" stroke="#1f4ed8" stroke-width="4" stroke-linecap="round"/>
+        <rect x="5" y="25" width="10" height="10" rx="3" fill="#1f4ed8"/>
+      </svg>
+      <span>Relay</span>
+    </a>
+    <span class="brand-tag">v<!-- x-release-please-version -->0.6.0<!-- /x-release-please-version --></span>
+    <nav class="nav" aria-label="Main">
+      <a class="optional" href="#modes">Modes</a>
+      <a class="optional" href="#quickstart">Quickstart</a>
+      <a href="/wiki/">Docs</a>
+      <a href="/playground/">Playground</a>
+      <a class="github" href="https://github.com/abn/dbos-relay" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
 </header>
 
-<main>
-  <!-- Hero -->
+<main id="main">
   <section class="hero wrap">
-    <p class="hero-context">Open-Source Control Plane for DBOS</p>
-    <h1>
-      Take Durable Workflows from Local Dev <br>
-      to <span class="highlight">Production on Your Own Terms</span>
-    </h1>
-    <p class="lede">
-      Relay is a self-hostable control plane for DBOS Transact applications.
-      Deploy a single binary with zero-dependency embedded storage or clustered PostgreSQL, connect unmodified SDK apps in seconds,
-      and run distributed workflows with automatic retries, step memoization, and recovery on your own infrastructure.
-    </p>
-    <div class="cta-group">
-      <a href="/playground/" class="btn btn-primary">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Live WASM Playground</span>
-      </a>
-      <a href="#quickstart" class="btn btn-secondary">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-        <span>Deploy in 60 Seconds</span>
-      </a>
-      <a href="/wiki/" class="btn btn-secondary">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-        <span>Read Docs</span>
-      </a>
-      <a href="https://github.com/abn/dbos-relay" class="btn btn-secondary" target="_blank" rel="noopener">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-        <span>GitHub Repository</span>
-      </a>
+    <div class="hero-copy">
+      <h1>Run DBOS workflows on your own infrastructure.</h1>
+      <p class="lede">
+        Relay is an open-source control plane for DBOS Transact. Use the Conductor protocol on supported SDKs, or connect directly to the application system database on post-split SDKs. No vendor key, and no connector in Direct mode.
+      </p>
+      <div class="actions">
+        <a class="button primary" href="#quickstart">Start with Relay</a>
+        <a class="button secondary" href="/wiki/">Read the docs</a>
+      </div>
+      <dl class="facts">
+        <div><dt>License</dt><dd>MIT</dd></div>
+        <div><dt>Deployment</dt><dd>One binary</dd></div>
+        <div><dt>Storage</dt><dd>PostgreSQL or SQLite</dd></div>
+        <div><dt>Vendor key</dt><dd>Not required</dd></div>
+      </dl>
     </div>
 
-    <!-- Showcase Container -->
-    <div id="showcase" class="showcase-container">
-      <div class="showcase-header">
-        <div class="mac-dots">
-          <span></span><span></span><span></span>
+    <figure class="product-shot">
+      <picture>
+        <source srcset="/assets/screenshots/dashboard-workflow-dag.webp" type="image/webp">
+        <img src="/assets/screenshots/dashboard-workflow-dag.png" alt="Relay console showing a workflow family DAG with root steps and child workflows" width="1440" height="900" fetchpriority="high">
+      </picture>
+      <figcaption>The workflow family DAG in the Relay console. Steps, child workflows, timings, and outcomes in one view.</figcaption>
+    </figure>
+  </section>
+
+  <section id="modes" class="section wrap">
+    <h2>Two ways to connect.</h2>
+    <p class="section-lede">Pick the mode that matches your SDK. Both use the same control plane, dashboard, and API. Recovery follows each mode's liveness signal.</p>
+
+    <div class="modes">
+      <article class="mode">
+        <div class="mode-head">
+          <h3>Attached</h3>
+          <span class="mode-tag">Conductor protocol</span>
         </div>
-        <div class="showcase-tabs">
-          <button class="tab-btn active" onclick="switchScreenshot('dag', this)">Workflow Family DAG</button>
-          <button class="tab-btn" onclick="switchScreenshot('fleet', this)">Fleet & Applications</button>
-          <button class="tab-btn" onclick="switchScreenshot('table', this)">Executions List</button>
-          <button class="tab-btn" onclick="switchScreenshot('queues', this)">Queues</button>
-          <button class="tab-btn" onclick="switchScreenshot('schedules', this)">Schedules</button>
-          <button class="tab-btn" onclick="switchScreenshot('alerts', this)">Alert Rules</button>
+        <p>For Go 1.6.0 and earlier, Python 3.2.0 and earlier, TypeScript 5.2.11 and earlier, and Java. Point the application's Conductor URL and key at Relay. The connector stays in the app.</p>
+        <pre><code>export DBOS__CLOUD=true
+export DBOS__CONDUCTOR_APP_NAME=checkout
+export DBOS__CONDUCTOR_URL=ws://relay:8090
+export DBOS__CONDUCTOR_KEY=...</code></pre>
+      </article>
+
+      <article class="mode">
+        <div class="mode-head">
+          <h3>Direct</h3>
+          <span class="mode-tag">No connector</span>
         </div>
-        <div class="showcase-header-label">
-          Embedded Console
+        <p>For Go 1.7 and 1.8, Python 3.3 and 3.4, and TypeScript 5.3 and 5.4. Relay reads and controls the application through its system database using DBOS's MIT Go client. Schema 123 through 125.</p>
+        <pre><code>data_plane:
+  checkout:
+    connection_string_from:
+      env: CHECKOUT_DB_URL
+    integration: direct
+    mode: read-write</code></pre>
+      </article>
+    </div>
+
+    <p class="mode-note">Java 1.2.0 is schema 114 and uses Attached. Direct mode needs a database connection and, for automatic recovery, a liveness signal from <code>relay probe</code>. <a href="/wiki/usage/direct.html">Read the Direct mode guide</a>.</p>
+  </section>
+
+  <section class="section wrap">
+    <h2>The control plane, not another runtime.</h2>
+    <p class="section-lede">Your application keeps its own database and its own execution model. Relay adds the fleet view, recovery, schedules, queues, alerts, and the API around it.</p>
+
+    <div class="split">
+      <dl class="feature-list">
+        <div>
+          <dt>Recovery</dt>
+          <dd>In Attached mode, a dead executor's work is handed to a healthy peer. In Direct mode, Relay re-enqueues it through the system database after <code>relay probe</code> or an operator reports the executor gone.</dd>
         </div>
-      </div>
-      <div class="showcase-viewport">
-        <picture id="img-dag" class="showcase-img active">
-          <source srcset="/assets/screenshots/dashboard-workflow-dag.webp" type="image/webp">
-          <img src="/assets/screenshots/dashboard-workflow-dag.png" alt="Relay Visual Workflow Family DAG View with cubic bezier curves and child workflows" width="1440" height="900" fetchpriority="high">
-        </picture>
-        <picture id="img-fleet" class="showcase-img">
+        <div>
+          <dt>Fleet view</dt>
+          <dd>Applications, executors, versions, queues, and schedules in one console.</dd>
+        </div>
+        <div>
+          <dt>Workflow DAG</dt>
+          <dd>Root steps and child workflows with timings, outcomes, inputs, and outputs.</dd>
+        </div>
+        <div>
+          <dt>Schedules and queues</dt>
+          <dd>Cron schedules, queue limits, partitions, and manual triggers.</dd>
+        </div>
+        <div>
+          <dt>Declarative config</dt>
+          <dd><code>relay apply</code> and <code>relay diff</code> from a YAML manifest, ready for GitOps.</dd>
+        </div>
+        <div>
+          <dt>One binary</dt>
+          <dd>Embedded SQLite for a laptop. PostgreSQL for a clustered deployment. OpenMetrics at <code>/v1/metrics</code>.</dd>
+        </div>
+      </dl>
+
+      <figure class="side-shot">
+        <picture>
           <source srcset="/assets/screenshots/dashboard-fleet.webp" type="image/webp">
-          <img src="/assets/screenshots/dashboard-fleet.png" alt="Relay Fleet and Applications Overview" width="1440" height="900" loading="lazy">
+          <img src="/assets/screenshots/dashboard-fleet.png" alt="Relay fleet and applications view with executor health and recent workflows" width="1440" height="900" loading="lazy">
         </picture>
-        <picture id="img-table" class="showcase-img">
-          <source srcset="/assets/screenshots/dashboard-workflows-table.webp" type="image/webp">
-          <img src="/assets/screenshots/dashboard-workflows-table.png" alt="Relay Workflow Executions Table" width="1440" height="900" loading="lazy">
-        </picture>
-        <picture id="img-queues" class="showcase-img">
-          <source srcset="/assets/screenshots/dashboard-queues.webp" type="image/webp">
-          <img src="/assets/screenshots/dashboard-queues.png" alt="Relay Queues Management" width="1440" height="900" loading="lazy">
-        </picture>
-        <picture id="img-schedules" class="showcase-img">
-          <source srcset="/assets/screenshots/dashboard-schedules.webp" type="image/webp">
-          <img src="/assets/screenshots/dashboard-schedules.png" alt="Relay Cron Schedules" width="1440" height="900" loading="lazy">
-        </picture>
-        <picture id="img-alerts" class="showcase-img">
-          <source srcset="/assets/screenshots/dashboard-alerts.webp" type="image/webp">
-          <img src="/assets/screenshots/dashboard-alerts.png" alt="Relay In-Process Alerting Rules Engine" width="1440" height="900" loading="lazy">
-        </picture>
+        <figcaption>The fleet view: application health, live executors, queues, and recent workflow activity.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="quickstart" class="section wrap">
+    <h2>Start in a minute.</h2>
+    <p class="section-lede">Run Relay with embedded SQLite, then choose a connection mode. Nothing else is required for the first workflow.</p>
+
+    <div class="quickstart-grid">
+      <div class="step">
+        <h3>1. Run Relay</h3>
+        <p>Download the binary and start the embedded control plane.</p>
+        <pre><code>curl -fsSL https://github.com/abn/dbos-relay/releases/latest/download/relay-linux-amd64 -o relay
+chmod +x relay
+./relay serve --embedded</code></pre>
+        <p>Open <code>http://localhost:8090</code>. The console and the API are on the same port.</p>
       </div>
-      <div class="showcase-caption">
-        <span id="showcase-desc">Interactive SVG Workflow Family DAG linking root execution steps to child workflows with outcome-colored cubic bezier curves.</span>
-        <span><kbd>Live Sync</kbd> Real-time workflow events and state updates</span>
+
+      <div class="step">
+        <h3>2. Connect an application</h3>
+        <p class="subhead">Attached</p>
+        <p>Set the standard Conductor environment variables on the app, then start it.</p>
+        <pre><code>export DBOS__CLOUD=true
+export DBOS__CONDUCTOR_APP_NAME=checkout
+export DBOS__CONDUCTOR_URL=ws://127.0.0.1:8090
+export DBOS__CONDUCTOR_KEY=...</code></pre>
+        <p class="subhead">Direct</p>
+        <p>Add a <code>data_plane</code> block to <code>relay.yaml</code>, apply it, then run the probe beside the app.</p>
+        <pre><code>relay apply -f relay.yaml
+
+export DBOS_APP_NAME=checkout
+export DBOS__VMID=checkout-0
+export DBOS__APPVERSION=v1
+export RELAY_INTERNAL_SECRET=...
+relay probe --relay-url http://127.0.0.1:8090 \
+  --org production --app "$DBOS_APP_NAME"</code></pre>
+        <p>No application code changes in either mode. <a href="/wiki/usage/quickstart.html">Full quickstart</a>.</p>
       </div>
     </div>
   </section>
 
-  <!-- Features Grid -->
-  <section id="features" class="wrap">
-    <div class="section-head">
-      <div class="section-kicker">Architectural Advantages</div>
-      <h2 class="section-title">Built for Pragmatic Production Teams</h2>
-      <p class="section-desc">
-        Operate durable DBOS Transact applications on your own infrastructure with standard tooling.
-      </p>
-    </div>
-
-    <div class="grid-3">
-      <div class="card">
-        <div class="card-head">
-          <span class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          </span>
-          <h3 class="card-title">Drop-in Protocol Parity</h3>
-        </div>
-        <p class="card-text">
-          Fully implements the Conductor executor WebSocket protocol across all 33 wire message types and HTTP REST schemas. Unmodified DBOS Python, TypeScript, and Go applications connect out of the box.
-        </p>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <span class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          </span>
-          <h3 class="card-title">Visual Workflow Family DAG</h3>
-        </div>
-        <p class="card-text">
-          Inspect distributed workflows with an interactive SVG renderer. Graphs multi-level workflow family trees, cubic bezier curves connecting parent steps to child workflows, and interactive pan and zoom controls.
-        </p>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <span class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          </span>
-          <h3 class="card-title">Declarative GitOps Management</h3>
-        </div>
-        <p class="card-text">
-          Manage applications, queues, cron schedules, alert rules, and API keys as code. The <code>relay apply</code> and <code>export</code> commands integrate directly into automated deployment pipelines.
-        </p>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <span class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          </span>
-          <h3 class="card-title">Built-in Alerting Engine</h3>
-        </div>
-        <p class="card-text">
-          Autonomous in-process evaluator monitors WorkflowFailure, SlowQueue, and UnresponsiveApplication states with SSRF-hardened dispatch to Webhooks, Slack, and PagerDuty channels.
-        </p>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <span class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
-          </span>
-          <h3 class="card-title">Dual-Engine Storage</h3>
-        </div>
-        <p class="card-text">
-          Runs as one statically compiled binary or minimal container. Supports pure-Go embedded SQLite for instant zero-dependency local evaluation, and PostgreSQL for multi-node high-availability production clusters.
-        </p>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <span class="card-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          </span>
-          <h3 class="card-title">Zero Direct App DB Queries</h3>
-        </div>
-        <p class="card-text">
-          Relay respects clean application boundaries. It never executes raw SQL against an application's internal database schema, communicating strictly through the standard executor protocol.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Comparison Section -->
-  <section id="comparison" class="wrap">
-    <div class="section-head">
-      <div class="section-kicker">Deployment Freedom</div>
-      <h2 class="section-title">Why Non-Enterprises Choose Relay</h2>
-      <p class="section-desc">
-        A direct comparison of operating Relay on your own infrastructure versus generic closed cloud alternatives.
-      </p>
-    </div>
+  <section class="section comparison wrap">
+    <h2>Relay and Conductor.</h2>
+    <p class="section-lede">Relay is not a managed service. It is the control plane you run, on the infrastructure and database you already have.</p>
 
     <div class="table-wrap">
-      <table class="comparison-table">
+      <table aria-label="Relay and Conductor comparison">
+        <caption class="visually-hidden">Relay and Conductor comparison</caption>
         <thead>
-          <tr>
-            <th>Operational Capability</th>
-            <th>Relay (Open Source & Self-Hosted)</th>
-            <th>Closed Enterprise Cloud</th>
-          </tr>
+          <tr><th scope="col"><span class="visually-hidden">Aspect</span></th><th scope="col">Relay</th><th scope="col">Conductor</th></tr>
         </thead>
         <tbody>
-          <tr>
-            <td class="feature-cell">Self-Hostable Anywhere</td>
-            <td><span class="yes">✓ Single binary on bare metal, VPS, K8s, or Docker</span></td>
-            <td><span class="no">Closed cloud SaaS only</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">Storage Options</td>
-            <td><span class="yes">✓ Embedded SQLite (instant eval) or PostgreSQL (HA clusters, air-gapped)</span></td>
-            <td><span class="no">Proprietary multi-tenant cloud storage</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">Interactive Web Dashboard</td>
-            <td><span class="yes">✓ Embedded console with SVG Workflow Family DAG</span></td>
-            <td><span class="no">Hosted SaaS portal only</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">Declarative GitOps & Automation</td>
-            <td><span class="yes">✓ Built-in CLI (relay apply & export with YAML)</span></td>
-            <td><span class="no">Manual portal configuration</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">Integrated Alerting Rules</td>
-            <td><span class="yes">✓ Built-in Slack, PagerDuty, Webhooks with SSRF guard</span></td>
-            <td><span class="no">Requires commercial enterprise tier</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">OpenMetrics / Prometheus</td>
-            <td><span class="yes">✓ First-class /v1/metrics scrape endpoint</span></td>
-            <td><span class="no">Proprietary telemetry export</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">Licensing & Freedom</td>
-            <td><span class="yes">✓ Permissive MIT License</span></td>
-            <td><span class="no">Commercial enterprise agreement</span></td>
-          </tr>
-          <tr>
-            <td class="feature-cell">Application Code Changes</td>
-            <td><span class="yes">✓ Zero (Point conductor_url and run)</span></td>
-            <td><span class="yes">✓ Zero</span></td>
-          </tr>
+          <tr><th scope="row">Connector</th><td>Optional. Attached or Direct.</td><td>Required; proprietary for current SDKs.</td></tr>
+          <tr><th scope="row">SDK coverage</th><td>Older SDKs use Attached, current SDKs use Direct.</td><td>Only SDKs with a Conductor connector.</td></tr>
+          <tr><th scope="row">License</th><td>MIT.</td><td>Commercial.</td></tr>
+          <tr><th scope="row">Air-gapped</th><td>Yes.</td><td>Self-hosted licence checks the vendor cloud; offline keys are paid.</td></tr>
+          <tr><th scope="row">Managed service</th><td>No.</td><td>Yes.</td></tr>
         </tbody>
       </table>
     </div>
-  </section>
-
-  <!-- Quickstart / Deployment Section -->
-  <section id="quickstart" class="wrap">
-    <span id="deploy" style="display:block; position:relative; top:-80px; visibility:hidden;"></span>
-    <div class="section-head">
-      <div class="section-kicker">Quickstart</div>
-      <h2 class="section-title">Up and Running in 60 Seconds</h2>
-      <p class="section-desc">
-        Start the Relay control plane with your storage engine of choice, then connect your existing DBOS application.
-      </p>
-    </div>
-
-    <!-- Block 1: Start Relay Control Plane -->
-    <div class="quickstart-section">
-      <div class="quickstart-step-head">
-        <span class="quickstart-step-badge">Step 1</span>
-        <h3 class="quickstart-step-title">Start the Relay Control Plane</h3>
-        <p class="quickstart-step-desc">
-          Choose pure-Go embedded SQLite for instant zero-dependency local evaluation, or PostgreSQL for high-availability production clusters.
-        </p>
-      </div>
-
-      <div class="code-tabs">
-        <button class="code-tab-btn active" onclick="switchCode('embedded', this)">Embedded (Zero Setup)</button>
-        <button class="code-tab-btn" onclick="switchCode('docker', this)">Docker &amp; Postgres</button>
-        <button class="code-tab-btn" onclick="switchCode('binary', this)">Postgres Binary</button>
-      </div>
-
-      <div class="code-panes">
-        <div id="code-embedded" class="code-pane active">
-          <pre><code><span class="comment"># 1. Download and run the standalone binary with embedded SQLite</span>
-curl -fsSL https://github.com/abn/dbos-relay/releases/latest/download/relay-linux-amd64 -o relay
-chmod +x relay
-
-<span class="comment"># 2. Start Relay with pure-Go embedded storage (no PostgreSQL required)</span>
-./relay serve --embedded
-
-<span class="comment"># 3. Open http://localhost:8090 in your browser to view the web dashboard</span></code></pre>
-        </div>
-
-        <div id="code-docker" class="code-pane">
-          <pre><code><span class="comment"># 1. Start Relay with Docker pointing to your PostgreSQL instance</span>
-docker run -d \
-  --name relay \
-  -p 8090:8090 \
-  -e RELAY_DATABASE_URL=<span class="string">"postgres://relay:password@postgres:5432/relay?sslmode=disable"</span> \
-  -e RELAY_LISTEN_ADDR=<span class="string">"0.0.0.0:8090"</span> \
-  ghcr.io/abn/relay:latest serve
-
-<span class="comment"># 2. Open http://localhost:8090 in your browser to view the web dashboard</span></code></pre>
-        </div>
-
-        <div id="code-binary" class="code-pane">
-          <pre><code><span class="comment"># 1. Download and run the standalone binary</span>
-curl -fsSL https://github.com/abn/dbos-relay/releases/latest/download/relay-linux-amd64 -o relay
-chmod +x relay
-
-<span class="comment"># 2. Run migrations and start the control plane backed by PostgreSQL</span>
-RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay migrate up
-RELAY_DATABASE_URL=<span class="string">"postgres://user:pass@localhost:5432/relay"</span> ./relay serve
-
-<span class="comment"># 3. Open http://localhost:8090 in your browser to view the web dashboard</span></code></pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- Block 2: Connect DBOS Applications -->
-    <div class="quickstart-section">
-      <div class="quickstart-step-head">
-        <span class="quickstart-step-badge">Step 2</span>
-        <h3 class="quickstart-step-title">Connect Your DBOS Applications</h3>
-        <p class="quickstart-step-desc">
-          Point your unmodified Python, TypeScript, or Go application at Relay over WebSocket using standard Conductor configuration.
-        </p>
-      </div>
-
-      <div class="code-tabs">
-        <button class="code-tab-btn active" onclick="switchCode('python', this)">Python SDK</button>
-        <button class="code-tab-btn" onclick="switchCode('typescript', this)">TypeScript SDK</button>
-        <button class="code-tab-btn" onclick="switchCode('go', this)">Go SDK</button>
-      </div>
-
-      <div class="code-panes">
-        <div id="code-python" class="code-pane active">
-          <pre><code><span class="keyword">import</span> os
-<span class="keyword">from</span> dbos <span class="keyword">import</span> DBOS, DBOSConfig
-
-<span class="comment"># Configure unmodified DBOS app pointing to your Relay instance</span>
-config: DBOSConfig = {
-    <span class="string">"name"</span>: <span class="string">"checkout-service"</span>,
-    <span class="string">"system_database_url"</span>: os.environ[<span class="string">"DATABASE_URL"</span>],
-    <span class="string">"conductor_url"</span>: <span class="string">"ws://localhost:8090"</span>,
-    <span class="string">"conductor_key"</span>: os.environ.get(<span class="string">"RELAY_API_KEY"</span>, <span class="string">""</span>),
-}
-
-DBOS(config=config)
-DBOS.launch()</code></pre>
-        </div>
-
-        <div id="code-typescript" class="code-pane">
-          <pre><code><span class="keyword">import</span> { DBOS } <span class="keyword">from</span> <span class="string">"@dbos-inc/dbos-sdk"</span>;
-
-<span class="comment">// Set environment variables for your DBOS runtime</span>
-process.env.DBOS__CONDUCTOR_URL = <span class="string">"ws://localhost:8090"</span>;
-process.env.DBOS__CONDUCTOR_KEY = process.env.RELAY_API_KEY;
-
-<span class="keyword">await</span> DBOS.launch();</code></pre>
-        </div>
-
-        <div id="code-go" class="code-pane">
-          <pre><code><span class="keyword">package</span> main
-
-<span class="keyword">import</span> (
-    <span class="string">"os"</span>
-    <span class="string">"github.com/dbos-inc/dbos-transact-golang/dbos"</span>
-)
-
-<span class="keyword">func</span> main() {
-    <span class="comment">// Configure unmodified DBOS Go application pointing to Relay</span>
-    dbos.Launch(dbos.Config{
-        AppName:         <span class="string">"checkout-service"</span>,
-        SystemDBURL:     os.Getenv(<span class="string">"DATABASE_URL"</span>),
-        ConductorURL:    <span class="string">"ws://localhost:8090"</span>,
-        ConductorAPIKey: os.Getenv(<span class="string">"RELAY_API_KEY"</span>),
-    })
-}</code></pre>
-        </div>
-      </div>
-    </div>
+    <p class="note">Conductor details from the public <a href="https://docs.dbos.dev/conductor/overview">overview</a> and <a href="https://www.dbos.dev/conductor-license">licence</a>, read November 2026. Relay is MIT licensed and not affiliated with or endorsed by DBOS, Inc.</p>
   </section>
 </main>
 
-<footer>
-  <div class="wrap footer-wrap">
+<footer class="site-footer">
+  <div class="wrap footer-inner">
     <div>
-      <strong>Relay</strong> &middot; Open-Source Control Plane for DBOS Transact Applications.
-      <span style="display:block; font-size:.8rem; color:var(--ink-faint); margin-top:4px;">
-        Released under the MIT License. Not affiliated with or endorsed by DBOS, Inc.
-      </span>
+      <div class="footer-brand">
+        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="10" height="10" rx="3" fill="#1f4ed8"/>
+          <path d="M15 10H25C28.866 10 32 13.134 32 17C32 20.866 28.866 24 25 24H15" stroke="#1f4ed8" stroke-width="4" stroke-linecap="round"/>
+          <path d="M22 23L32 35" stroke="#1f4ed8" stroke-width="4" stroke-linecap="round"/>
+          <rect x="5" y="25" width="10" height="10" rx="3" fill="#1f4ed8"/>
+        </svg>
+        <span>Relay</span>
+      </div>
+      <p class="footer-copy">Open-source control plane for DBOS Transact. Self-hosted, MIT licensed, and not affiliated with or endorsed by DBOS, Inc.</p>
     </div>
-    <ul class="footer-links">
-      <li><a href="/wiki/changelog.html">Changelog</a></li>
-      <li><a href="/wiki/">Docs</a></li>
-      <li><a href="/wiki/usage/quickstart.html">Quickstart</a></li>
-      <li><a href="/wiki/protocol/executor-ws.html">Protocol Spec</a></li>
-      <li><a href="/wiki/manual/dashboard-acceptance.html">Acceptance Checklist</a></li>
-      <li><a href="https://github.com/abn/dbos-relay" target="_blank" rel="noopener">GitHub ↗</a></li>
-    </ul>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/wiki/">Docs</a>
+      <a href="/wiki/usage/quickstart.html">Quickstart</a>
+      <a href="/wiki/protocol/executor-ws.html">Protocol</a>
+      <a href="/wiki/changelog.html">Changelog</a>
+      <a href="https://github.com/abn/dbos-relay" target="_blank" rel="noopener">GitHub</a>
+    </nav>
   </div>
 </footer>
-
-<script>
-function switchScreenshot(id, btn) {
-  document.querySelectorAll('.showcase-img').forEach(img => img.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-
-  const target = document.getElementById('img-' + id);
-  if (target) target.classList.add('active');
-  if (btn) btn.classList.add('active');
-
-  const captions = {
-    'dag': 'Interactive SVG Workflow Family DAG linking root execution steps to child workflows with outcome-colored cubic bezier curves.',
-    'fleet': 'Fleet & Applications view monitoring registered services across Python, TypeScript, and Go executors with live health indicators.',
-    'table': 'Real-time workflow execution telemetry with tabular lining numerals, status pills, queue assignment, and duration metrics.',
-    'queues': 'Workflow queue management displaying worker concurrency limits, rate-limit thresholds, and partition queue configurations.',
-    'schedules': 'Scheduled job management with cron expressions, active/paused states, last fired timestamps, and manual trigger actions.',
-    'alerts': 'In-process alerting rules engine with threshold evaluation and dispatch to Webhook, Slack, and PagerDuty destinations.'
-  };
-  const descEl = document.getElementById('showcase-desc');
-  if (descEl && captions[id]) descEl.textContent = captions[id];
-}
-
-function switchCode(id, btn) {
-  const container = btn.closest('.quickstart-section');
-  if (!container) return;
-  container.querySelectorAll('.code-pane').forEach(el => el.classList.remove('active'));
-  container.querySelectorAll('.code-tab-btn').forEach(b => b.classList.remove('active'));
-  const target = container.querySelector('#code-' + id);
-  if (target) target.classList.add('active');
-  btn.classList.add('active');
-}
-</script>
 
 </body>
 </html>
