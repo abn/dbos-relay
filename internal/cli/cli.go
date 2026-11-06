@@ -33,6 +33,7 @@ func newRootCommand() *cobra.Command {
 	root.AddCommand(newDiffCommand())
 	root.AddCommand(newOpenAPICommand())
 	root.AddCommand(newConformanceCommand())
+	root.AddCommand(newProbeCommand())
 	return root
 }
 

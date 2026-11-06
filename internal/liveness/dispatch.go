@@ -14,6 +14,10 @@ import (
 	"github.com/abn/relay/internal/store/gen"
 )
 
+// directRecoveryTarget is the recovery-dispatch target recorded when the
+// system database performed the re-enqueue instead of an executor.
+const directRecoveryTarget = "database"
+
 var (
 	ErrNoHealthyPeers            = errors.New("no healthy peer executors available for recovery")
 	ErrCrossTenantRecovery       = errors.New("cross-application or cross-organisation recovery refused")
@@ -66,7 +70,13 @@ type RecoveryDispatcher struct {
 	transport RecoveryTransport
 	deleter   ExecutorDeleter
 	recorder  RecoveryRecorder
+	direct    DirectRecovery
 	opts      DispatcherOptions
+}
+
+// SetDirectRecovery configures database recovery for Direct mode.
+func (d *RecoveryDispatcher) SetDirectRecovery(direct DirectRecovery) {
+	d.direct = direct
 }
 
 // SetRecorder configures the recovery dispatch recorder.
@@ -133,6 +143,75 @@ func SelectCandidates(deadAppID pgtype.UUID, deadExecutorID, deadVersion string,
 // RecoverDeadExecutor dispatches recovery for a dead executor to a healthy peer.
 // Upon acknowledgment, the dead executor record is deleted from Relay's store.
 func (d *RecoveryDispatcher) RecoverDeadExecutor(ctx context.Context, appID pgtype.UUID, deadExecutorID, deadVersion string) error {
+	// Direct mode can re-enqueue the dead executor's work in the application
+	// system database without a healthy peer. If the database is read-only or
+	// unavailable, fall through to the WebSocket path.
+	if d.direct != nil && d.direct.HasDirectRecovery(appID) {
+		ids, directErr := d.direct.Recover(ctx, appID, []string{deadExecutorID}, deadVersion)
+		if directErr == nil {
+			// Check every version, not only the dead executor's version. A
+			// rollout can leave PENDING rows at an older version under the same
+			// executor ID, and the version-scoped check would miss them and let
+			// the record be deleted.
+			pending, checkErr := d.direct.CheckPendingWorkflows(ctx, appID, deadExecutorID, "")
+			if checkErr != nil {
+				d.opts.Logger.Warn("database recovery could not verify pending workflows",
+					"deadExecutorID", deadExecutorID,
+					"error", checkErr,
+				)
+				return fmt.Errorf("verifying pending workflows after database recovery: %w", checkErr)
+			}
+			if pending && d.opts.AllowVersionMismatch {
+				more, crossErr := d.direct.Recover(ctx, appID, []string{deadExecutorID}, "")
+				if crossErr == nil {
+					ids = append(ids, more...)
+					pending, checkErr = d.direct.CheckPendingWorkflows(ctx, appID, deadExecutorID, "")
+					if checkErr != nil {
+						return fmt.Errorf("verifying cross-version pending workflows: %w", checkErr)
+					}
+				}
+			}
+			if pending {
+				d.opts.Logger.Warn("database recovery left pending workflows for the dead executor",
+					"deadExecutorID", deadExecutorID,
+					"workflows", len(ids),
+				)
+				return fmt.Errorf("%w: pending workflows remain after database recovery", ErrRecoveryFailed)
+			}
+			d.opts.Logger.Info("recovery confirmed through the system database",
+				"deadExecutorID", deadExecutorID,
+				"workflows", len(ids),
+			)
+			if d.deleter != nil {
+				if err := d.deleter.DeleteExecutor(ctx, gen.DeleteExecutorParams{
+					ApplicationID: appID,
+					ExecutorID:    deadExecutorID,
+				}); err != nil {
+					return fmt.Errorf("deleting dead executor record: %w", err)
+				}
+			}
+			if d.recorder != nil {
+				if _, err := d.recorder.RecordRecoveryDispatch(ctx, gen.RecordRecoveryDispatchParams{
+					ApplicationID:    appID,
+					DeadExecutorID:   deadExecutorID,
+					TargetExecutorID: directRecoveryTarget,
+					DispatchedAt:     pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+					Success:          true,
+				}); err != nil {
+					d.opts.Logger.Error("failed to record database recovery dispatch",
+						"deadExecutorID", deadExecutorID,
+						"error", err,
+					)
+				}
+			}
+			return nil
+		}
+		d.opts.Logger.Warn("database recovery failed, falling back to executor recovery",
+			"deadExecutorID", deadExecutorID,
+			"error", directErr,
+		)
+	}
+
 	peers, err := d.peers.FindHealthyPeers(ctx, appID)
 	if err != nil {
 		return fmt.Errorf("listing healthy peers: %w", err)

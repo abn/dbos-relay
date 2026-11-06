@@ -41,10 +41,16 @@ type trackedExecutor struct {
 	appID       pgtype.UUID
 	executorID  string
 	version     string
+	source      string
 	state       State
 	timer       Timer
 	cancelTimer chan struct{}
 }
+
+const (
+	executorSourceSocket = "socket"
+	executorSourceProbe  = "probe"
+)
 
 // Manager coordinates executor lifecycle states, grace period timers, and recovery.
 type Manager struct {
@@ -106,8 +112,19 @@ func (m *Manager) TrackedCount() int {
 	return len(m.executors)
 }
 
-// OnConnect handles executor registration or reconnection.
+// OnConnect handles executor registration or reconnection over the shared
+// executor socket.
 func (m *Manager) OnConnect(ctx context.Context, appID pgtype.UUID, executorID, version string) error {
+	return m.onConnect(ctx, appID, executorID, version, executorSourceSocket)
+}
+
+// OnProbeConnect handles a heartbeat from relay-probe. A probe never replaces
+// an executor that is already owned by a live socket.
+func (m *Manager) OnProbeConnect(ctx context.Context, appID pgtype.UUID, executorID, version string) error {
+	return m.onConnect(ctx, appID, executorID, version, executorSourceProbe)
+}
+
+func (m *Manager) onConnect(ctx context.Context, appID pgtype.UUID, executorID, version, source string) error {
 	m.mu.Lock()
 
 	key := executorKey(appID, executorID)
@@ -116,8 +133,11 @@ func (m *Manager) OnConnect(ctx context.Context, appID pgtype.UUID, executorID, 
 		exec = &trackedExecutor{
 			appID:      appID,
 			executorID: executorID,
+			source:     source,
 		}
 		m.executors[key] = exec
+	} else if source == executorSourceSocket {
+		exec.source = executorSourceSocket
 	}
 
 	exec.version = version
@@ -202,11 +222,13 @@ func (m *Manager) AdoptDisconnected(appID pgtype.UUID, executorID, version strin
 			appID:      appID,
 			executorID: executorID,
 			version:    version,
+			source:     executorSourceSocket,
 			state:      StateDisconnected,
 		}
 		m.executors[key] = exec
 	} else {
 		exec.version = version
+		exec.source = executorSourceSocket
 		exec.state = StateDisconnected
 		if exec.timer != nil {
 			exec.timer.Stop()
@@ -236,6 +258,16 @@ func (m *Manager) AdoptDisconnected(appID pgtype.UUID, executorID, version strin
 
 // OnDisconnect handles executor disconnection, starting the grace period timer.
 func (m *Manager) OnDisconnect(ctx context.Context, appID pgtype.UUID, executorID string) {
+	m.onDisconnect(ctx, appID, executorID, executorSourceSocket)
+}
+
+// OnProbeDisconnect handles a missed probe heartbeat or a graceful probe stop.
+// It refuses to disconnect an executor that a live socket currently owns.
+func (m *Manager) OnProbeDisconnect(ctx context.Context, appID pgtype.UUID, executorID string) {
+	m.onDisconnect(ctx, appID, executorID, executorSourceProbe)
+}
+
+func (m *Manager) onDisconnect(ctx context.Context, appID pgtype.UUID, executorID, source string) {
 	timeout := m.resolveTimeout(ctx, appID)
 
 	m.mu.Lock()
@@ -243,10 +275,18 @@ func (m *Manager) OnDisconnect(ctx context.Context, appID pgtype.UUID, executorI
 
 	key := executorKey(appID, executorID)
 	exec, exists := m.executors[key]
+	if source == executorSourceProbe && exists && exec.source != executorSourceProbe {
+		m.logger.Warn("ignoring probe disconnect for a socket-owned executor",
+			"executorID", executorID,
+			"source", exec.source,
+		)
+		return
+	}
 	if !exists {
 		exec = &trackedExecutor{
 			appID:      appID,
 			executorID: executorID,
+			source:     source,
 			state:      StateConnected,
 		}
 		m.executors[key] = exec

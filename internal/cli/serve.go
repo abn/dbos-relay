@@ -157,6 +157,7 @@ func newServeCommand() *cobra.Command {
 					logger.Error("closing dataplane manager", "error", err)
 				}
 			}()
+			dispatcher.SetDirectRecovery(liveness.NewDataPlaneRecovery(dpManager))
 			if configPath := os.Getenv("RELAY_CONFIG"); configPath != "" {
 				if decCfg, err := declarative.LoadFile(configPath); err == nil {
 					if plan, err := declarative.Apply(ctx, s, decCfg); err != nil {
@@ -199,6 +200,26 @@ func newServeCommand() *cobra.Command {
 			mux.Handle("/", dashHandler)
 			mux.Handle("/websocket/", h)
 			mux.Handle("/internal/v1/forward/", forwardHandler)
+			if cfg.InternalSecret == "" {
+				logger.Warn("probe endpoint disabled: RELAY_INTERNAL_SECRET is not set")
+			} else {
+				probeRegistry := liveness.NewProbeRegistry(livenessMgr, logger)
+				probeCtx, cancelProbe := context.WithCancel(ctx)
+				probeDone := make(chan struct{})
+				safego.Go(logger, "probe-registry", func() {
+					defer close(probeDone)
+					probeRegistry.Run(probeCtx)
+				})
+				defer func() {
+					cancelProbe()
+					<-probeDone
+				}()
+				mux.Handle("/internal/v1/probe", liveness.NewProbeHandler(
+					s.Queries(), livenessMgr, probeRegistry,
+					liveness.NewDataPlaneProbePolicy(dpManager),
+					cfg.InternalSecret, "default", haMgr.ID(), logger,
+				))
+			}
 			metricsHandler := metrics.NewHandlerWithDispatcher(s.Queries(), h)
 			metricsHandler.SetLogger(logger)
 			mux.Handle("/v1/metrics", api.AuthMiddleware(apiServer)(metricsHandler))
@@ -354,6 +375,9 @@ func redactLogPath(path string) string {
 
 func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Manager, dataPlanes map[string]declarative.DataPlane, appMap map[string]gen.Application) {
 	for appName, dp := range dataPlanes {
+		if dp.Integration == "attached" {
+			continue
+		}
 		app, ok := appMap[appName]
 		if !ok {
 			continue

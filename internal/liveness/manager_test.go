@@ -807,3 +807,50 @@ func TestManager_PeriodicSweepReattemptsStrandedDeadExecutor(t *testing.T) {
 		t.Fatalf("expected periodic sweep recovery for %q, got %q", execID, got)
 	}
 }
+
+func TestManager_ProbeDisconnectIgnoresSocketOwnedExecutor(t *testing.T) {
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	store := newMockStoreQueries()
+	recovery := newMockRecoveryRunner()
+	mgr := liveness.NewManager(clock, store, recovery, nil)
+	defer mgr.Stop()
+
+	appID := pgtype.UUID{Bytes: [16]byte{11}, Valid: true}
+	ctx := context.Background()
+	if err := mgr.OnConnect(ctx, appID, "exec-socket", "v1"); err != nil {
+		t.Fatalf("OnConnect failed: %v", err)
+	}
+	mgr.OnProbeDisconnect(ctx, appID, "exec-socket")
+	clock.Advance(120 * time.Second)
+
+	select {
+	case deadID := <-recovery.ch:
+		t.Fatalf("probe disconnect must not recover a socket-owned executor: %s", deadID)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestManager_ProbeDisconnectTriggersRecoveryForProbeExecutor(t *testing.T) {
+	clock := liveness.NewVirtualClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	store := newMockStoreQueries()
+	recovery := newMockRecoveryRunner()
+	mgr := liveness.NewManager(clock, store, recovery, nil)
+	defer mgr.Stop()
+
+	appID := pgtype.UUID{Bytes: [16]byte{12}, Valid: true}
+	ctx := context.Background()
+	if err := mgr.OnProbeConnect(ctx, appID, "exec-probe", "v1"); err != nil {
+		t.Fatalf("OnProbeConnect failed: %v", err)
+	}
+	mgr.OnProbeDisconnect(ctx, appID, "exec-probe")
+	clock.Advance(61 * time.Second)
+
+	select {
+	case deadID := <-recovery.ch:
+		if deadID != "exec-probe" {
+			t.Fatalf("expected recovery for exec-probe, got %s", deadID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for probe recovery")
+	}
+}
