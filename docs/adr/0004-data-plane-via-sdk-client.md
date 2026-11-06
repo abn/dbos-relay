@@ -126,3 +126,14 @@ moved workflow inputs and outputs into the out-of-line `workflow_input` and
 Point 11's pin therefore leaves out-of-line payloads unavailable to the data
 plane. [ADR 0013](0013-out-of-line-workflow-payloads.md) records the decision to
 keep the pin and treat that as a documented capability gap.
+
+## Addendum (2026-11-06)
+
+[ADR 0015](0015-direct-mode-system-database.md) promotes this optional data
+plane to a first-class Direct mode using the MIT Go client at `v1.7.0`. The
+access rules in this record still apply: the official SDK client only, operator
+opt-in, read-only by default, and read-write only with an explicit
+per-application choice. ADR 0015 supersedes points 4 and 5 for Direct mode: the
+operation set is wider than the original six, and portable JSON allows enqueue,
+send, and event writes. The legacy fallback keeps the original scope until ADR
+0015 retires it.

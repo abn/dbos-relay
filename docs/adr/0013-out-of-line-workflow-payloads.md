@@ -109,3 +109,11 @@ The alternatives were rejected:
   version-agnostic payload read that does not raise the floor. Following the
   rule that an application change must never be required, the request travels
   upstream while Relay keeps working without it.
+
+## Addendum (2026-11-06)
+
+[ADR 0015](0015-direct-mode-system-database.md) moves Direct mode to Go SDK
+`v1.7.0`, which reads the out-of-line payload tables and covers schema 123
+through 125. The gap recorded here therefore applies only to the legacy
+`v1.3.0` fallback until ADR 0015 retires it. Direct mode returns inputs,
+outputs, and errors for out-of-line applications.

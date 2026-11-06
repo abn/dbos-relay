@@ -23,5 +23,9 @@ consequences. One decision per file, added as the project makes them.
 * [ADR 0012](0012-autoscaling-policy-support.md) - autoscaling policy support
 * [ADR 0013](0013-out-of-line-workflow-payloads.md) - out-of-line workflow
   payloads in the data plane
+* [ADR 0014](0014-connector-optional-positioning.md) - connector-optional
+  positioning after the Conductor split
+* [ADR 0015](0015-direct-mode-system-database.md) - Direct mode through the
+  system database
 
 Open decisions that have not been made yet are not recorded here.
