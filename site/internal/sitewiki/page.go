@@ -65,7 +65,7 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>%s · Relay Documentation</title>
 <meta name="description" content="Relay: Open-source control plane for DBOS Transact applications">
-<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/assets/favicon-dots.svg">
 <link rel="stylesheet" href="/wiki/wiki.css">
 </head>
 <body>
@@ -73,11 +73,11 @@ func renderShell(r *Renderer, p Page, tocHTML, meta, title string) string {
   <nav class="wrap">
     <div class="brand">
       <a href="/">
-        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="5" y="5" width="10" height="10" rx="3" fill="#3b82f6"/>
-          <path d="M15 10H25C28.866 10 32 13.134 32 17C32 20.866 28.866 24 25 24H15" stroke="#3b82f6" stroke-width="4" stroke-linecap="round"/>
-          <path d="M22 23L32 35" stroke="#3b82f6" stroke-width="4" stroke-linecap="round"/>
-          <rect x="5" y="25" width="10" height="10" rx="3" fill="#3b82f6"/>
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="#1f4ed8"/>
+          <rect x="6.5" y="6.5" width="9" height="9" rx="2.5" fill="#ffffff"/>
+          <rect x="17" y="17" width="9" height="9" rx="2.5" fill="#ffffff"/>
+          <path d="M13.5 13.5L15.5 15.5" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
         </svg>
         <span>Relay</span>
       </a>

@@ -458,7 +458,7 @@ func TestDashboard_StaticAssetsAndSPARoutes(t *testing.T) {
 	}{
 		{dashboardAssetURL(t, ts.URL, "js"), "javascript"},
 		{dashboardAssetURL(t, ts.URL, "css"), "text/css"},
-		{ts.URL + "/assets/favicon.svg", "image/svg+xml"},
+		{ts.URL + "/assets/favicon-dots.svg", "image/svg+xml"},
 	}
 
 	for _, a := range assets {
