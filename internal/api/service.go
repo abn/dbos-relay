@@ -220,6 +220,14 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		})
 		mux.Handle("GET /v2/orgs", AuthMiddleware(server)(orgListHandler))
 
+		// Relay extension routes. They are not Conductor OpenAPI operations and
+		// are documented as extensions in docs/usage/direct.md.
+		enqueueHandler := http.HandlerFunc(server.ServeEnqueueWorkflow)
+		mux.Handle("POST /v2/orgs/{orgName}/apps/{appName}/workflows/enqueue", AuthMiddleware(server)(enqueueHandler))
+
+		sendHandler := http.HandlerFunc(server.ServeSendWorkflowMessage)
+		mux.Handle("POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/send", AuthMiddleware(server)(sendHandler))
+
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 				problem.Write(w, &problem.Problem{

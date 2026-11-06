@@ -88,10 +88,10 @@ recovery dispatcher.
 ## Supported operations
 
 Direct mode serves workflow queries, steps, aggregates, cancel, resume, fork,
-rewind, delete, schedules, queues, application versions, and recovery. The data
-plane also implements enqueue and send with DBOS portable JSON. Every operation
-uses the official Go client; Relay does not issue raw SQL against `dbos.*`
-tables.
+rewind, delete, schedules, queues, application versions, and recovery. Relay
+extension endpoints add enqueue and send with DBOS portable JSON. Every
+operation uses the official Go client; Relay does not issue raw SQL against
+`dbos.*` tables.
 
 The following operations stay on the executor path and return
 `503 Service Unavailable` when no executor is connected:
@@ -109,15 +109,58 @@ serializer when payloads need to be readable across languages. In Python use
 example. Values Relay cannot decode are displayed as opaque and are not written
 back.
 
-Enqueue and send are implemented in the Direct data plane, with the payload
-stored as DBOS portable JSON and the read-write gate enforced. The REST surface
-does not expose them yet: the vendored Conductor OpenAPI defines no enqueue,
-send, or set-event operation, and Relay does not add public routes outside that
-contract. Set-event is additionally blocked on the client. The MIT Go client
-exposes `SetEvent` only on a workflow context, and the exported
-`dbos/internals` seam does not export the input type its `SystemDatabase.SetEvent`
-requires. A workflow that depends on set-event, or on enqueue or send through
-the API, remains a migration blocker.
+## Relay extension endpoints
+
+Enqueue and send are Relay extensions. The vendored Conductor OpenAPI defines no
+operation for either, so Relay adds two routes of its own rather than presenting
+them as Conductor contract operations. They use the same authentication,
+application scoping, read-write gate, and problem-details errors as the rest of
+the API.
+
+`POST /v2/orgs/{orgName}/apps/{appName}/workflows/enqueue` writes a workflow
+row to the application system database and returns `201 Created` with the new
+workflow ID and a `Location` header:
+
+```json
+{
+  "workflowName": "orders",
+  "queueName": "orders-q",
+  "payload": {"order": 42},
+  "workflowId": "optional-caller-supplied-id",
+  "appVersion": "optional-version",
+  "queuePartitionKey": "optional-partition"
+}
+```
+
+```json
+{"workflowId": "5c6f0d9e-..."}
+```
+
+`POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/send` writes a
+message row for the destination workflow and returns `204 No Content`:
+
+```json
+{
+  "topic": "orders",
+  "payload": {"status": "ready"},
+  "idempotencyKey": "optional-key"
+}
+```
+
+The payload is any JSON value. Relay stores it with the DBOS portable JSON
+serializer, so an executor in another language can decode it. A payload that is
+missing or not valid JSON is rejected with `400 Bad Request`; Relay does not
+re-encode an opaque value.
+
+The routes follow the application integration mode. Direct and Hybrid use the
+database. Attached refuses with `501 Not Implemented`. A read-only Direct
+connection fails closed with `403 Forbidden`, and Relay does not retry the write
+over an executor socket. A missing data-plane connection also returns `501`.
+
+Set-event remains unavailable. The MIT Go client exposes `SetEvent` only on a
+workflow context, and the exported `dbos/internals` seam does not export the
+input type its `SystemDatabase.SetEvent` requires. A workflow that depends on
+set-event remains a migration blocker.
 
 ## Security
 
