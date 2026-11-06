@@ -52,6 +52,14 @@ func (m *mockDataPlaneClient) Dispatch(ctx context.Context, msg protocol.Message
 	return nil, nil
 }
 
+func (m *mockDataPlaneClient) Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error) {
+	return executorIDs, nil
+}
+
+func (m *mockDataPlaneClient) HasPendingWorkflows(ctx context.Context, executorID, appVersion string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockDataPlaneClient) Close() error {
 	return nil
 }

@@ -336,11 +336,19 @@ func TestDispatch_UnclassifiedDispatcherError(t *testing.T) {
 
 type mockDataPlaneManager struct {
 	hasDataPlane bool
+	integration  dataplane.Integration
 	onDispatch   func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
 }
 
 func (m *mockDataPlaneManager) HasDataPlane(appID pgtype.UUID) bool {
 	return m.hasDataPlane
+}
+
+func (m *mockDataPlaneManager) GetIntegration(appID pgtype.UUID) (dataplane.Integration, bool) {
+	if m.integration == "" {
+		return dataplane.IntegrationHybrid, true
+	}
+	return m.integration, true
 }
 
 func (m *mockDataPlaneManager) Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
@@ -735,5 +743,216 @@ func TestRouter_PeerForwarding_SchemeSupport(t *testing.T) {
 	target := forwarder.recordedTargets[0]
 	if !strings.HasPrefix(target, "https://") {
 		t.Fatalf("expected forward target to use https scheme, got %s", target)
+	}
+}
+
+func directTestRouter(t *testing.T, integration dataplane.Integration, dpDispatch func(context.Context, pgtype.UUID, protocol.Message) (protocol.Message, error), hubDispatch func(context.Context, pgtype.UUID, protocol.Message) (protocol.Message, error)) *router.DefaultRouter {
+	t.Helper()
+	orgID := testUUID(1)
+	appID := testUUID(2)
+	store := &mockStore{
+		getOrgFunc: func(ctx context.Context, name string) (gen.Organisation, error) {
+			return gen.Organisation{ID: orgID, Name: name}, nil
+		},
+		getAppFunc: func(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
+			return gen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+		},
+	}
+	hub := &mockDispatcher{dispatchFunc: hubDispatch}
+	r := router.New(store, hub)
+	r.SetDataPlane(&mockDataPlaneManager{
+		hasDataPlane: true,
+		integration:  integration,
+		onDispatch:   dpDispatch,
+	})
+	return r
+}
+
+func TestDispatch_DirectPrefersDatabase(t *testing.T) {
+	dpRes := &protocol.ListWorkflowsResponse{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}}
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return dpRes, nil
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			t.Fatal("hub should not be called when Direct mode succeeds")
+			return nil, nil
+		},
+	)
+	got, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.ListWorkflowsRequest{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != dpRes {
+		t.Fatalf("expected data-plane response, got %v", got)
+	}
+}
+
+func TestDispatch_DirectFallsThroughOnUnsupported(t *testing.T) {
+	hubRes := &protocol.ListWorkflowsResponse{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}}
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, fmt.Errorf("%w: %s", dataplane.ErrUnsupportedOperation, msg.GetMessageType())
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return hubRes, nil
+		},
+	)
+	got, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.ListWorkflowsRequest{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != hubRes {
+		t.Fatalf("expected hub response, got %v", got)
+	}
+}
+
+func TestDispatch_AttachedIgnoresDatabase(t *testing.T) {
+	hubRes := &protocol.ListWorkflowsResponse{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}}
+	r := directTestRouter(t, dataplane.IntegrationAttached,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			t.Fatal("data plane should not be called in Attached mode")
+			return nil, nil
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return hubRes, nil
+		},
+	)
+	got, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.ListWorkflowsRequest{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != hubRes {
+		t.Fatalf("expected hub response, got %v", got)
+	}
+}
+
+func TestDispatch_DirectRetriesHubOnDatabaseFailure(t *testing.T) {
+	hubRes := &protocol.ListWorkflowsResponse{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}}
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("database is down")
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return hubRes, nil
+		},
+	)
+	got, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.ListWorkflowsRequest{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != hubRes {
+		t.Fatalf("expected hub response, got %v", got)
+	}
+}
+
+func TestDispatch_DirectSurfacesDatabaseFailureWhenNoExecutor(t *testing.T) {
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("database is down")
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("no live executor connected")
+		},
+	)
+	_, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.ListWorkflowsRequest{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}})
+	if !errors.Is(err, router.ErrDataPlaneUnavailable) {
+		t.Fatalf("expected ErrDataPlaneUnavailable, got %v", err)
+	}
+}
+
+func TestDispatch_DirectReadOnlyMutationIsTerminal(t *testing.T) {
+	hubCalled := false
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, dataplane.ErrReadOnlyMode
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			hubCalled = true
+			return &protocol.CancelWorkflowResponse{Success: true}, nil
+		},
+	)
+	_, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.CancelWorkflowRequest{
+		Envelope:   protocol.Envelope{Type: protocol.MessageTypeCancel, RequestID: "cancel"},
+		WorkflowID: "wf-1",
+	})
+	if !errors.Is(err, router.ErrReadOnlyMode) {
+		t.Fatalf("expected ErrReadOnlyMode, got %v", err)
+	}
+	if hubCalled {
+		t.Fatal("read-only mutation must not fall through to the executor")
+	}
+}
+
+func TestDispatch_DirectMutationFailureIsNotRetried(t *testing.T) {
+	hubCalled := false
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("database is down")
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			hubCalled = true
+			return &protocol.CancelWorkflowResponse{Success: true}, nil
+		},
+	)
+	_, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.CancelWorkflowRequest{
+		Envelope:   protocol.Envelope{Type: protocol.MessageTypeCancel, RequestID: "cancel"},
+		WorkflowID: "wf-1",
+	})
+	if !errors.Is(err, router.ErrDataPlaneUnavailable) {
+		t.Fatalf("expected ErrDataPlaneUnavailable, got %v", err)
+	}
+	if hubCalled {
+		t.Fatal("a failed mutation must not be retried over the socket")
+	}
+}
+
+func TestDispatch_DirectNotFoundIsTerminal(t *testing.T) {
+	hubCalled := false
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, errors.New("schedule not found")
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			hubCalled = true
+			return &protocol.GetScheduleResponse{}, nil
+		},
+	)
+	got, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.GetScheduleRequest{
+		Envelope:     protocol.Envelope{Type: protocol.MessageTypeGetSchedule, RequestID: "get"},
+		ScheduleName: "missing",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	resp, ok := got.(*protocol.GetScheduleResponse)
+	if !ok || resp.Output != nil {
+		t.Fatalf("expected an empty schedule response, got %#v", got)
+	}
+	if hubCalled {
+		t.Fatal("a direct not-found must not fall through to the executor")
+	}
+}
+
+func TestDispatch_DirectReadOnlyUnsupportedMutationIsTerminal(t *testing.T) {
+	hubCalled := false
+	r := directTestRouter(t, dataplane.IntegrationDirect,
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			return nil, dataplane.ErrReadOnlyMode
+		},
+		func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			hubCalled = true
+			return &protocol.ForkFromFailureResponse{}, nil
+		},
+	)
+	_, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.ForkFromFailureRequest{
+		Envelope: protocol.Envelope{Type: protocol.MessageTypeForkFromFailure, RequestID: "fork-failure"},
+		Body:     protocol.ForkFromFailureRequestBody{WorkflowIDs: []string{"wf-1"}},
+	})
+	if !errors.Is(err, router.ErrReadOnlyMode) {
+		t.Fatalf("expected ErrReadOnlyMode, got %v", err)
+	}
+	if hubCalled {
+		t.Fatal("a read-only unsupported mutation must not fall through to the executor")
 	}
 }

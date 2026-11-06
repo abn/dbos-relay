@@ -24,6 +24,32 @@ const (
 	ModeReadWrite Mode = "read-write"
 )
 
+// Integration selects how Relay reaches an application.
+type Integration string
+
+const (
+	// IntegrationHybrid prefers a live executor and falls back to the system
+	// database when no executor is reachable. This is the default for existing
+	// data_plane configurations.
+	IntegrationHybrid Integration = "hybrid"
+	// IntegrationDirect prefers the system database for every operation and uses
+	// a live executor only when the database path cannot serve the operation.
+	IntegrationDirect Integration = "direct"
+	// IntegrationAttached uses the executor WebSocket only and ignores the
+	// database configuration.
+	IntegrationAttached Integration = "attached"
+)
+
+// Valid reports whether the integration value is known.
+func (i Integration) Valid() bool {
+	switch i {
+	case IntegrationHybrid, IntegrationDirect, IntegrationAttached:
+		return true
+	default:
+		return false
+	}
+}
+
 // AppConfig specifies connection and guardrail parameters for an application's system database.
 // Relay v1 actively enforces bounded connection pool sizing (MaxConnections) and per-query
 // cancellation and statement timeouts (StatementTimeout). Additional scale-tier guardrails,
@@ -34,6 +60,7 @@ type AppConfig struct {
 	ApplicationName  string
 	DatabaseURL      string
 	Mode             Mode
+	Integration      Integration
 	MaxConnections   int
 	StatementTimeout time.Duration
 }
@@ -41,6 +68,8 @@ type AppConfig struct {
 // Client represents the data-plane interface to an application's system database.
 type Client interface {
 	Dispatch(ctx context.Context, msg protocol.Message) (protocol.Message, error)
+	Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error)
+	HasPendingWorkflows(ctx context.Context, executorID, appVersion string) (bool, error)
 	Close() error
 }
 
@@ -50,6 +79,9 @@ type Manager interface {
 	UnregisterApp(appID pgtype.UUID)
 	HasDataPlane(appID pgtype.UUID) bool
 	GetMode(appID pgtype.UUID) (Mode, bool)
+	GetIntegration(appID pgtype.UUID) (Integration, bool)
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	Recover(ctx context.Context, appID pgtype.UUID, executorIDs []string, appVersion string) ([]string, error)
+	HasPendingWorkflows(ctx context.Context, appID pgtype.UUID, executorID, appVersion string) (bool, error)
 	Close() error
 }

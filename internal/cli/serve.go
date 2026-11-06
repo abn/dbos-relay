@@ -369,6 +369,7 @@ func registerDeclarativeDataPlanes(logger *slog.Logger, dpManager dataplane.Mana
 			ApplicationName:  app.Name,
 			DatabaseURL:      dbURL,
 			Mode:             dataplane.Mode(dp.Mode),
+			Integration:      dataplane.Integration(dp.Integration),
 			StatementTimeout: timeout,
 			MaxConnections:   dp.MaxConnections,
 		}); err != nil {

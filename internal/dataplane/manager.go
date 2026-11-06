@@ -55,13 +55,19 @@ func (m *DefaultManager) SetLogger(logger *slog.Logger) {
 }
 
 // RegisterApp configures and activates data-plane connectivity for an application.
-// Note: The underlying DBOS Go SDK client requires system database schema version 107 or higher.
+// Note: The underlying DBOS Go SDK client requires system database schema version 123 or higher.
 func (m *DefaultManager) RegisterApp(cfg AppConfig) error {
 	if cfg.DatabaseURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
 	if cfg.Mode == "" {
 		cfg.Mode = ModeRead
+	}
+	if cfg.Integration == "" {
+		cfg.Integration = IntegrationHybrid
+	}
+	if !cfg.Integration.Valid() {
+		return fmt.Errorf("invalid integration %q", cfg.Integration)
 	}
 	if cfg.MaxConnections <= 0 {
 		cfg.MaxConnections = 5
@@ -142,6 +148,20 @@ func (m *DefaultManager) GetMode(appID pgtype.UUID) (Mode, bool) {
 		return "", false
 	}
 	return cfg.Mode, true
+}
+
+// GetIntegration returns the configured integration mode for the application.
+func (m *DefaultManager) GetIntegration(appID pgtype.UUID) (Integration, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	cfg, ok := m.configs[appID]
+	if !ok {
+		return "", false
+	}
+	if cfg.Integration == "" {
+		return IntegrationHybrid, true
+	}
+	return cfg.Integration, true
 }
 
 func (m *DefaultManager) getOrInitClient(appID pgtype.UUID) (Client, AppConfig, error) {
@@ -229,6 +249,42 @@ func (m *DefaultManager) Dispatch(ctx context.Context, appID pgtype.UUID, msg pr
 	return client.Dispatch(dispatchCtx, msg)
 }
 
+// Recover re-enqueues the pending workflows of dead executors through the
+// application's system database. It is a mutation and therefore requires the
+// application to be configured in read-write mode.
+func (m *DefaultManager) Recover(ctx context.Context, appID pgtype.UUID, executorIDs []string, appVersion string) ([]string, error) {
+	client, cfg, err := m.getOrInitClient(appID)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Mode != ModeReadWrite {
+		return nil, ErrReadOnlyMode
+	}
+	dispatchCtx := ctx
+	if cfg.StatementTimeout > 0 {
+		var cancel context.CancelFunc
+		dispatchCtx, cancel = context.WithTimeout(ctx, cfg.StatementTimeout)
+		defer cancel()
+	}
+	return client.Recover(dispatchCtx, executorIDs, appVersion)
+}
+
+// HasPendingWorkflows reports whether an executor still owns PENDING
+// workflows. It is a read and works in read-only mode.
+func (m *DefaultManager) HasPendingWorkflows(ctx context.Context, appID pgtype.UUID, executorID, appVersion string) (bool, error) {
+	client, cfg, err := m.getOrInitClient(appID)
+	if err != nil {
+		return false, err
+	}
+	dispatchCtx := ctx
+	if cfg.StatementTimeout > 0 {
+		var cancel context.CancelFunc
+		dispatchCtx, cancel = context.WithTimeout(ctx, cfg.StatementTimeout)
+		defer cancel()
+	}
+	return client.HasPendingWorkflows(dispatchCtx, executorID, appVersion)
+}
+
 // Close gracefully terminates all active data-plane client pools.
 func (m *DefaultManager) Close() error {
 	m.mu.Lock()
@@ -247,13 +303,28 @@ func (m *DefaultManager) Close() error {
 	return firstErr
 }
 
+// IsMutating reports whether a protocol message changes workflow or schedule
+// state. Direct mode uses it to avoid retrying a non-idempotent mutation over
+// the executor socket after a database failure.
+func IsMutating(msgType protocol.MessageType) bool {
+	return isMutatingMessage(msgType)
+}
+
 func isMutatingMessage(msgType protocol.MessageType) bool {
 	switch msgType {
 	case protocol.MessageTypeCancel,
 		protocol.MessageTypeResume,
 		protocol.MessageTypeForkWorkflow,
 		protocol.MessageTypeRewindWorkflow,
-		protocol.MessageTypeDelete:
+		protocol.MessageTypeDelete,
+		protocol.MessageTypeForkFromFailure,
+		protocol.MessageTypeImportWorkflow,
+		protocol.MessageTypeRetention,
+		protocol.MessageTypePauseSchedule,
+		protocol.MessageTypeResumeSchedule,
+		protocol.MessageTypeBackfillSchedule,
+		protocol.MessageTypeTriggerSchedule,
+		protocol.MessageTypeSetLatestApplicationVersion:
 		return true
 	default:
 		return false
