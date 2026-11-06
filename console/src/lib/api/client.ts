@@ -6,6 +6,7 @@ import type {
   Workflow,
   Step,
   Event,
+  WorkflowEvent,
   Notification,
   StreamEntry,
   Queue,
@@ -148,6 +149,33 @@ export class ApiClient {
   async getWorkflowEvents(orgName: string, appName: string, workflowId: string): Promise<Event[]> {
     return this.request<Event[]>(
       `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/events`
+    );
+  }
+
+  async getWorkflowEvent(
+    orgName: string,
+    appName: string,
+    workflowId: string,
+    key: string
+  ): Promise<WorkflowEvent> {
+    return this.request<WorkflowEvent>(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/event?key=${encodeURIComponent(key)}`
+    );
+  }
+
+  async sendWorkflowMessage(
+    orgName: string,
+    appName: string,
+    workflowId: string,
+    payload: unknown,
+    topic?: string
+  ): Promise<void> {
+    await this.request(
+      `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/send`,
+      {
+        method: "POST",
+        body: JSON.stringify({ topic: topic || undefined, payload }),
+      }
     );
   }
 

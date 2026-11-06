@@ -3,6 +3,7 @@ package dataplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -945,6 +946,33 @@ func cancelActiveWorkflowsBefore(cli dbos.Client, cutoff time.Time, batchSize in
 		}
 	}
 	return nil
+}
+
+// GetEvent reads a single event value by key through the official MIT Go
+// client. The client returns a DBOS timeout when the key is not set, which is
+// translated to ErrEventNotFound; an event whose stored value is JSON null is a
+// successful read with a nil value. Source: dbos-transact-golang v1.7.0,
+// dbos/workflow.go GetEvent and dbos/serialization.go resolveDecoder.
+func (c *SDKClient) GetEvent(ctx context.Context, workflowID, key string) (WorkflowEvent, error) {
+	if workflowID == "" {
+		return WorkflowEvent{}, fmt.Errorf("workflow ID is required")
+	}
+	if key == "" {
+		return WorkflowEvent{}, fmt.Errorf("event key is required")
+	}
+	dbosCtx, ok := c.client.(dbos.Context)
+	if !ok {
+		return WorkflowEvent{}, fmt.Errorf("data-plane client does not expose a DBOS context")
+	}
+	cli := dbos.From(dbosCtx, ctx)
+	value, err := dbos.GetEvent[any](cli, workflowID, key, 0)
+	if err != nil {
+		if errors.Is(err, dbos.ErrTimeout) {
+			return WorkflowEvent{}, ErrEventNotFound
+		}
+		return WorkflowEvent{}, fmt.Errorf("failed to read event %q for workflow %s: %w", key, workflowID, err)
+	}
+	return WorkflowEvent{Key: key, Value: value}, nil
 }
 
 // Enqueue writes a workflow row to the application system database. The

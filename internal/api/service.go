@@ -228,6 +228,9 @@ func NewHandler(db Pinger, server *Server) http.Handler {
 		sendHandler := http.HandlerFunc(server.ServeSendWorkflowMessage)
 		mux.Handle("POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/send", AuthMiddleware(server)(sendHandler))
 
+		getEventHandler := http.HandlerFunc(server.ServeGetWorkflowEvent)
+		mux.Handle("GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/event", AuthMiddleware(server)(getEventHandler))
+
 		strictHandler := gen.NewStrictHandlerWithOptions(server, nil, gen.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 				problem.Write(w, &problem.Problem{

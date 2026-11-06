@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,12 +15,20 @@ import (
 )
 
 type extensionMockRouter struct {
-	enqueue func(ctx context.Context, orgName, appName string, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
-	send    func(ctx context.Context, orgName, appName string, input dataplane.SendWorkflowMessageInput) error
+	enqueue  func(ctx context.Context, orgName, appName string, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
+	send     func(ctx context.Context, orgName, appName string, input dataplane.SendWorkflowMessageInput) error
+	getEvent func(ctx context.Context, orgName, appName, workflowID, key string) (dataplane.WorkflowEvent, error)
 }
 
 func (m *extensionMockRouter) Dispatch(context.Context, string, string, protocol.Message) (protocol.Message, error) {
 	return nil, nil
+}
+
+func (m *extensionMockRouter) GetWorkflowEvent(ctx context.Context, orgName, appName, workflowID, key string) (dataplane.WorkflowEvent, error) {
+	if m.getEvent != nil {
+		return m.getEvent(ctx, orgName, appName, workflowID, key)
+	}
+	return dataplane.WorkflowEvent{Key: key}, nil
 }
 
 func (m *extensionMockRouter) EnqueueWorkflow(ctx context.Context, orgName, appName string, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
@@ -194,6 +203,137 @@ func TestWorkflowExtensionsErrors(t *testing.T) {
 			}
 			if prob.Status != tc.wantStatus || prob.Title != tc.wantTitle {
 				t.Fatalf("unexpected problem: %+v", prob)
+			}
+		})
+	}
+}
+
+func TestGetWorkflowEventExtension(t *testing.T) {
+	var gotOrg, gotApp, gotWorkflow, gotKey string
+	m := &extensionMockRouter{
+		getEvent: func(ctx context.Context, orgName, appName, workflowID, key string) (dataplane.WorkflowEvent, error) {
+			gotOrg, gotApp, gotWorkflow, gotKey = orgName, appName, workflowID, key
+			return dataplane.WorkflowEvent{Key: key, Value: map[string]any{"status": "ready"}}, nil
+		},
+	}
+	handler := newExtensionHandler(m)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/orgs/acme/apps/shop/workflows/wf-1/event?key=order%20status", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("expected application/json, got %q", ct)
+	}
+	if gotOrg != "acme" || gotApp != "shop" || gotWorkflow != "wf-1" || gotKey != "order status" {
+		t.Fatalf("unexpected arguments: org=%q app=%q workflow=%q key=%q", gotOrg, gotApp, gotWorkflow, gotKey)
+	}
+	var out workflowEventResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if out.Key != "order status" {
+		t.Fatalf("expected key %q, got %q", "order status", out.Key)
+	}
+	value, ok := out.Value.(map[string]any)
+	if !ok || value["status"] != "ready" {
+		t.Fatalf("unexpected value: %#v", out.Value)
+	}
+}
+
+func TestGetWorkflowEventExtensionErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		mock       *extensionMockRouter
+		wantStatus int
+		wantTitle  string
+		wantDetail string
+	}{
+		{
+			name:       "missing key",
+			path:       "/v2/orgs/acme/apps/shop/workflows/wf-1/event",
+			mock:       &extensionMockRouter{},
+			wantStatus: http.StatusBadRequest,
+			wantTitle:  "Bad Request",
+			wantDetail: "event key is required",
+		},
+		{
+			name: "event not found",
+			path: "/v2/orgs/acme/apps/shop/workflows/wf-1/event?key=status",
+			mock: &extensionMockRouter{
+				getEvent: func(context.Context, string, string, string, string) (dataplane.WorkflowEvent, error) {
+					return dataplane.WorkflowEvent{}, fmt.Errorf("%w: event %q not found for workflow wf-1", router.ErrEventNotFound, "status")
+				},
+			},
+			wantStatus: http.StatusNotFound,
+			wantTitle:  "Not Found",
+			wantDetail: `event "status" not found`,
+		},
+		{
+			name: "unsupported mode",
+			path: "/v2/orgs/acme/apps/shop/workflows/wf-1/event?key=status",
+			mock: &extensionMockRouter{
+				getEvent: func(context.Context, string, string, string, string) (dataplane.WorkflowEvent, error) {
+					return dataplane.WorkflowEvent{}, router.ErrOperationUnsupported
+				},
+			},
+			wantStatus: http.StatusNotImplemented,
+			wantTitle:  "Not Implemented",
+		},
+		{
+			name: "read-only error",
+			path: "/v2/orgs/acme/apps/shop/workflows/wf-1/event?key=status",
+			mock: &extensionMockRouter{
+				getEvent: func(context.Context, string, string, string, string) (dataplane.WorkflowEvent, error) {
+					return dataplane.WorkflowEvent{}, router.ErrReadOnlyMode
+				},
+			},
+			wantStatus: http.StatusForbidden,
+			wantTitle:  "Forbidden",
+		},
+		{
+			name: "data-plane unavailable",
+			path: "/v2/orgs/acme/apps/shop/workflows/wf-1/event?key=status",
+			mock: &extensionMockRouter{
+				getEvent: func(context.Context, string, string, string, string) (dataplane.WorkflowEvent, error) {
+					return dataplane.WorkflowEvent{}, router.ErrDataPlaneUnavailable
+				},
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantTitle:  "Service Unavailable",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := newExtensionHandler(tc.mock)
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+				t.Fatalf("expected problem+json, got %q", ct)
+			}
+			var prob struct {
+				Title  string `json:"title"`
+				Status int    `json:"status"`
+				Detail string `json:"detail"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &prob); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if prob.Status != tc.wantStatus || prob.Title != tc.wantTitle {
+				t.Fatalf("unexpected problem: %+v", prob)
+			}
+			if tc.wantDetail != "" && !strings.Contains(prob.Detail, tc.wantDetail) {
+				t.Fatalf("expected detail to contain %q, got %q", tc.wantDetail, prob.Detail)
 			}
 		})
 	}

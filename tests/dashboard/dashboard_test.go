@@ -791,9 +791,13 @@ func TestDashboard_URLTemplatesMatchOpenAPI(t *testing.T) {
 		}
 
 		// Allow Relay extension endpoints (e.g. SSE event streaming,
-		// the organization directory): Relay-native routes registered
-		// outside the vendored upstream spec.
-		if strings.HasSuffix(normalized, "/events") {
+		// the organization directory, enqueue, send, and keyed event
+		// lookup): Relay-native routes registered outside the vendored
+		// upstream spec.
+		if strings.HasSuffix(normalized, "/events") ||
+			strings.HasSuffix(normalized, "/event") ||
+			strings.HasSuffix(normalized, "/send") ||
+			strings.HasSuffix(normalized, "/enqueue") {
 			continue
 		}
 		if normalized == "/v2/orgs" {

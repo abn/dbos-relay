@@ -90,7 +90,8 @@ recovery dispatcher.
 
 Direct mode serves the following operations from the application system
 database. Relay extension endpoints add enqueue and send with DBOS portable
-JSON; they are not part of the vendored Conductor OpenAPI.
+JSON, plus keyed event lookup; they are not part of the vendored Conductor
+OpenAPI.
 
 | Operation | Database path |
 | --- | --- |
@@ -98,6 +99,7 @@ JSON; they are not part of the vendored Conductor OpenAPI.
 | Cancel, resume, fork, rewind, delete | Official client mutations |
 | Schedules, queues, application versions, recovery | Official client operations |
 | Enqueue and send | Official client writes with DBOS portable JSON |
+| Workflow event lookup by key | Official client reads by key |
 | Metrics | Workflow and step counts grouped by name over the requested window |
 | Retention execution | Deletes terminal workflow history in batches and cancels work that outlived the global timeout |
 
@@ -120,7 +122,7 @@ operation that can serve them:
 
 | Operation | Direct mode |
 | --- | --- |
-| Workflow event, notification, and stream listings | Executor only. The client reads events and streams by key, not by listing, and Relay does not read the system tables directly. |
+| Workflow event, notification, and stream listings | Executor only. The client reads events and streams by key, not by listing, and Relay does not read the system tables directly. A single event can be read by key through the Relay extension below. |
 | Export | Executor only. The serialized workflow format belongs to the executor and is SDK-specific. |
 | Import | Not supported. The Go client has no import operation, and Direct mode does not retry a mutation over an executor socket. |
 
@@ -185,15 +187,36 @@ serializer, so an executor in another language can decode it. A payload that is
 missing or not valid JSON is rejected with `400 Bad Request`; Relay does not
 re-encode an opaque value.
 
+`GET /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/event?key={key}`
+reads one event value for the target workflow through the official client's
+keyed event operation:
+
+```json
+{"key": "orders", "value": {"status": "ready"}}
+```
+
+`value` is the decoded value stored under the key. Portable JSON is readable
+across languages. A key Relay cannot find returns `404 Not Found`, and an empty
+or missing `key` returns `400 Bad Request`. A stored value in a serializer the
+client cannot decode returns `503 Service Unavailable`. The lookup is a read,
+so a read-only Direct connection serves it.
+
 The routes follow the application integration mode. Direct and Hybrid use the
 database. Attached refuses with `501 Not Implemented`. A read-only Direct
-connection fails closed with `403 Forbidden`, and Relay does not retry the write
-over an executor socket. A missing data-plane connection also returns `501`.
+connection fails closed for enqueue and send with `403 Forbidden`, and Relay
+does not retry the write over an executor socket. A missing data-plane
+connection also returns `501`.
 
-Set-event remains unavailable. The MIT Go client exposes `SetEvent` only on a
-workflow context, and the exported `dbos/internals` seam does not export the
-input type its `SystemDatabase.SetEvent` requires. A workflow that depends on
-set-event remains a migration blocker.
+Set event is application-owned. The MIT Go client exposes `SetEvent` only to a
+running workflow, and the exported `dbos/internals` seam does not export the
+input type its `SystemDatabase.SetEvent` requires. Relay does not reflect into
+the client or write the event table directly, so there is no operator set-event
+action. A workflow that needs an operator to unblock it should use Send and
+Recv: the operator sends a message from the console or the send endpoint, and
+the workflow waits on `Recv` for that topic. This is the recommended pattern for
+new workflows because it works in Direct mode and has a documented operator
+path. An existing workflow that already depends on set-event needs an
+application change to that pattern before Direct mode can unblock it.
 
 ## Security
 

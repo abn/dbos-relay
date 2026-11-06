@@ -118,6 +118,25 @@ func TestFingerprintedAssetsAreImmutable(t *testing.T) {
 	}
 }
 
+func TestDashboardBundleIncludesEventTools(t *testing.T) {
+	handler := dashboard.Handler(nil)
+	jsPath := fingerprintedAsset(t, handler, "js")
+
+	req := httptest.NewRequest(http.MethodGet, jsPath, nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected %s status 200, got %d", jsPath, w.Code)
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{"Read event", "Send Message"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("expected the dashboard bundle to contain %q", want)
+		}
+	}
+}
+
 func TestMissingAssetReturns404(t *testing.T) {
 	handler := dashboard.Handler(nil)
 

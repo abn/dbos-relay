@@ -2,6 +2,7 @@ package dataplane_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -360,4 +361,66 @@ func listWorkflowIDs(t *testing.T, client dataplane.Client, ids []string) []stri
 		out[i] = row.WorkflowUUID
 	}
 	return out
+}
+
+// TestDirectSQLiteGetEvent reads one workflow event by key through the real MIT
+// Go client. The event is written by the workflow itself, so the test does not
+// need a set-event extension or direct system table access.
+func TestDirectSQLiteGetEvent(t *testing.T) {
+	dbURL := "sqlite:" + t.TempDir() + "/sys.db"
+	appName := "direct-event"
+
+	appCtx, err := dbos.NewContext(context.Background(), dbos.Config{
+		AppName:            appName,
+		DatabaseURL:        dbURL,
+		ApplicationVersion: "v1",
+		ExecutorID:         "exec-event",
+	})
+	if err != nil {
+		t.Fatalf("NewContext: %v", err)
+	}
+	workflow := func(ctx dbos.Context, input int) (int, error) {
+		if err := dbos.SetEvent(ctx, "status", map[string]any{"ready": true}); err != nil {
+			return 0, err
+		}
+		return input, nil
+	}
+	dbos.RegisterWorkflow(appCtx, workflow, dbos.WithWorkflowName("event-workflow"))
+	if err := dbos.Launch(appCtx); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	defer func() { _ = dbos.Shutdown(appCtx, 5*time.Second) }()
+
+	handle, err := dbos.RunWorkflow(appCtx, workflow, 7)
+	if err != nil {
+		t.Fatalf("RunWorkflow: %v", err)
+	}
+	if _, err := handle.GetResult(); err != nil {
+		t.Fatalf("GetResult: %v", err)
+	}
+
+	client, err := dataplane.NewSDKClient(dataplane.AppConfig{
+		ApplicationName:  appName,
+		DatabaseURL:      dbURL,
+		Mode:             dataplane.ModeRead,
+		Integration:      dataplane.IntegrationDirect,
+		StatementTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewSDKClient: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	event, err := client.GetEvent(context.Background(), handle.GetWorkflowID(), "status")
+	if err != nil {
+		t.Fatalf("GetEvent: %v", err)
+	}
+	value, ok := event.Value.(map[string]any)
+	if event.Key != "status" || !ok || value["ready"] != true {
+		t.Fatalf("unexpected event: %+v", event)
+	}
+
+	if _, err := client.GetEvent(context.Background(), handle.GetWorkflowID(), "missing"); !errors.Is(err, dataplane.ErrEventNotFound) {
+		t.Fatalf("expected ErrEventNotFound, got %v", err)
+	}
 }

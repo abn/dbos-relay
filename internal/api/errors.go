@@ -35,6 +35,8 @@ func RouterErrorToModel(err error) (int, gen.ErrorModel) {
 		return http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Application not found", err.Error())
 	case errors.Is(err, router.ErrOperationUnsupported):
 		return http.StatusNotImplemented, MakeErrorModel(http.StatusNotImplemented, "Not Implemented", err.Error())
+	case errors.Is(err, router.ErrEventNotFound):
+		return http.StatusNotFound, MakeErrorModel(http.StatusNotFound, "Not Found", err.Error())
 	case errors.Is(err, router.ErrNoLiveExecutor):
 		return http.StatusServiceUnavailable, MakeErrorModel(http.StatusServiceUnavailable, "Service Unavailable", err.Error())
 	case errors.Is(err, router.ErrExecutorTimeout):

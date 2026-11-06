@@ -101,6 +101,20 @@
         `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/events`
       );
     }
+    async getWorkflowEvent(orgName, appName, workflowId, key) {
+      return this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/event?key=${encodeURIComponent(key)}`
+      );
+    }
+    async sendWorkflowMessage(orgName, appName, workflowId, payload, topic) {
+      await this.request(
+        `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/send`,
+        {
+          method: "POST",
+          body: JSON.stringify({ topic: topic || void 0, payload })
+        }
+      );
+    }
     async getWorkflowNotifications(orgName, appName, workflowId) {
       return this.request(
         `/v2/orgs/${encodeURIComponent(orgName)}/apps/${encodeURIComponent(appName)}/workflows/${encodeURIComponent(workflowId)}/notifications`
@@ -2145,6 +2159,7 @@
               ${wf.status === "ERROR" ? `
                 <button class="btn btn-sm btn-primary" data-restart-wf='${escapeHtml4(workflowId)}' data-target-app='${escapeHtml4(targetApp)}'>Restart</button>
               ` : ""}
+              <button class="btn btn-sm btn-secondary" data-action="openSendMessage">Send</button>
             </div>
           </div>
           <div class="card-body">
@@ -2230,18 +2245,56 @@
         </div>
       `;
       } else if (tab === "events") {
-        content.innerHTML = `<div class="loading-spinner">Loading events...</div>`;
-        const events = await this.client.getWorkflowEvents(this.orgName, targetApp, this.selectedWorkflowId);
         content.innerHTML = `
-        <table class="data-table">
-          <thead><tr><th>Event Key</th><th>Value</th></tr></thead>
-          <tbody>
-            ${events.length > 0 ? events.map((e) => `
-              <tr><td><code>${escapeHtml4(e.key)}</code></td><td>${renderJsonViewer(e.value)}</td></tr>
-            `).join("") : `<tr><td colspan="2" style="text-align:center; color:var(--faint);">No events recorded.</td></tr>`}
-          </tbody>
-        </table>
+        <div class="toolbar" style="margin-bottom:12px;">
+          <div class="filter-group">
+            <input type="text" id="event-key-input" class="input-text" placeholder="Event key" aria-label="Workflow event key">
+            <button class="btn btn-sm btn-secondary" data-action="readWorkflowEvent">Read event</button>
+          </div>
+          <span class="text-secondary" style="font-size:12px;">Read one event by key. The full list comes from a live executor.</span>
+        </div>
+        <div id="event-read-result" style="margin-bottom:12px;"></div>
+        <div id="event-list-container"><div class="loading-spinner">Loading events...</div></div>
       `;
+        const keyInput = document.getElementById("event-key-input");
+        if (keyInput) {
+          keyInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              this.readWorkflowEvent();
+            }
+          });
+        }
+        const listContainer = document.getElementById("event-list-container");
+        try {
+          const events = await this.client.getWorkflowEvents(this.orgName, targetApp, this.selectedWorkflowId);
+          listContainer.innerHTML = `
+          <table class="data-table">
+            <thead><tr><th>Event Key</th><th>Value</th></tr></thead>
+            <tbody>
+              ${events.length > 0 ? events.map((e) => `
+                <tr><td><code>${escapeHtml4(e.key)}</code></td><td>${renderJsonViewer(e.value)}</td></tr>
+              `).join("") : `<tr><td colspan="2" style="text-align:center; color:var(--faint);">No events recorded.</td></tr>`}
+            </tbody>
+          </table>
+        `;
+        } catch (err) {
+          if (this.isNoExecutorError(err) || err.status === 503) {
+            listContainer.innerHTML = `
+            <div class="empty-state" style="padding:24px; text-align:left;">
+              <h4 class="empty-state-title" style="font-size:13px;">Event listing needs a live executor</h4>
+              <p class="empty-state-desc" style="margin-bottom:0;">This application serves workflow events from its system database. Read one event by key with the control above, or connect an executor to list every event.</p>
+            </div>
+          `;
+          } else {
+            listContainer.innerHTML = `
+            <div class="empty-state" style="padding:24px; text-align:left;">
+              <h4 class="empty-state-title" style="font-size:13px;">Unable to load events</h4>
+              <p class="empty-state-desc" style="margin-bottom:0;">${escapeHtml4(err.message)}</p>
+            </div>
+          `;
+          }
+        }
       } else if (tab === "notifications") {
         content.innerHTML = `<div class="loading-spinner">Loading notifications...</div>`;
         const notifs = await this.client.getWorkflowNotifications(this.orgName, targetApp, this.selectedWorkflowId);
@@ -2260,6 +2313,92 @@
           </tbody>
         </table>
       `;
+      }
+    }
+    async readWorkflowEvent() {
+      const input = document.getElementById("event-key-input");
+      const result = document.getElementById("event-read-result");
+      if (!input || !result) return;
+      const key = input.value.trim();
+      if (!key) {
+        this.showToast("Enter an event key to read", "error");
+        input.focus();
+        return;
+      }
+      const targetApp = this.selectedWorkflowApp || this.workflowAppMap.get(this.selectedWorkflowId) || this.appName;
+      result.innerHTML = `<div class="loading-spinner">Reading event...</div>`;
+      try {
+        const event = await this.client.getWorkflowEvent(this.orgName, targetApp, this.selectedWorkflowId, key);
+        result.innerHTML = renderJsonViewer(event.value, `Event: ${event.key}`);
+      } catch (err) {
+        result.innerHTML = `<div style="color:var(--error); font-size:12px;">${escapeHtml4(err.message)}</div>`;
+        this.showToast(`Failed to read event: ${err.message}`, "error");
+      }
+    }
+    openSendMessageModal() {
+      const root = document.getElementById("modal-root");
+      if (!root) return;
+      const workflowId = this.selectedWorkflowId || "";
+      const targetApp = this.selectedWorkflowApp || this.workflowAppMap.get(workflowId) || this.appName;
+      root.innerHTML = `
+      <div class="modal-overlay" data-action="closeModalOverlay" role="dialog" aria-modal="true" aria-labelledby="send-message-title">
+        <div class="modal-dialog">
+          <div class="modal-header">
+            <span id="send-message-title">Send Message</span>
+            <button class="btn btn-xs btn-secondary" data-action="closeModal" aria-label="Close dialog">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p style="font-size:12px; color:var(--muted); margin:0;">
+              Writes a message for <code>${escapeHtml4(workflowId)}</code> in ${escapeHtml4(targetApp || "this application")}. Relay stores the payload with the DBOS portable JSON serializer.
+            </p>
+            <div class="form-field">
+              <label class="form-label" for="send-message-topic">Topic (optional)</label>
+              <input type="text" id="send-message-topic" class="input-text" placeholder="orders">
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="send-message-payload">Payload (JSON)</label>
+              <textarea id="send-message-payload" class="input-text" rows="8" placeholder='{"status":"ready"}' style="font-family:var(--font-mono); font-size:12px; height:auto; padding:9px;"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-sm btn-secondary" data-action="closeModal">Cancel</button>
+            <button class="btn btn-sm btn-primary" data-action="submitSendMessage">Send</button>
+          </div>
+        </div>
+      </div>
+    `;
+      const topicInput = document.getElementById("send-message-topic");
+      if (topicInput) topicInput.focus();
+    }
+    async submitSendMessage() {
+      const topicInput = document.getElementById("send-message-topic");
+      const payloadInput = document.getElementById("send-message-payload");
+      if (!payloadInput) return;
+      const raw = payloadInput.value.trim();
+      if (!raw) {
+        this.showToast("Payload is required", "error");
+        payloadInput.focus();
+        return;
+      }
+      let payload;
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        this.showToast("Payload must be valid JSON", "error");
+        payloadInput.focus();
+        return;
+      }
+      const workflowId = this.selectedWorkflowId;
+      const targetApp = this.selectedWorkflowApp || this.workflowAppMap.get(workflowId) || this.appName;
+      const topic = topicInput ? topicInput.value.trim() : "";
+      try {
+        await this.client.sendWorkflowMessage(this.orgName, targetApp, workflowId, payload, topic || void 0);
+        this.closeModal();
+        this.showToast(`Message sent to workflow ${workflowId}`, "success");
+      } catch (err) {
+        this.showToast(`Failed to send: ${err.message}`, "error");
       }
     }
     async cancelWorkflow(id, appName) {
@@ -4007,7 +4146,10 @@
         if (decodedEl) decodedEl.style.display = mode === "decoded" ? "" : "none";
         if (rawEl) rawEl.style.display = mode === "raw" ? "" : "none";
       }
-    } else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""), target.dataset.targetApp);
+    } else if (target.dataset.action === "readWorkflowEvent") window.app.readWorkflowEvent();
+    else if (target.dataset.action === "openSendMessage") window.app.openSendMessageModal();
+    else if (target.dataset.action === "submitSendMessage") window.app.submitSendMessage();
+    else if (target.dataset.cancelWf) window.app.cancelWorkflow(target.dataset.cancelWf.replace(/'/g, ""), target.dataset.targetApp);
     else if (target.dataset.resumeWf) window.app.resumeWorkflow(target.dataset.resumeWf.replace(/'/g, ""), target.dataset.targetApp);
     else if (target.dataset.restartWf) window.app.restartWorkflow(target.dataset.restartWf.replace(/'/g, ""), target.dataset.targetApp);
     else if (target.dataset.wfTab) window.app.switchWfTab(target.dataset.wfTab.replace(/'/g, ""));
