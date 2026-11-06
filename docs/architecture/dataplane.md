@@ -22,10 +22,14 @@ control path. The declarative manifest selects it per application with
 
 Direct database access is governed by strict architectural boundaries:
 
-* **Official SDK client only**: Relay communicates with an application's system
-  database exclusively through the official MIT DBOS Go SDK client
-  (`github.com/dbos-inc/dbos-transact-golang/dbos`). Relay never issues raw SQL
-  queries against `dbos.*` tables.
+* **Client first, adapter gated**: Relay communicates with an application's
+  system database through the official MIT DBOS Go SDK client
+  (`github.com/dbos-inc/dbos-transact-golang/dbos`) by default. Relay currently
+  issues no raw SQL against `dbos.*` tables. A version-gated, schema-specific
+  adapter is permitted only for an operation the client does not expose, and
+  only after a separate ADR defines the schema window, ownership and fencing,
+  serialization, signaling, tests, and fail-closed behavior. No adapter exists
+  today.
 * **Default read-only**: Direct connections default to `read` mode. Lifecycle
   mutations, schedule changes, and recovery are rejected unless the operator
   explicitly opts in to `read-write` mode.

@@ -28,10 +28,14 @@ in the wiki under `docs/`.
 - **Ask when provenance is unclear.** If a fact is only obtainable from a
   forbidden source, stop and surface the gap. Design a fallback rather than
   guessing.
-- **No direct application database queries.** Relay never speaks to an
-  application's system database except through the SDK's own client library,
-  and only for applications where the operator has explicitly configured a
-  data-plane connection. Raw SQL against `dbos.*` is still forbidden.
+- **Client first, adapter gated.** Relay reaches an application's system
+  database through the SDK's own client library by default, and only for
+  applications where the operator has explicitly configured a data-plane
+  connection. A direct, schema-specific adapter is permitted only for an
+  operation the client does not expose, and only after a separate ADR defines
+  the schema window, ownership and fencing, serialization, signaling, tests,
+  and fail-closed behavior. No adapter exists today. It is never a general
+  query path.
 - **Never require application-side changes.** An unmodified DBOS application
   must work by pointing its Conductor URL at Relay. If a feature needs an SDK
   change, file it upstream and keep Relay working without it.
