@@ -42,8 +42,12 @@ Relay allows an optional data-plane connection using the official Go SDK
 client library (`github.com/dbos-inc/dbos-transact-golang/dbos`) for applications
 where the operator has explicitly configured data-plane credentials.
 
-Direct raw SQL queries against `dbos.*` tables remain strictly forbidden. All
-database interaction must pass through the SDK client.
+The official SDK client is the default for every application system database
+operation. A direct, schema-specific adapter is permitted only for an operation
+the client does not expose, and only under a separate ADR that defines the
+schema window, ownership and fencing, serialization, signaling, tests, and
+fail-closed behavior. No such adapter exists today. Raw SQL is never a general
+query path.
 
 The implementation follows these rules:
 
