@@ -65,8 +65,9 @@ The rules are:
    and does not depend on the proprietary connector. [ADR 0004](0004-data-plane-via-sdk-client.md)
    remains the access rule. This record supersedes ADR 0004 points 4 and 5 for
    Direct mode: the operation set is wider than the original six, and portable
-   JSON allows enqueue, send, and event writes that the original record
-   deferred. The legacy fallback keeps the original scope until it is removed.
+   JSON supports a future enqueue, send, and event path that the original
+   record deferred. This release does not expose those operations. The legacy
+   fallback keeps the original scope until it is removed.
 2. **Read-only by default.** A Direct connection is read-only unless the
    operator explicitly opts into read-write for that application. In read-write
    mode the allowlist is the client's operations: cancel, resume, fork, rewind,
@@ -81,9 +82,10 @@ The rules are:
    Relay invents.
 3. **Recovery needs a liveness signal.** Relay calls
    `ReenqueueForRecovery` for a dead executor only when a deployment-level
-   signal says the executor is gone. The signal comes from a Kubernetes
-   operator watching pod lifecycle or from a small `relay-probe` process that
-   shares the application process lifetime and reports its executor ID.
+   signal says the executor is gone. The supported signal comes from a small
+   `relay-probe` process that shares the application process lifetime and
+   reports its executor ID. A Kubernetes operator path is planned but has no
+   published contract; it is not a supported path in this release.
    After re-enqueueing, Relay verifies that no PENDING work remains for the
    dead executor before deleting its record; a version mismatch keeps the
    record so the sweep can retry. Without a signal, Direct mode observes and
@@ -104,10 +106,15 @@ The rules are:
    a future enqueue path; this release does not expose enqueue, send, or
    set-event as REST operations.
 6. **No per-language SDKs.** Direct mode is implemented once in Relay's Go
-   server. The optional probe and operator are deployment components, not
-   application libraries. Relay does not publish Python, TypeScript, or Java
-   packages.
-7. **The client is a watched dependency.** The implementation pins the Go SDK,
+   server. The optional probe, and a future operator, are deployment
+   components, not application libraries. Relay does not publish Python,
+   TypeScript, or Java packages.
+7. **Supported application databases.** PostgreSQL and SQLite are supported
+   and tested as application system databases. SQLite-compatible engines such
+   as Turso use the client's SQLite driver and are expected to work, but Relay
+   does not test them; they are documented as compatible with a verification
+   note.
+8. **The client is a watched dependency.** The implementation pins the Go SDK,
    vendors its source for reproducible builds, and runs a canary test against
    every new release before raising the pin. The project asks upstream to keep
    the external client MIT and the system database migrations public. If that
@@ -154,10 +161,11 @@ deliberate:
   OpenTelemetry, or Attached mode.
 - Java applications at schema 114, the current Java `1.2.0` generation. They
   use Attached mode until Java's schema aligns with the Direct window or an
-  adapter exists. Schema 19 belongs to Java `0.8.0` and older.
-- SQLite as an operator-facing production backend in v1. The Go client supports
-  it and the hermetic tests use it, but the operator surface and the
-  multi-language story target PostgreSQL.
+  adapter exists. Attached recovery for Java is not yet verified; schema 19
+  belongs to Java `0.8.0` and older.
+- Tested support for SQLite-compatible engines other than SQLite itself. SQLite
+  is supported and tested; compatible engines such as Turso use the client's
+  SQLite driver but are not covered by Relay's test suite.
 - Non-portable serializers for writes. They are read and displayed, not
   re-encoded.
 - Automatic recovery without a liveness signal.
@@ -204,9 +212,9 @@ in CI.
   optional hygiene.
 - The dashboard and REST API can serve a fleet with zero connected executors.
   The "no live executors" state becomes a normal state rather than an outage.
-- Recovery is only as good as the liveness signal. The probe and operator are
-  therefore first-class deliverables, and the dashboard must distinguish
-  "no signal configured" from "executor dead".
+- Recovery is only as good as the liveness signal. The probe is therefore a
+  first-class deliverable; the operator path remains planned. The dashboard must
+  distinguish "no signal configured" from "executor dead".
 
 ## Alternatives considered
 

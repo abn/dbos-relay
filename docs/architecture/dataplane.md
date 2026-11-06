@@ -52,9 +52,10 @@ Direct database access is governed by strict architectural boundaries:
   `hybrid` prefers the executor and falls back to the database. `attached`
   ignores the database.
 * **Recovery needs a liveness signal**: a dead executor's pending workflows are
-  re-enqueued through `ReenqueueForRecovery` after `relay probe` or a deployment
-  operator reports the executor gone. Without a signal, Direct mode observes and
-  controls but does not automatically recover.
+  re-enqueued through `ReenqueueForRecovery` after `relay probe` reports the
+  executor gone. A deployment-operator signal is planned but has no published
+  contract. Without a signal, Direct mode observes and controls but does not
+  automatically recover.
 * **Auditable responses**: Internal routing tracks source attribution
   (`internal/router.ServedFromTracker`). External emission of `served_from` in
   response headers and metrics is planned for a subsequent observability
@@ -84,7 +85,7 @@ data_plane:
 
 Configuration parameters:
 
-* `connection_url`: PostgreSQL connection string for the application system database.
+* `connection_url`: Database connection string for the application system database. PostgreSQL and SQLite are supported; SQLite-compatible engines are compatible but untested.
 * `connection_string_from`: Environment variable (`env`) or secret file (`file`) indirection for database credentials.
 * `integration`: `direct`, `hybrid`, or `attached`. `hybrid` is the default.
 * `mode`: Access mode (`read` or `read-write`). Defaults to `read`.
@@ -93,7 +94,7 @@ Configuration parameters:
 
 ## Multi-database fleet architecture
 
-In a DBOS Transact deployment, each registered application operates with its own isolated PostgreSQL database:
+In a DBOS Transact deployment, each registered application operates with its own isolated system database:
 
 * **Default executor model**: Each executor service manages its own database connection locally via the standard DBOS configuration (`DBOS_SYSTEM_DATABASE_URL` or `dbos-config.yaml`). When executors register with Relay over WebSocket, they handle workflow execution, step recording, and transaction persistence directly against their respective application databases. Relay acts strictly as the control plane coordinator, dispatching commands without holding or inspecting application database credentials.
 * **Direct model**: When an operator configures a connection in `relay.yaml`, Relay maintains independent client pools for each configured application. Requests for `order-service` route to the `order-service` database pool, while requests for `payment-gateway` route to the `payment-gateway` pool. Relay completely isolates connection pools and schemas across applications. In `direct` integration, the database is the preferred path; in `hybrid`, it is the fallback; in `attached`, it is unused.

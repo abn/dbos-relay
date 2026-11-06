@@ -10,6 +10,80 @@ status: stable
 This document covers operational procedures for database migrations, rolling upgrades,
 and schema rollback strategies in Relay deployments.
 
+## Upgrade notes
+
+### Direct mode release
+
+This release adds Direct mode and retires the legacy data-plane fallback that
+pinned the Go SDK at `v1.3.0`. Relay now pins the MIT Go client at `v1.7.0`,
+which requires application schema 123 and tolerates newer schemas. The supported
+window is schema 123 through 125; schema 123 and 125 are tested, and 124 is
+covered by the client's migration tolerance rather than a separate test cell.
+
+**Who is affected**
+
+- Deployments that used `data_plane` as an outage fallback for applications at
+  schema 107 through 122. That fallback is no longer available. Keep those
+  applications in Attached mode, or upgrade their system database to schema 123
+  through 125 before configuring Direct mode.
+- Applications on Go `v1.7.0` or `v1.8.0`, Python `3.3.0` or `3.4.0`, and
+  TypeScript `5.3.0` or `5.4.0` that need a control plane. Configure Direct mode
+  and, where automatic recovery is required, a liveness signal.
+
+**Who is not affected**
+
+- Attached deployments on Go `v1.6.0` and below, Python `3.2.0` and below,
+  TypeScript `5.2.11` and below, and Java `1.2.0` without a `data_plane` entry.
+  Their executor protocol path and application configuration are unchanged.
+- Deployments that do not use `data_plane`.
+
+**Upgrade steps**
+
+1. Snapshot the Relay control-plane database and every application system
+   database that Relay will read.
+2. Upgrade Relay. `relay serve` applies Relay's own migrations automatically;
+   `relay migrate` remains available for pre-deployment jobs. Relay does not
+   migrate application system databases.
+3. Review every `data_plane` entry in `relay.yaml`:
+   - For an application below schema 123, remove its `data_plane` entry and keep
+     the application in Attached mode if its SDK still contains the connector. A
+     post-split release below the floor is not supported by either mode.
+   - For an application at schema 123 through 125, choose `integration: direct`
+     or `integration: hybrid` and set `mode: read` first. Switch to
+     `mode: read-write` only when the operator needs lifecycle mutations,
+     schedule changes, or recovery.
+   - Use `connection_string_from` or an environment expansion for the
+     credential. Do not commit the database URL.
+4. `relay apply -f relay.yaml --database-url "$RELAY_DATABASE_URL"` provisions
+   control-plane records such as the organisation, applications, alert rules,
+   and API keys, but it does not register data-plane connections. Start or
+   restart `relay serve` with `RELAY_CONFIG` pointing at the manifest; the
+   server registers each non-Attached entry and verifies the application schema.
+   If initialization fails, check the log for
+   `failed eager data-plane client initialization` or
+   `failed lazy data-plane client initialization`; Relay keeps the application
+   configured and retries after a short backoff. Then verify one workflow read.
+5. For Direct applications that need automatic recovery, set
+   `RELAY_INTERNAL_SECRET` on Relay and run `relay probe` beside the application.
+   An operator-provided liveness signal is planned but has no published contract
+   yet; do not plan on it. Without a signal, Relay observes and controls but does
+   not detect a dead executor.
+6. Test one safe mutation and one recovery scenario in staging before production
+   use.
+
+**Rollback**
+
+The application system database is not changed by Relay migrations. If the
+Relay binary must be rolled back, follow the snapshot and `relay migrate down`
+procedures below; `migrate force` is for clearing a dirty migration state, not a
+routine rollback. A Relay binary cannot run against a newer Relay schema, so a
+database restore may be the safer path after a failed upgrade. Workflow
+mutations or recovery already performed through Direct mode remain in the
+application database; removing the data-plane entry does not undo them.
+
+See [Migrating from Conductor](from-conductor.md) for the application cutover
+and [Direct mode](direct.md) for the full configuration and operation list.
+
 ## Automatic migration on startup
 
 Relay embeds database schema migrations within the binary. When starting Relay with
@@ -68,7 +142,7 @@ subcommands to inspect migration status, roll back versions, and recover from di
 ./bin/relay migrate down
 
 # Reset dirty state or force a specific version after manual refinement
-./bin/relay migrate force <version>
+./bin/relay migrate force --version <N> --confirm
 ```
 
 Supported rollback procedures:
@@ -91,7 +165,7 @@ migration failed: Dirty database version <N>. Fix and force version.
 ```
 
 Operators must manually inspect the database state, resolve the underlying schema error, and
-reset the dirty flag using `./bin/relay migrate force <version>` before restarting Relay.
+reset the dirty flag using `./bin/relay migrate force --version <N> --confirm` before restarting Relay.
 
 ## Storage engine architecture
 

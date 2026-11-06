@@ -19,10 +19,13 @@ official MIT Go client. It is bounded by the system database schema, not by the
 SDK version. It is the path for applications on post-split SDK releases. See
 [ADR 0015](../adr/0015-direct-mode-system-database.md).
 
-Direct mode is implemented for the supported schema window. The engine and
-recovery path are covered by hermetic SQLite tests and live PostgreSQL
-data-plane tests; the probe is covered by liveness tests. Python and TypeScript
-cross-language coverage lives in `tests/direct`.
+Direct mode is implemented for the supported schema window. PostgreSQL and
+SQLite application system databases are supported and tested; SQLite-compatible
+engines such as Turso are compatible through the client's SQLite driver but are
+not covered by Relay's tests. The engine and recovery path are covered by
+hermetic SQLite tests and live PostgreSQL data-plane tests; the probe is covered
+by liveness tests. Python and TypeScript cross-language coverage lives in
+`tests/direct`.
 
 The two boundaries are recorded here, with the evidence behind each one.
 
@@ -38,8 +41,12 @@ The two boundaries are recorded here, with the evidence behind each one.
 The Attached ceiling is an upper bound, not a recommendation. Any version at or
 below it works, including versions that predate it. An unmodified application
 built against a supported Attached SDK connects to Relay by pointing its
-Conductor URL at Relay and needs no code change, no configuration change, and
-no Relay-side setting.
+Conductor URL and key at Relay. No application code change is required; the
+connection settings change.
+
+Java `1.2.0` uses Attached mode. Its recovery path is covered by the dedicated
+Java recovery cell at schema 114; see
+[Migrating from Conductor](from-conductor.md) for the cutover checks.
 
 The Direct window is a schema window, not an SDK window. Both post-split
 cohorts are covered: schema 123 (Go `v1.7.0`, Python `3.3.0`, TypeScript

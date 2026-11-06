@@ -3,6 +3,7 @@
 How to run and operate Relay.
 
 * [Quickstart](quickstart.md) - run Relay locally with Postgres
+* [Migrating from Conductor](from-conductor.md) - move an application to Attached or Direct mode
 * [Direct mode](direct.md) - run against the application system database with no connector
 * [Declarative operations](declarative.md) - fleet configuration with relay.yaml, apply, and diff
 * [Operations and migrations](operations.md) - schema migrations, rolling upgrades, and rollbacks
