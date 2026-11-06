@@ -50,6 +50,8 @@ type DataPlaneManager interface {
 	HasDataPlane(appID pgtype.UUID) bool
 	GetIntegration(appID pgtype.UUID) (dataplane.Integration, bool)
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	Enqueue(ctx context.Context, appID pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
+	Send(ctx context.Context, appID pgtype.UUID, input dataplane.SendWorkflowMessageInput) error
 }
 
 type contextKey struct{}
@@ -114,35 +116,9 @@ func (r *DefaultRouter) SetDataPlane(dp DataPlaneManager) {
 }
 
 func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, msg protocol.Message) (protocol.Message, error) {
-	if orgName == "" {
-		orgName = "local"
-	}
-
-	org, err := r.store.GetOrganisationByName(ctx, orgName)
-	if err != nil && errors.Is(err, pgx.ErrNoRows) {
-		switch orgName {
-		case "local":
-			org, err = r.store.GetOrganisationByName(ctx, "default")
-		case "default":
-			org, err = r.store.GetOrganisationByName(ctx, "local")
-		}
-	}
+	app, err := r.resolveApplication(ctx, orgName, appName)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%w: %s", ErrOrgNotFound, orgName)
-		}
-		return nil, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
-	}
-
-	app, err := r.store.GetApplicationByName(ctx, gen.GetApplicationByNameParams{
-		OrganisationID: org.ID,
-		Name:           appName,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
-		}
-		return nil, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
+		return nil, err
 	}
 
 	hasDataPlane := r.dataplane != nil && r.dataplane.HasDataPlane(app.ID)
@@ -297,6 +273,102 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 
 	SetServedFrom(ctx, "executor")
 	return res, nil
+}
+
+func (r *DefaultRouter) resolveApplication(ctx context.Context, orgName, appName string) (gen.Application, error) {
+	if orgName == "" {
+		orgName = "local"
+	}
+
+	org, err := r.store.GetOrganisationByName(ctx, orgName)
+	if err != nil && errors.Is(err, pgx.ErrNoRows) {
+		switch orgName {
+		case "local":
+			org, err = r.store.GetOrganisationByName(ctx, "default")
+		case "default":
+			org, err = r.store.GetOrganisationByName(ctx, "local")
+		}
+	}
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Application{}, fmt.Errorf("%w: %s", ErrOrgNotFound, orgName)
+		}
+		return gen.Application{}, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
+	}
+
+	app, err := r.store.GetApplicationByName(ctx, gen.GetApplicationByNameParams{
+		OrganisationID: org.ID,
+		Name:           appName,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.Application{}, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
+		}
+		return gen.Application{}, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
+	}
+	return app, nil
+}
+
+// EnqueueWorkflow writes a workflow row through the application system
+// database. The operation has no executor equivalent in the Conductor
+// protocol, so hybrid mode uses the database as its only path and Attached
+// mode refuses it. A read-only data plane fails closed: the router never
+// retries the write over an executor socket to bypass the operator's choice.
+func (r *DefaultRouter) EnqueueWorkflow(ctx context.Context, orgName, appName string, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+	app, err := r.resolveApplication(ctx, orgName, appName)
+	if err != nil {
+		return dataplane.EnqueueWorkflowResult{}, err
+	}
+	if !r.writeRouteAvailable(app.ID) {
+		return dataplane.EnqueueWorkflowResult{}, fmt.Errorf("%w: enqueue requires a Direct or Hybrid data plane", ErrOperationUnsupported)
+	}
+	res, err := r.dataplane.Enqueue(ctx, app.ID, input)
+	if err != nil {
+		return dataplane.EnqueueWorkflowResult{}, mapWriteError(err)
+	}
+	SetServedFrom(ctx, "database")
+	return res, nil
+}
+
+// SendWorkflowMessage writes a message row through the application system
+// database. It follows the same routing and read-only rules as enqueue.
+func (r *DefaultRouter) SendWorkflowMessage(ctx context.Context, orgName, appName string, input dataplane.SendWorkflowMessageInput) error {
+	app, err := r.resolveApplication(ctx, orgName, appName)
+	if err != nil {
+		return err
+	}
+	if !r.writeRouteAvailable(app.ID) {
+		return fmt.Errorf("%w: send requires a Direct or Hybrid data plane", ErrOperationUnsupported)
+	}
+	if err := r.dataplane.Send(ctx, app.ID, input); err != nil {
+		return mapWriteError(err)
+	}
+	SetServedFrom(ctx, "database")
+	return nil
+}
+
+func (r *DefaultRouter) writeRouteAvailable(appID pgtype.UUID) bool {
+	if r.dataplane == nil || !r.dataplane.HasDataPlane(appID) {
+		return false
+	}
+	integration, ok := r.dataplane.GetIntegration(appID)
+	if !ok {
+		return false
+	}
+	return integration == dataplane.IntegrationDirect || integration == dataplane.IntegrationHybrid
+}
+
+func mapWriteError(err error) error {
+	switch {
+	case errors.Is(err, dataplane.ErrReadOnlyMode):
+		return fmt.Errorf("%w: %w", ErrReadOnlyMode, err)
+	case errors.Is(err, dataplane.ErrUnsupportedOperation):
+		return fmt.Errorf("%w: %w", ErrOperationUnsupported, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%w: data-plane statement timeout: %w", ErrExecutorTimeout, err)
+	default:
+		return fmt.Errorf("%w: %w", ErrDataPlaneUnavailable, err)
+	}
 }
 
 func isFleetAggregate(msgType protocol.MessageType) bool {

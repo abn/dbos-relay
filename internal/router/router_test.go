@@ -338,6 +338,8 @@ type mockDataPlaneManager struct {
 	hasDataPlane bool
 	integration  dataplane.Integration
 	onDispatch   func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	onEnqueue    func(ctx context.Context, appID pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
+	onSend       func(ctx context.Context, appID pgtype.UUID, input dataplane.SendWorkflowMessageInput) error
 }
 
 func (m *mockDataPlaneManager) HasDataPlane(appID pgtype.UUID) bool {
@@ -356,6 +358,20 @@ func (m *mockDataPlaneManager) Dispatch(ctx context.Context, appID pgtype.UUID, 
 		return m.onDispatch(ctx, appID, msg)
 	}
 	return nil, nil
+}
+
+func (m *mockDataPlaneManager) Enqueue(ctx context.Context, appID pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+	if m.onEnqueue != nil {
+		return m.onEnqueue(ctx, appID, input)
+	}
+	return dataplane.EnqueueWorkflowResult{}, errors.New("unexpected call to Enqueue")
+}
+
+func (m *mockDataPlaneManager) Send(ctx context.Context, appID pgtype.UUID, input dataplane.SendWorkflowMessageInput) error {
+	if m.onSend != nil {
+		return m.onSend(ctx, appID, input)
+	}
+	return errors.New("unexpected call to Send")
 }
 
 func TestDispatch_DataPlaneFallbackErrors(t *testing.T) {
@@ -955,4 +971,137 @@ func TestDispatch_DirectReadOnlyUnsupportedMutationIsTerminal(t *testing.T) {
 	if hubCalled {
 		t.Fatal("a read-only unsupported mutation must not fall through to the executor")
 	}
+}
+
+func TestWriteOperations_Routing(t *testing.T) {
+	orgID := testUUID(1)
+	appID := testUUID(2)
+
+	store := &mockStore{
+		getOrgFunc: func(ctx context.Context, name string) (gen.Organisation, error) {
+			return gen.Organisation{ID: orgID, Name: name}, nil
+		},
+		getAppFunc: func(ctx context.Context, arg gen.GetApplicationByNameParams) (gen.Application, error) {
+			return gen.Application{ID: appID, OrganisationID: orgID, Name: arg.Name}, nil
+		},
+	}
+	hub := &mockDispatcher{
+		dispatchFunc: func(ctx context.Context, id pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+			t.Fatal("write operations must not be retried over an executor socket")
+			return nil, nil
+		},
+	}
+
+	payload := []byte(`{"order":42}`)
+
+	t.Run("direct enqueue", func(t *testing.T) {
+		var got dataplane.EnqueueWorkflowInput
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationDirect,
+			onEnqueue: func(ctx context.Context, id pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+				if id != appID {
+					t.Fatalf("expected app ID %v, got %v", appID, id)
+				}
+				got = input
+				return dataplane.EnqueueWorkflowResult{WorkflowID: "wf-direct"}, nil
+			},
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+		ctx, tracker := router.ContextWithServedFromTracker(context.Background())
+
+		res, err := r.EnqueueWorkflow(ctx, "my-org", "my-app", dataplane.EnqueueWorkflowInput{
+			WorkflowName: "orders",
+			QueueName:    "orders-q",
+			Payload:      payload,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.WorkflowID != "wf-direct" {
+			t.Fatalf("expected wf-direct, got %q", res.WorkflowID)
+		}
+		if string(got.Payload) != string(payload) {
+			t.Fatalf("payload changed: %s", got.Payload)
+		}
+		if tracker.Source != "database" {
+			t.Fatalf("expected served_from database, got %q", tracker.Source)
+		}
+	})
+
+	t.Run("hybrid send", func(t *testing.T) {
+		var got dataplane.SendWorkflowMessageInput
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationHybrid,
+			onSend: func(ctx context.Context, id pgtype.UUID, input dataplane.SendWorkflowMessageInput) error {
+				got = input
+				return nil
+			},
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+
+		err := r.SendWorkflowMessage(context.Background(), "my-org", "my-app", dataplane.SendWorkflowMessageInput{
+			DestinationID: "wf-1",
+			Topic:         "orders",
+			Payload:       payload,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.DestinationID != "wf-1" || string(got.Payload) != string(payload) {
+			t.Fatalf("send input changed: %+v", got)
+		}
+	})
+
+	t.Run("attached refuses", func(t *testing.T) {
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationAttached,
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+
+		err := r.SendWorkflowMessage(context.Background(), "my-org", "my-app", dataplane.SendWorkflowMessageInput{
+			DestinationID: "wf-1",
+			Payload:       payload,
+		})
+		if !errors.Is(err, router.ErrOperationUnsupported) {
+			t.Fatalf("expected ErrOperationUnsupported, got %v", err)
+		}
+	})
+
+	t.Run("read-only fails closed", func(t *testing.T) {
+		dp := &mockDataPlaneManager{
+			hasDataPlane: true,
+			integration:  dataplane.IntegrationDirect,
+			onEnqueue: func(ctx context.Context, id pgtype.UUID, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+				return dataplane.EnqueueWorkflowResult{}, dataplane.ErrReadOnlyMode
+			},
+		}
+		r := router.New(store, hub)
+		r.SetDataPlane(dp)
+
+		_, err := r.EnqueueWorkflow(context.Background(), "my-org", "my-app", dataplane.EnqueueWorkflowInput{
+			WorkflowName: "orders",
+			QueueName:    "orders-q",
+			Payload:      payload,
+		})
+		if !errors.Is(err, router.ErrReadOnlyMode) {
+			t.Fatalf("expected ErrReadOnlyMode, got %v", err)
+		}
+	})
+
+	t.Run("no data plane refuses", func(t *testing.T) {
+		r := router.New(store, hub)
+		err := r.SendWorkflowMessage(context.Background(), "my-org", "my-app", dataplane.SendWorkflowMessageInput{
+			DestinationID: "wf-1",
+			Payload:       payload,
+		})
+		if !errors.Is(err, router.ErrOperationUnsupported) {
+			t.Fatalf("expected ErrOperationUnsupported, got %v", err)
+		}
+	})
 }

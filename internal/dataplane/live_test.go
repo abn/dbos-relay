@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -708,4 +709,115 @@ func TestLiveDatabase_AggregatesDispatch(t *testing.T) {
 		t.Fatalf("expected GetStepAggregatesResponse, got %+v", stepAggRes)
 	}
 	_ = stepAggResp
+}
+
+func liveRecvWorkflow(ctx dbos.Context, _ struct{}) (string, error) {
+	return dbos.Recv[string](ctx, "orders", 10*time.Second)
+}
+
+// TestSDKClient_WriteOperationsSQLite proves enqueue and send against a real
+// SQLite system database created by the official Go SDK. It is hermetic and
+// needs no external database.
+func TestSDKClient_WriteOperationsSQLite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sys.db")
+	dbURL := "sqlite:" + path
+	appName := "write-ops-app"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	dbosCtx, err := dbos.NewContext(ctx, dbos.Config{
+		AppName:     appName,
+		DatabaseURL: dbURL,
+	})
+	if err != nil {
+		t.Fatalf("failed to create DBOS context: %v", err)
+	}
+	dbos.RegisterWorkflow(dbosCtx, liveRecvWorkflow, dbos.WithWorkflowName("liveRecvWorkflow"))
+	if err := dbos.Launch(dbosCtx); err != nil {
+		t.Fatalf("failed to launch DBOS context: %v", err)
+	}
+	defer func() { _ = dbos.Shutdown(dbosCtx, 5*time.Second) }()
+
+	client, err := dataplane.NewSDKClient(dataplane.AppConfig{
+		DatabaseURL:      dbURL,
+		ApplicationName:  appName,
+		StatementTimeout: 5 * time.Second,
+		Mode:             dataplane.ModeReadWrite,
+		Integration:      dataplane.IntegrationDirect,
+	})
+	if err != nil {
+		t.Fatalf("failed to create SDKClient: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	// Enqueue preserves the JSON payload inside the portable envelope and leaves
+	// the workflow ENQUEUED for an executor to dequeue.
+	enqueued, err := client.Enqueue(ctx, dataplane.EnqueueWorkflowInput{
+		WorkflowName: "liveEnqueuedWorkflow",
+		QueueName:    "write-ops-queue",
+		Payload:      []byte(`{"order":42}`),
+	})
+	if err != nil {
+		t.Fatalf("enqueue failed: %v", err)
+	}
+	if enqueued.WorkflowID == "" {
+		t.Fatal("expected a workflow ID from enqueue")
+	}
+
+	getRes, err := client.Dispatch(ctx, &protocol.GetWorkflowRequest{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeGetWorkflow,
+			RequestID: uuid.NewString(),
+		},
+		WorkflowID: enqueued.WorkflowID,
+		LoadInput:  true,
+	})
+	if err != nil {
+		t.Fatalf("get enqueued workflow failed: %v", err)
+	}
+	getResp, ok := getRes.(*protocol.GetWorkflowResponse)
+	if !ok || getResp.Output == nil {
+		t.Fatalf("expected workflow output, got %+v", getRes)
+	}
+	if getResp.Output.Status == nil || *getResp.Output.Status != "ENQUEUED" {
+		t.Fatalf("expected ENQUEUED status, got %v", getResp.Output.Status)
+	}
+	if getResp.Output.QueueName == nil || *getResp.Output.QueueName != "write-ops-queue" {
+		t.Fatalf("expected write-ops-queue, got %v", getResp.Output.QueueName)
+	}
+	if getResp.Output.Input == nil {
+		t.Fatal("expected the enqueued input to be stored")
+	}
+	var envelope dbos.PortableWorkflowArgs
+	if err := json.Unmarshal([]byte(*getResp.Output.Input), &envelope); err != nil {
+		t.Fatalf("enqueued input is not a portable envelope: %q: %v", *getResp.Output.Input, err)
+	}
+	if len(envelope.PositionalArgs) != 1 {
+		t.Fatalf("expected one positional argument, got %d", len(envelope.PositionalArgs))
+	}
+	arg, ok := envelope.PositionalArgs[0].(map[string]any)
+	if !ok || arg["order"] != float64(42) {
+		t.Fatalf("expected positional argument order=42, got %#v", envelope.PositionalArgs[0])
+	}
+
+	// Send delivers a portable JSON message to a running workflow.
+	handle, err := dbos.RunWorkflow(dbosCtx, liveRecvWorkflow, struct{}{})
+	if err != nil {
+		t.Fatalf("failed to start receiver workflow: %v", err)
+	}
+	if err := client.Send(ctx, dataplane.SendWorkflowMessageInput{
+		DestinationID: handle.GetWorkflowID(),
+		Topic:         "orders",
+		Payload:       []byte(`"hello send"`),
+	}); err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	result, err := handle.GetResult()
+	if err != nil {
+		t.Fatalf("receiver workflow failed: %v", err)
+	}
+	if result != "hello send" {
+		t.Fatalf("expected hello send, got %q", result)
+	}
 }

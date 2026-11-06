@@ -88,7 +88,8 @@ recovery dispatcher.
 ## Supported operations
 
 Direct mode serves workflow queries, steps, aggregates, cancel, resume, fork,
-rewind, delete, schedules, queues, application versions, and recovery. Every
+rewind, delete, schedules, queues, application versions, and recovery. Relay
+extension endpoints add enqueue and send with DBOS portable JSON. Every
 operation uses the official Go client; Relay does not issue raw SQL against
 `dbos.*` tables.
 
@@ -106,7 +107,60 @@ serializer when payloads need to be readable across languages. In Python use
 `DBOSPortableJSONSerializer`; in TypeScript use a serializer whose `name()` is
 `portable_json`. The cross-language fixtures in `tests/direct` are a worked
 example. Values Relay cannot decode are displayed as opaque and are not written
-back. Enqueue, send, and set-event are not exposed by this release.
+back.
+
+## Relay extension endpoints
+
+Enqueue and send are Relay extensions. The vendored Conductor OpenAPI defines no
+operation for either, so Relay adds two routes of its own rather than presenting
+them as Conductor contract operations. They use the same authentication,
+application scoping, read-write gate, and problem-details errors as the rest of
+the API.
+
+`POST /v2/orgs/{orgName}/apps/{appName}/workflows/enqueue` writes a workflow
+row to the application system database and returns `201 Created` with the new
+workflow ID and a `Location` header:
+
+```json
+{
+  "workflowName": "orders",
+  "queueName": "orders-q",
+  "payload": {"order": 42},
+  "workflowId": "optional-caller-supplied-id",
+  "appVersion": "optional-version",
+  "queuePartitionKey": "optional-partition"
+}
+```
+
+```json
+{"workflowId": "5c6f0d9e-..."}
+```
+
+`POST /v2/orgs/{orgName}/apps/{appName}/workflows/{workflowId}/send` writes a
+message row for the destination workflow and returns `204 No Content`:
+
+```json
+{
+  "topic": "orders",
+  "payload": {"status": "ready"},
+  "idempotencyKey": "optional-key"
+}
+```
+
+The payload is any JSON value. Relay stores it with the DBOS portable JSON
+serializer, so an executor in another language can decode it. A payload that is
+missing or not valid JSON is rejected with `400 Bad Request`; Relay does not
+re-encode an opaque value.
+
+The routes follow the application integration mode. Direct and Hybrid use the
+database. Attached refuses with `501 Not Implemented`. A read-only Direct
+connection fails closed with `403 Forbidden`, and Relay does not retry the write
+over an executor socket. A missing data-plane connection also returns `501`.
+
+Set-event remains unavailable. The MIT Go client exposes `SetEvent` only on a
+workflow context, and the exported `dbos/internals` seam does not export the
+input type its `SystemDatabase.SetEvent` requires. A workflow that depends on
+set-event remains a migration blocker.
 
 ## Security
 

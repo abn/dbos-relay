@@ -249,6 +249,44 @@ func (m *DefaultManager) Dispatch(ctx context.Context, appID pgtype.UUID, msg pr
 	return client.Dispatch(dispatchCtx, msg)
 }
 
+// Enqueue writes a workflow row through the application's data plane. It is a
+// mutation and therefore requires read-write mode.
+func (m *DefaultManager) Enqueue(ctx context.Context, appID pgtype.UUID, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error) {
+	client, cfg, err := m.getOrInitClient(appID)
+	if err != nil {
+		return EnqueueWorkflowResult{}, err
+	}
+	if cfg.Mode != ModeReadWrite {
+		return EnqueueWorkflowResult{}, ErrReadOnlyMode
+	}
+	dispatchCtx := ctx
+	if cfg.StatementTimeout > 0 {
+		var cancel context.CancelFunc
+		dispatchCtx, cancel = context.WithTimeout(ctx, cfg.StatementTimeout)
+		defer cancel()
+	}
+	return client.Enqueue(dispatchCtx, input)
+}
+
+// Send writes a message row through the application's data plane. It is a
+// mutation and therefore requires read-write mode.
+func (m *DefaultManager) Send(ctx context.Context, appID pgtype.UUID, input SendWorkflowMessageInput) error {
+	client, cfg, err := m.getOrInitClient(appID)
+	if err != nil {
+		return err
+	}
+	if cfg.Mode != ModeReadWrite {
+		return ErrReadOnlyMode
+	}
+	dispatchCtx := ctx
+	if cfg.StatementTimeout > 0 {
+		var cancel context.CancelFunc
+		dispatchCtx, cancel = context.WithTimeout(ctx, cfg.StatementTimeout)
+		defer cancel()
+	}
+	return client.Send(dispatchCtx, input)
+}
+
 // Recover re-enqueues the pending workflows of dead executors through the
 // application's system database. It is a mutation and therefore requires the
 // application to be configured in read-write mode.
