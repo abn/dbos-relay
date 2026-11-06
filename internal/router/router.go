@@ -263,6 +263,11 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 		}
 
 		if isNoExecutor {
+			if integration == dataplane.IntegrationDirect && hasDataPlane {
+				if reason := dataplane.NonDatabaseReason(msg.GetMessageType()); reason != "" {
+					return nil, fmt.Errorf("%w: %s", ErrNoLiveExecutor, reason)
+				}
+			}
 			return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, err)
 		}
 		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(errStr, "timed out") {
@@ -384,6 +389,9 @@ func isDataPlaneNotFound(err error) bool {
 // because the REST surface distinguishes not-found from unavailable.
 func dataPlaneFailure(msg protocol.Message, dpErr error) (protocol.Message, error) {
 	if errors.Is(dpErr, dataplane.ErrUnsupportedOperation) {
+		if reason := dataplane.NonDatabaseReason(msg.GetMessageType()); reason != "" {
+			return nil, fmt.Errorf("%w: %s", ErrNoLiveExecutor, reason)
+		}
 		return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, dpErr)
 	}
 	if errors.Is(dpErr, dataplane.ErrReadOnlyMode) {
