@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/abn/dbos-relay/compare/v0.6.0...v0.7.0) (2026-11-06)
+
+
+### Features
+
+* **brand:** replace the circuit mark with two nodes ([636cad7](https://github.com/abn/dbos-relay/commit/636cad73f257bad88c58f594375e21299b306176))
+* **cli:** add relay doctor preflight ([#99](https://github.com/abn/dbos-relay/issues/99)) ([597b898](https://github.com/abn/dbos-relay/commit/597b8987ee717e7623d65f22bf9fb44a1cf3adee))
+* **console:** inspect events and send workflow messages ([#101](https://github.com/abn/dbos-relay/issues/101)) ([3ca8fbf](https://github.com/abn/dbos-relay/commit/3ca8fbf11ba0617676bf3a10ff027b96b4c422dd))
+* **console:** overhaul the application interface ([453d065](https://github.com/abn/dbos-relay/commit/453d065936db51396212123624989aafdd05d699))
+* **dataplane:** add Direct mode write operations ([#98](https://github.com/abn/dbos-relay/issues/98)) ([6c66b5e](https://github.com/abn/dbos-relay/commit/6c66b5ec837cd7650cce919a322e6ada6e9bb2af))
+* **dataplane:** serve Direct metrics and retention ([#100](https://github.com/abn/dbos-relay/issues/100)) ([f7d0753](https://github.com/abn/dbos-relay/commit/f7d07534d35520e3e0d2c196b10d0f94036d02e1))
+* **direct:** add database recovery and probe ([a523b2a](https://github.com/abn/dbos-relay/commit/a523b2ae2104f64c25a057b56638dbb20a6628cb))
+* **direct:** add direct mode engine and routing ([10844a0](https://github.com/abn/dbos-relay/commit/10844a0a8216b9b8e98e14fd0ddc5f604f7f0045))
+* **site:** add dark mode to the landing page ([30152d2](https://github.com/abn/dbos-relay/commit/30152d2c5a730208c262a06777a7eb8e03f413ee))
+* **site:** redesign landing page ([46f9a46](https://github.com/abn/dbos-relay/commit/46f9a4676c3a33925375638483c38b741b4f0a64))
+
 ## [0.6.0](https://github.com/abn/dbos-relay/compare/v0.5.0...v0.6.0) (2026-10-11)
 
 
