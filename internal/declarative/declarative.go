@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/abn/relay/internal/auth"
+	"github.com/abn/relay/internal/dataplane"
 	"github.com/abn/relay/internal/store"
 	"github.com/abn/relay/internal/store/gen"
 )
@@ -57,6 +58,7 @@ type DataPlane struct {
 	ConnectionURL        string            `yaml:"connection_url,omitempty"`
 	ConnectionStringFrom *ConnectionSource `yaml:"connection_string_from,omitempty"`
 	Mode                 string            `yaml:"mode,omitempty"`
+	Integration          string            `yaml:"integration,omitempty"`
 	StatementTimeoutSecs int               `yaml:"statement_timeout_secs,omitempty"`
 	MaxConnections       int               `yaml:"max_connections,omitempty"`
 }
@@ -262,11 +264,14 @@ func Validate(cfg *Config) error {
 	}
 
 	for appName, dp := range cfg.DataPlanes {
-		if dp.ConnectionURL == "" && dp.ConnectionStringFrom == nil {
+		if dp.Integration != "attached" && dp.ConnectionURL == "" && dp.ConnectionStringFrom == nil {
 			return fmt.Errorf("data_plane for app %q requires connection_url or connection_string_from", appName)
 		}
 		if dp.Mode != "" && dp.Mode != "read" && dp.Mode != "read-write" {
 			return fmt.Errorf("invalid data_plane mode %q for app %q (must be 'read' or 'read-write')", dp.Mode, appName)
+		}
+		if dp.Integration != "" && !dataplane.Integration(dp.Integration).Valid() {
+			return fmt.Errorf("invalid data_plane integration %q for app %q (must be 'hybrid', 'direct', or 'attached')", dp.Integration, appName)
 		}
 	}
 
@@ -384,11 +389,15 @@ func Diff(ctx context.Context, s *store.Store, cfg *Config) (*Plan, error) {
 		if mode == "" {
 			mode = "read"
 		}
+		integration := dp.Integration
+		if integration == "" {
+			integration = "hybrid"
+		}
 		items = append(items, DiffItem{
 			Action:  ActionUnchanged,
 			Kind:    "DataPlane",
 			Name:    appName,
-			Details: fmt.Sprintf("mode=%s, dsn=[REDACTED]", mode),
+			Details: fmt.Sprintf("mode=%s, integration=%s, dsn=[REDACTED]", mode, integration),
 		})
 	}
 

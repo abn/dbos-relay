@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/dbos-inc/dbos-transact-golang/dbos"
+	_ "github.com/dbos-inc/dbos-transact-golang/dbos/driver/sqlite"
+	"github.com/dbos-inc/dbos-transact-golang/dbos/internals"
 
 	"github.com/abn/relay/internal/protocol"
 )
@@ -22,7 +24,7 @@ type SDKClient struct {
 
 // NewSDKClient initializes an SDKClient backed by dbos.NewClient.
 // Provenance: dbos-inc/dbos-transact-golang (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5, dbos/dbos.go:779)
-// Note: Upstream DBOS Go SDK client requires system database schema version 107 or higher.
+// Note: Upstream DBOS Go SDK client requires system database schema version 123 or higher.
 func NewSDKClient(cfg AppConfig) (Client, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
@@ -79,7 +81,11 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 
 // Dispatch executes v1 data-plane operations against the application system database.
 func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protocol.Message, error) {
-	cli := dbos.From(c.client.(dbos.Context), ctx)
+	dbosCtx, ok := c.client.(dbos.Context)
+	if !ok {
+		return nil, fmt.Errorf("data-plane client does not expose a DBOS context")
+	}
+	cli := dbos.From(dbosCtx, ctx)
 	switch req := msg.(type) {
 	case *protocol.GetWorkflowRequest:
 		statuses, err := cli.ListWorkflows(cli,
@@ -153,9 +159,9 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 		if req.Body.HasParent != nil {
 			opts = append(opts, dbos.WithFilterHasParent(*req.Body.HasParent))
 		}
-		// IsFork is not applied here: the pinned DBOS Go SDK predates
-		// WithFilterIsFork, so this local fallback returns a superset. Relay
-		// forwards is_fork to executors on the wire.
+		if req.Body.IsFork != nil {
+			opts = append(opts, dbos.WithFilterIsFork(*req.Body.IsFork))
+		}
 		if len(req.Body.QueueName) > 0 {
 			opts = append(opts, dbos.WithFilterQueueName(req.Body.QueueName...))
 		}
@@ -310,6 +316,253 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 			NewWorkflowID: &newID,
 		}, nil
 
+	case *protocol.RewindWorkflowRequest:
+		var opts []dbos.RewindWorkflowOption
+		if req.Body.StartStep != nil && *req.Body.StartStep > 0 {
+			opts = append(opts, dbos.WithRewindStartStep(uint(*req.Body.StartStep)))
+		}
+		if req.Body.ApplicationVersion != nil {
+			opts = append(opts, dbos.WithRewindApplicationVersion(*req.Body.ApplicationVersion))
+		}
+		if req.Body.QueueName != nil {
+			opts = append(opts, dbos.WithRewindQueue(*req.Body.QueueName))
+		}
+		if req.Body.QueuePartitionKey != nil {
+			opts = append(opts, dbos.WithRewindQueuePartitionKey(*req.Body.QueuePartitionKey))
+		}
+		if _, err := cli.RewindWorkflow(cli, req.Body.WorkflowID, opts...); err != nil {
+			return nil, fmt.Errorf("failed to rewind workflow %s: %w", req.Body.WorkflowID, err)
+		}
+		return &protocol.RewindWorkflowResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeRewindWorkflow,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+
+	case *protocol.DeleteWorkflowRequest:
+		ids := req.WorkflowIDs
+		if len(ids) == 0 && req.WorkflowID != "" {
+			ids = []string{req.WorkflowID}
+		}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("missing workflow ID(s) in delete request")
+		}
+		var opts []dbos.DeleteWorkflowOption
+		if req.DeleteChildren {
+			opts = append(opts, dbos.WithDeleteChildren())
+		}
+		if err := cli.DeleteWorkflows(cli, ids, opts...); err != nil {
+			return nil, fmt.Errorf("failed to delete workflows: %w", err)
+		}
+		return &protocol.DeleteWorkflowResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeDelete,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+
+	case *protocol.ExistPendingWorkflowsRequest:
+		opts := []dbos.ListWorkflowsOption{
+			dbos.WithFilterExecutorIDs(req.ExecutorID),
+			dbos.WithFilterStatus(dbos.WorkflowStatusPending),
+			dbos.WithFilterLimit(1),
+		}
+		if req.ApplicationVersion != "" {
+			opts = append(opts, dbos.WithFilterAppVersion(req.ApplicationVersion))
+		}
+		statuses, err := cli.ListWorkflows(cli, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check pending workflows for executor %s: %w", req.ExecutorID, err)
+		}
+		return &protocol.ExistPendingWorkflowsResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeExistPendingWorkflows,
+				RequestID: req.RequestID,
+			},
+			Exist: len(statuses) > 0,
+		}, nil
+
+	case *protocol.ListSchedulesRequest:
+		var opts []dbos.ListSchedulesOption
+		if len(req.Body.Status) > 0 {
+			statuses := make([]dbos.ScheduleStatus, 0, len(req.Body.Status))
+			for _, s := range req.Body.Status {
+				statuses = append(statuses, dbos.ScheduleStatus(s))
+			}
+			opts = append(opts, dbos.WithScheduleStatuses(statuses...))
+		}
+		if len(req.Body.WorkflowName) > 0 {
+			opts = append(opts, dbos.WithScheduleWorkflowNames(req.Body.WorkflowName...))
+		}
+		if len(req.Body.ScheduleNamePrefix) > 0 {
+			opts = append(opts, dbos.WithScheduleNamePrefixes(req.Body.ScheduleNamePrefix...))
+		}
+		if len(req.Body.ApplicationName) > 0 {
+			opts = append(opts, dbos.WithScheduleApplicationNames(req.Body.ApplicationName...))
+		}
+		schedules, err := cli.ListSchedules(cli, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list schedules: %w", err)
+		}
+		loadContext := req.Body.LoadContext == nil || *req.Body.LoadContext
+		outputs := make([]protocol.ScheduleOutput, len(schedules))
+		for i, s := range schedules {
+			outputs[i] = mapSchedule(s, loadContext)
+		}
+		return &protocol.ListSchedulesResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeListSchedules,
+				RequestID: req.RequestID,
+			},
+			Output: outputs,
+		}, nil
+
+	case *protocol.GetScheduleRequest:
+		schedule, err := cli.GetSchedule(cli, req.ScheduleName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schedule %s: %w", req.ScheduleName, err)
+		}
+		loadContext := req.LoadContext == nil || *req.LoadContext
+		output := mapSchedule(schedule, loadContext)
+		return &protocol.GetScheduleResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeGetSchedule,
+				RequestID: req.RequestID,
+			},
+			Output: &output,
+		}, nil
+
+	case *protocol.PauseScheduleRequest:
+		if err := cli.PauseSchedule(cli, req.ScheduleName); err != nil {
+			return nil, fmt.Errorf("failed to pause schedule %s: %w", req.ScheduleName, err)
+		}
+		return &protocol.PauseScheduleResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypePauseSchedule,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+
+	case *protocol.ResumeScheduleRequest:
+		if err := cli.ResumeSchedule(cli, req.ScheduleName); err != nil {
+			return nil, fmt.Errorf("failed to resume schedule %s: %w", req.ScheduleName, err)
+		}
+		return &protocol.ResumeScheduleResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeResumeSchedule,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+
+	case *protocol.BackfillScheduleRequest:
+		start, err := time.Parse(time.RFC3339, req.Start)
+		if err != nil {
+			return nil, fmt.Errorf("invalid backfill start time %q: %w", req.Start, err)
+		}
+		end, err := time.Parse(time.RFC3339, req.End)
+		if err != nil {
+			return nil, fmt.Errorf("invalid backfill end time %q: %w", req.End, err)
+		}
+		ids, err := cli.BackfillSchedule(cli, req.ScheduleName, start, end)
+		if err != nil {
+			return nil, fmt.Errorf("failed to backfill schedule %s: %w", req.ScheduleName, err)
+		}
+		return &protocol.BackfillScheduleResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeBackfillSchedule,
+				RequestID: req.RequestID,
+			},
+			WorkflowIDs: ids,
+		}, nil
+
+	case *protocol.TriggerScheduleRequest:
+		handle, err := cli.TriggerSchedule(cli, req.ScheduleName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to trigger schedule %s: %w", req.ScheduleName, err)
+		}
+		id := handle.GetWorkflowID()
+		return &protocol.TriggerScheduleResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeTriggerSchedule,
+				RequestID: req.RequestID,
+			},
+			WorkflowID: &id,
+		}, nil
+
+	case *protocol.ListQueuesRequest:
+		var opts []dbos.ListQueuesOption
+		if len(req.Body.ApplicationName) > 0 {
+			opts = append(opts, dbos.WithListQueuesApplicationNames(req.Body.ApplicationName...))
+		}
+		queues, err := cli.ListQueues(cli, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list queues: %w", err)
+		}
+		outputs := make([]protocol.QueueOutput, len(queues))
+		for i, q := range queues {
+			outputs[i] = mapQueue(q)
+		}
+		return &protocol.ListQueuesResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeListQueues,
+				RequestID: req.RequestID,
+			},
+			Output: outputs,
+		}, nil
+
+	case *protocol.GetQueueRequest:
+		queue, err := cli.RetrieveQueue(cli, req.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get queue %s: %w", req.Name, err)
+		}
+		output := mapQueue(queue)
+		return &protocol.GetQueueResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeGetQueue,
+				RequestID: req.RequestID,
+			},
+			Output: &output,
+		}, nil
+
+	case *protocol.ListApplicationVersionsRequest:
+		versions, err := cli.ListApplicationVersions(cli)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list application versions: %w", err)
+		}
+		outputs := make([]protocol.ApplicationVersionOutput, len(versions))
+		for i, v := range versions {
+			outputs[i] = protocol.ApplicationVersionOutput{
+				ID:        v.ID,
+				Name:      v.Name,
+				Timestamp: v.Timestamp,
+				CreatedAt: v.CreatedAt,
+			}
+		}
+		return &protocol.ListApplicationVersionsResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeListApplicationVersions,
+				RequestID: req.RequestID,
+			},
+			Output: outputs,
+		}, nil
+
+	case *protocol.SetLatestApplicationVersionRequest:
+		if err := cli.SetLatestApplicationVersion(cli, req.VersionName); err != nil {
+			return nil, fmt.Errorf("failed to set latest application version %s: %w", req.VersionName, err)
+		}
+		return &protocol.SetLatestApplicationVersionResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeSetLatestApplicationVersion,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+
 	case *protocol.GetWorkflowAggregatesRequest:
 		var tb time.Duration
 		if req.Body.TimeBucketSizeMs != nil {
@@ -372,6 +625,7 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 			ApplicationName:           req.Body.ApplicationName,
 			WasForkedFrom:             req.Body.WasForkedFrom,
 			HasParent:                 req.Body.HasParent,
+			IsFork:                    req.Body.IsFork,
 			Attributes:                req.Body.Attributes,
 		}
 		rows, err := cli.GetWorkflowAggregates(cli, input)
@@ -445,6 +699,52 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOperation, msg.GetMessageType())
 	}
+}
+
+// internalQueueName is the SDK's internal recovery queue. Source:
+// dbos-transact-golang v1.7.0, dbos/internal/models (InternalQueueName).
+const internalQueueName = "_dbos_internal_queue"
+
+// Recover re-enqueues the pending workflows owned by the given executors.
+// It uses the SDK's own system database operation, so Relay never writes the
+// recovery SQL itself.
+func (c *SDKClient) Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error) {
+	if len(executorIDs) == 0 {
+		return nil, nil
+	}
+	dbosCtx, ok := c.client.(dbos.Context)
+	if !ok {
+		return nil, fmt.Errorf("data-plane client does not expose a DBOS context")
+	}
+	runtime, err := internals.RuntimeOf(dbosCtx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving DBOS runtime for recovery: %w", err)
+	}
+	return runtime.SystemDB().ReenqueueForRecovery(ctx, executorIDs, appVersion, internalQueueName)
+}
+
+// HasPendingWorkflows reports whether the executor still owns PENDING
+// workflows. It is the direct-mode equivalent of the socket
+// exist_pending_workflows probe.
+func (c *SDKClient) HasPendingWorkflows(ctx context.Context, executorID, appVersion string) (bool, error) {
+	dbosCtx, ok := c.client.(dbos.Context)
+	if !ok {
+		return false, fmt.Errorf("data-plane client does not expose a DBOS context")
+	}
+	cli := dbos.From(dbosCtx, ctx)
+	opts := []dbos.ListWorkflowsOption{
+		dbos.WithFilterExecutorIDs(executorID),
+		dbos.WithFilterStatus(dbos.WorkflowStatusPending),
+		dbos.WithFilterLimit(1),
+	}
+	if appVersion != "" {
+		opts = append(opts, dbos.WithFilterAppVersion(appVersion))
+	}
+	statuses, err := cli.ListWorkflows(cli, opts...)
+	if err != nil {
+		return false, err
+	}
+	return len(statuses) > 0, nil
 }
 
 // Close terminates the DBOS client runtime and connections.
@@ -562,6 +862,76 @@ func mapWorkflowStatus(s dbos.WorkflowStatus) protocol.ListWorkflowsResponseBody
 		body.Error = &str
 	}
 	return body
+}
+
+func mapSchedule(s dbos.WorkflowSchedule, loadContext bool) protocol.ScheduleOutput {
+	out := protocol.ScheduleOutput{
+		ScheduleID:        s.ScheduleID,
+		ScheduleName:      s.ScheduleName,
+		WorkflowName:      s.WorkflowName,
+		Schedule:          s.Schedule,
+		Status:            string(s.Status),
+		AutomaticBackfill: s.AutomaticBackfill,
+	}
+	if s.WorkflowClassName != "" {
+		out.WorkflowClassName = &s.WorkflowClassName
+	}
+	if s.CronTimezone != "" {
+		out.CronTimezone = &s.CronTimezone
+	}
+	if s.QueueName != "" {
+		out.QueueName = &s.QueueName
+	}
+	if s.ApplicationName != "" {
+		out.ApplicationName = &s.ApplicationName
+	}
+	if s.LastFiredAt != nil {
+		str := s.LastFiredAt.UTC().Format(time.RFC3339Nano)
+		out.LastFiredAt = &str
+	}
+	if loadContext && len(s.Context) > 0 {
+		str := string(s.Context)
+		out.Context = &str
+	}
+	return out
+}
+
+func mapQueue(q dbos.Queue) protocol.QueueOutput {
+	cfg := q.Config()
+	out := protocol.QueueOutput{
+		Name:               cfg.Name,
+		PriorityEnabled:    cfg.PriorityEnabled,
+		PartitionQueue:     cfg.PartitionQueue,
+		PollingIntervalSec: q.GetPollingInterval().Seconds(),
+	}
+	if cfg.ApplicationName != "" {
+		out.ApplicationName = &cfg.ApplicationName
+	}
+	if cfg.GlobalConcurrency != nil {
+		out.Concurrency = cfg.GlobalConcurrency
+	}
+	if cfg.WorkerConcurrency != nil {
+		out.WorkerConcurrency = cfg.WorkerConcurrency
+	}
+	if cfg.RateLimit != nil {
+		limit := cfg.RateLimit.Limit
+		period := cfg.RateLimit.Period.Seconds()
+		out.RateLimitMax = &limit
+		out.RateLimitPeriodSec = &period
+	}
+	if cfg.PartitionConcurrency != nil {
+		out.PartitionConcurrency = cfg.PartitionConcurrency
+	}
+	if cfg.PartitionWorkerConcurrency != nil {
+		out.PartitionWorkerConcurrency = cfg.PartitionWorkerConcurrency
+	}
+	if cfg.PartitionRateLimit != nil {
+		limit := cfg.PartitionRateLimit.Limit
+		period := cfg.PartitionRateLimit.Period.Seconds()
+		out.PartitionRateLimitMax = &limit
+		out.PartitionRateLimitPeriodSec = &period
+	}
+	return out
 }
 
 func mapStepInfo(s dbos.StepInfo) protocol.WorkflowStepsResponseBody {

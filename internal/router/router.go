@@ -48,6 +48,7 @@ type PeerForwarder interface {
 // DataPlaneManager coordinates data-plane operations against application databases.
 type DataPlaneManager interface {
 	HasDataPlane(appID pgtype.UUID) bool
+	GetIntegration(appID pgtype.UUID) (dataplane.Integration, bool)
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
 }
 
@@ -144,8 +145,45 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 		return nil, fmt.Errorf("%w: %w", ErrStoreUnavailable, err)
 	}
 
-	// For fleet-wide aggregate queries, prefer data-plane if configured to protect worker executors
-	if isFleetAggregate(msg.GetMessageType()) && r.dataplane != nil && r.dataplane.HasDataPlane(app.ID) {
+	hasDataPlane := r.dataplane != nil && r.dataplane.HasDataPlane(app.ID)
+	integration := dataplane.IntegrationHybrid
+	if hasDataPlane {
+		if mode, ok := r.dataplane.GetIntegration(app.ID); ok {
+			integration = mode
+		}
+	}
+
+	// Direct mode prefers the system database for every operation. An
+	// unsupported database operation falls through to a live executor. A
+	// read may be retried over the socket after a database failure, because a
+	// read is safe to repeat. A mutation is not: a timeout can arrive after the
+	// write committed, so retrying fork, rewind, trigger, backfill, or resume
+	// over the socket could apply it twice. A read-only database also fails
+	// closed; the socket must not be used to bypass the operator's choice.
+	var directErr error
+	if integration == dataplane.IntegrationDirect && hasDataPlane {
+		dpRes, dpErr := r.dataplane.Dispatch(ctx, app.ID, msg)
+		if dpErr == nil {
+			SetServedFrom(ctx, "database")
+			return dpRes, nil
+		}
+		switch {
+		case errors.Is(dpErr, dataplane.ErrReadOnlyMode):
+			return nil, fmt.Errorf("%w: %w", ErrReadOnlyMode, dpErr)
+		case errors.Is(dpErr, dataplane.ErrUnsupportedOperation):
+			// Fall through to the executor.
+		case dataplane.IsMutating(msg.GetMessageType()):
+			return dataPlaneFailure(msg, dpErr)
+		case isDataPlaneNotFound(dpErr):
+			return dataPlaneFailure(msg, dpErr)
+		default:
+			directErr = dpErr
+		}
+	}
+
+	// For fleet-wide aggregate queries in hybrid mode, prefer the data plane to
+	// protect worker executors from heavy analytical reads.
+	if integration == dataplane.IntegrationHybrid && isFleetAggregate(msg.GetMessageType()) && hasDataPlane {
 		dpRes, dpErr := r.dataplane.Dispatch(ctx, app.ID, msg)
 		if dpErr == nil {
 			SetServedFrom(ctx, "database")
@@ -232,34 +270,20 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 			}
 		}
 
-		// If no executor is available locally or via peer forwarder, fall back to data-plane if configured
-		if isNoExecutor && r.dataplane != nil && r.dataplane.HasDataPlane(app.ID) {
+		if isNoExecutor && directErr != nil {
+			return dataPlaneFailure(msg, directErr)
+		}
+
+		// If no executor is available locally or via peer forwarder, fall back to
+		// the data plane in hybrid mode. Direct mode already tried it above, and
+		// Attached mode never touches the database.
+		if isNoExecutor && integration == dataplane.IntegrationHybrid && hasDataPlane {
 			dpRes, dpErr := r.dataplane.Dispatch(ctx, app.ID, msg)
 			if dpErr == nil {
 				SetServedFrom(ctx, "database")
 				return dpRes, nil
 			}
-			if errors.Is(dpErr, dataplane.ErrUnsupportedOperation) {
-				return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, dpErr)
-			}
-			if errors.Is(dpErr, dataplane.ErrReadOnlyMode) {
-				return nil, fmt.Errorf("%w: %w", ErrReadOnlyMode, dpErr)
-			}
-			if strings.Contains(dpErr.Error(), "not found") {
-				if req, ok := msg.(*protocol.GetWorkflowRequest); ok {
-					return &protocol.GetWorkflowResponse{
-						Envelope: protocol.Envelope{
-							Type:      protocol.MessageTypeGetWorkflow,
-							RequestID: req.RequestID,
-						},
-						Output: nil,
-					}, nil
-				}
-			}
-			if errors.Is(dpErr, context.DeadlineExceeded) || strings.Contains(strings.ToLower(dpErr.Error()), "timed out") {
-				return nil, fmt.Errorf("%w: data-plane statement timeout: %w", ErrExecutorTimeout, dpErr)
-			}
-			return nil, fmt.Errorf("%w: data-plane fallback failed: %w", ErrDataPlaneUnavailable, dpErr)
+			return dataPlaneFailure(msg, dpErr)
 		}
 
 		if isNoExecutor {
@@ -277,4 +301,52 @@ func (r *DefaultRouter) Dispatch(ctx context.Context, orgName, appName string, m
 
 func isFleetAggregate(msgType protocol.MessageType) bool {
 	return msgType == protocol.MessageTypeGetWorkflowAggregates || msgType == protocol.MessageTypeGetStepAggregates
+}
+
+func isDataPlaneNotFound(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+// dataPlaneFailure maps a data-plane error onto the router's public error
+// taxonomy. A missing record is a successful empty response, not an error,
+// because the REST surface distinguishes not-found from unavailable.
+func dataPlaneFailure(msg protocol.Message, dpErr error) (protocol.Message, error) {
+	if errors.Is(dpErr, dataplane.ErrUnsupportedOperation) {
+		return nil, fmt.Errorf("%w: %w", ErrNoLiveExecutor, dpErr)
+	}
+	if errors.Is(dpErr, dataplane.ErrReadOnlyMode) {
+		return nil, fmt.Errorf("%w: %w", ErrReadOnlyMode, dpErr)
+	}
+	if isDataPlaneNotFound(dpErr) {
+		switch req := msg.(type) {
+		case *protocol.GetWorkflowRequest:
+			return &protocol.GetWorkflowResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeGetWorkflow,
+					RequestID: req.RequestID,
+				},
+				Output: nil,
+			}, nil
+		case *protocol.GetScheduleRequest:
+			return &protocol.GetScheduleResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeGetSchedule,
+					RequestID: req.RequestID,
+				},
+				Output: nil,
+			}, nil
+		case *protocol.GetQueueRequest:
+			return &protocol.GetQueueResponse{
+				Envelope: protocol.Envelope{
+					Type:      protocol.MessageTypeGetQueue,
+					RequestID: req.RequestID,
+				},
+				Output: nil,
+			}, nil
+		}
+	}
+	if errors.Is(dpErr, context.DeadlineExceeded) || strings.Contains(strings.ToLower(dpErr.Error()), "timed out") {
+		return nil, fmt.Errorf("%w: data-plane statement timeout: %w", ErrExecutorTimeout, dpErr)
+	}
+	return nil, fmt.Errorf("%w: data-plane fallback failed: %w", ErrDataPlaneUnavailable, dpErr)
 }

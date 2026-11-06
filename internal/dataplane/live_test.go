@@ -2,6 +2,7 @@ package dataplane_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -92,6 +93,16 @@ func TestLiveDatabase_SDKClientDataPlane(t *testing.T) {
 	}
 	if getResp.Output.Status == nil || *getResp.Output.Status != "SUCCESS" {
 		t.Errorf("expected status SUCCESS, got %v", getResp.Output.Status)
+	}
+	if getResp.Output.Output == nil {
+		t.Fatal("expected workflow output payload, got nil")
+	}
+	var output string
+	if err := json.Unmarshal([]byte(*getResp.Output.Output), &output); err != nil {
+		t.Fatalf("decoding workflow output %q: %v", *getResp.Output.Output, err)
+	}
+	if output != "hello world" {
+		t.Errorf("expected output %q, got %q", "hello world", output)
 	}
 
 	// 4. Test ListWorkflows

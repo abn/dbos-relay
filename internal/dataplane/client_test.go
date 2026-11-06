@@ -1,10 +1,8 @@
 package dataplane
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"os"
 	"reflect"
 	"strconv"
 	"testing"
@@ -35,6 +33,7 @@ func TestListWorkflowsRequestBody_FieldCoverage(t *testing.T) {
 		"ParentWorkflowID":   true,
 		"WasForkedFrom":      true,
 		"HasParent":          true,
+		"IsFork":             true,
 		"QueueName":          true,
 		"Limit":              true,
 		"Offset":             true,
@@ -49,43 +48,17 @@ func TestListWorkflowsRequestBody_FieldCoverage(t *testing.T) {
 		"ApplicationName":    true,
 	}
 
-	// Fields forwarded to executors on the wire but not applied by the local
-	// SDK-client fallback. The pinned DBOS Go SDK (v1.3.0) predates
-	// WithFilterIsFork (v1.6.0), so this fallback returns a superset.
-	knownUnmappedFields := map[string]bool{
-		"IsFork": true,
-	}
-
 	typ := reflect.TypeOf(protocol.ListWorkflowsRequestBody{})
-	if got := typ.NumField(); got != len(expectedMappedFields)+len(knownUnmappedFields) {
-		t.Fatalf("ListWorkflowsRequestBody field count mismatch: struct has %d fields, expected %d mapped and %d knowingly unmapped", got, len(expectedMappedFields), len(knownUnmappedFields))
-	}
-
-	// A knowingly unmapped field must genuinely stay unapplied. When the SDK pin
-	// moves and the data plane starts applying one, this fails until the coverage
-	// sets are updated, so the guard cannot go stale in that direction.
-	knownUnmappedSDKSymbols := map[string]string{
-		"IsFork": "dbos.WithFilterIsFork",
-	}
-	for name, symbol := range knownUnmappedSDKSymbols {
-		if !knownUnmappedFields[name] {
-			continue
-		}
-		source, err := os.ReadFile("client.go")
-		if err != nil {
-			t.Fatalf("reading client.go: %v", err)
-		}
-		if bytes.Contains(source, []byte(symbol)) {
-			t.Errorf("ListWorkflowsRequestBody field %q is listed as knowingly unmapped but client.go applies %s; map it in the data plane and drop the entry", name, symbol)
-		}
+	if got := typ.NumField(); got != len(expectedMappedFields) {
+		t.Fatalf("ListWorkflowsRequestBody field count mismatch: struct has %d fields, expected %d mapped", got, len(expectedMappedFields))
 	}
 
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		if expectedMappedFields[field.Name] || knownUnmappedFields[field.Name] {
+		if expectedMappedFields[field.Name] {
 			continue
 		}
-		t.Errorf("ListWorkflowsRequestBody field %q is neither mapped by the data plane nor knowingly unmapped", field.Name)
+		t.Errorf("ListWorkflowsRequestBody field %q is not mapped by the data plane", field.Name)
 	}
 }
 

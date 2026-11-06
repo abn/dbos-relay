@@ -17,6 +17,7 @@ import (
 
 type mockClient struct {
 	onDispatch func(ctx context.Context, msg protocol.Message) (protocol.Message, error)
+	onRecover  func(ctx context.Context, executorIDs []string, appVersion string) ([]string, error)
 	closed     bool
 }
 
@@ -25,6 +26,17 @@ func (m *mockClient) Dispatch(ctx context.Context, msg protocol.Message) (protoc
 		return m.onDispatch(ctx, msg)
 	}
 	return nil, nil
+}
+
+func (m *mockClient) Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error) {
+	if m.onRecover != nil {
+		return m.onRecover(ctx, executorIDs, appVersion)
+	}
+	return executorIDs, nil
+}
+
+func (m *mockClient) HasPendingWorkflows(ctx context.Context, executorID, appVersion string) (bool, error) {
+	return false, nil
 }
 
 func (m *mockClient) Close() error {
@@ -499,5 +511,55 @@ func TestManager_CloseShutsDownClients(t *testing.T) {
 	}
 	if mgr.HasDataPlane(appID) {
 		t.Fatalf("expected HasDataPlane to be false after Close()")
+	}
+}
+
+func TestManager_IntegrationDefaultsAndRecovery(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{9, 9, 9}, Valid: true}
+	mock := &mockClient{
+		onRecover: func(ctx context.Context, executorIDs []string, appVersion string) ([]string, error) {
+			if appVersion != "v1" {
+				t.Fatalf("expected app version v1, got %q", appVersion)
+			}
+			return []string{"wf-1"}, nil
+		},
+	}
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return mock, nil
+	})
+
+	if err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://fake/db",
+		Mode:          dataplane.ModeRead,
+	}); err != nil {
+		t.Fatalf("RegisterApp failed: %v", err)
+	}
+	integration, ok := mgr.GetIntegration(appID)
+	if !ok || integration != dataplane.IntegrationHybrid {
+		t.Fatalf("expected hybrid integration by default, got %q", integration)
+	}
+	if _, err := mgr.Recover(context.Background(), appID, []string{"exec-1"}, "v1"); !errors.Is(err, dataplane.ErrReadOnlyMode) {
+		t.Fatalf("expected read-only recovery to fail, got %v", err)
+	}
+
+	if err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://fake/db",
+		Mode:          dataplane.ModeReadWrite,
+		Integration:   dataplane.IntegrationDirect,
+	}); err != nil {
+		t.Fatalf("RegisterApp failed: %v", err)
+	}
+	integration, ok = mgr.GetIntegration(appID)
+	if !ok || integration != dataplane.IntegrationDirect {
+		t.Fatalf("expected direct integration, got %q", integration)
+	}
+	ids, err := mgr.Recover(context.Background(), appID, []string{"exec-1"}, "v1")
+	if err != nil {
+		t.Fatalf("recovery failed: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "wf-1" {
+		t.Fatalf("unexpected recovered ids: %v", ids)
 	}
 }
