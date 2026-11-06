@@ -125,6 +125,32 @@ func validateJSONPayload(payload json.RawMessage) error {
 	return nil
 }
 
+// NonDatabaseReason explains why an operation has no database path. It returns
+// an empty string when the data plane handles the operation. The reasons are
+// user-visible so a Direct-only deployment can tell which operations need a
+// live executor and which one Direct mode refuses outright.
+//
+// The Go SDK exposes keyed event and stream reads, not listings, and it has no
+// export or import operation. Relay does not read the system tables directly,
+// so these operations stay off the database path until the MIT client publishes
+// a suitable operation.
+func NonDatabaseReason(msgType protocol.MessageType) string {
+	switch msgType {
+	case protocol.MessageTypeGetWorkflowEvents:
+		return "workflow event listing requires a live executor: the MIT Go client reads events by key and has no event listing operation"
+	case protocol.MessageTypeGetWorkflowNotifications:
+		return "workflow notification listing requires a live executor: the MIT Go client has no notification listing operation"
+	case protocol.MessageTypeGetWorkflowStreams:
+		return "workflow stream listing requires a live executor: the MIT Go client reads streams by key and has no stream listing operation"
+	case protocol.MessageTypeExportWorkflow:
+		return "workflow export requires a live executor: the serialized workflow format belongs to the executor and the MIT Go client has no export operation"
+	case protocol.MessageTypeImportWorkflow:
+		return "workflow import is not supported in Direct mode: the MIT Go client has no import operation and Direct mode does not retry a mutation over an executor socket"
+	default:
+		return ""
+	}
+}
+
 // Client represents the data-plane interface to an application's system database.
 type Client interface {
 	Dispatch(ctx context.Context, msg protocol.Message) (protocol.Message, error)

@@ -823,6 +823,38 @@ func TestDispatch_DirectFallsThroughOnUnsupported(t *testing.T) {
 	}
 }
 
+func TestDispatch_DirectExplainsExecutorOnlyOperations(t *testing.T) {
+	messageTypes := []protocol.MessageType{
+		protocol.MessageTypeGetWorkflowEvents,
+		protocol.MessageTypeGetWorkflowNotifications,
+		protocol.MessageTypeGetWorkflowStreams,
+		protocol.MessageTypeExportWorkflow,
+		protocol.MessageTypeImportWorkflow,
+	}
+	for _, messageType := range messageTypes {
+		t.Run(string(messageType), func(t *testing.T) {
+			r := directTestRouter(t, dataplane.IntegrationDirect,
+				func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+					return nil, fmt.Errorf("%w: %s", dataplane.ErrUnsupportedOperation, msg.GetMessageType())
+				},
+				func(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error) {
+					return nil, errors.New("no live executor connected")
+				},
+			)
+			_, err := r.Dispatch(context.Background(), "acme", "billing", &protocol.Envelope{
+				Type:      messageType,
+				RequestID: "req",
+			})
+			if !errors.Is(err, router.ErrNoLiveExecutor) {
+				t.Fatalf("expected ErrNoLiveExecutor, got %v", err)
+			}
+			if reason := dataplane.NonDatabaseReason(messageType); reason == "" || !strings.Contains(err.Error(), reason) {
+				t.Fatalf("expected the executor-only reason in %q", err)
+			}
+		})
+	}
+}
+
 func TestDispatch_AttachedIgnoresDatabase(t *testing.T) {
 	hubRes := &protocol.ListWorkflowsResponse{Envelope: protocol.Envelope{Type: protocol.MessageTypeListWorkflows, RequestID: "req"}}
 	r := directTestRouter(t, dataplane.IntegrationAttached,

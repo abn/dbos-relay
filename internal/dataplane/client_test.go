@@ -13,6 +13,31 @@ import (
 	"github.com/abn/relay/internal/protocol"
 )
 
+func TestNonDatabaseReason(t *testing.T) {
+	executorOnly := []protocol.MessageType{
+		protocol.MessageTypeGetWorkflowEvents,
+		protocol.MessageTypeGetWorkflowNotifications,
+		protocol.MessageTypeGetWorkflowStreams,
+		protocol.MessageTypeExportWorkflow,
+		protocol.MessageTypeImportWorkflow,
+	}
+	for _, messageType := range executorOnly {
+		if reason := NonDatabaseReason(messageType); reason == "" {
+			t.Errorf("expected a reason for %s", messageType)
+		}
+	}
+	databaseBacked := []protocol.MessageType{
+		protocol.MessageTypeGetMetrics,
+		protocol.MessageTypeRetention,
+		protocol.MessageTypeListWorkflows,
+	}
+	for _, messageType := range databaseBacked {
+		if reason := NonDatabaseReason(messageType); reason != "" {
+			t.Errorf("expected no executor-only reason for %s, got %q", messageType, reason)
+		}
+	}
+}
+
 // TestListWorkflowsRequestBody_FieldCoverage guards against request filter fields
 // that are neither applied by the local data plane nor knowingly forwarded without
 // local application.

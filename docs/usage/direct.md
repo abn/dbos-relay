@@ -31,7 +31,8 @@ manifest.
   (`app_name`). Relay scopes the client to that name, so a mismatch hides the
   application's rows from Direct mode.
 - Read-only access by default. Enable read-write only when the operator needs
-  lifecycle mutations, schedule changes, or recovery.
+  lifecycle mutations, schedule changes, enqueue, send, retention execution, or
+  recovery.
 - For automatic recovery, a liveness signal from `relay probe` or a deployment
   operator. Without it, Direct mode observes and controls but does not detect a
   dead executor.
@@ -87,19 +88,51 @@ recovery dispatcher.
 
 ## Supported operations
 
-Direct mode serves workflow queries, steps, aggregates, cancel, resume, fork,
-rewind, delete, schedules, queues, application versions, and recovery. Relay
-extension endpoints add enqueue and send with DBOS portable JSON. Every
-operation uses the official Go client; Relay does not issue raw SQL against
-`dbos.*` tables.
+Direct mode serves the following operations from the application system
+database. Relay extension endpoints add enqueue and send with DBOS portable
+JSON; they are not part of the vendored Conductor OpenAPI.
 
-The following operations stay on the executor path and return
-`503 Service Unavailable` when no executor is connected:
+| Operation | Database path |
+| --- | --- |
+| Workflow queries, steps, aggregates | Official client reads |
+| Cancel, resume, fork, rewind, delete | Official client mutations |
+| Schedules, queues, application versions, recovery | Official client operations |
+| Enqueue and send | Official client writes with DBOS portable JSON |
+| Metrics | Workflow and step counts grouped by name over the requested window |
+| Retention execution | Deletes terminal workflow history in batches and cancels work that outlived the global timeout |
 
-- workflow event, notification, and stream listings;
-- export and import;
-- metrics that require in-process telemetry;
-- retention execution.
+Metrics use `workflow_status` creation times for workflow counts and
+`operation_outputs` completion times for step counts, matching the public Python
+and TypeScript SDK implementations. They report counts, not live CPU, memory, or
+in-flight executor telemetry; use a probe, OpenTelemetry, or Attached mode for
+that.
+
+Retention follows the documented DBOS policy. It deletes only `SUCCESS`,
+`ERROR`, `CANCELLED`, and `MAX_RECOVERY_ATTEMPTS_EXCEEDED` workflows, leaves
+running, enqueued, and delayed work alone, and resolves the more restrictive of
+the time and rows thresholds. The rows threshold counts the configured
+application's workflows because Direct mode scopes the client to that
+application; a system database shared by several applications needs the same
+policy on each entry. Retention requires `mode: read-write`.
+
+The following operations have no database path because the MIT Go client has no
+operation that can serve them:
+
+| Operation | Direct mode |
+| --- | --- |
+| Workflow event, notification, and stream listings | Executor only. The client reads events and streams by key, not by listing, and Relay does not read the system tables directly. |
+| Export | Executor only. The serialized workflow format belongs to the executor and is SDK-specific. |
+| Import | Not supported. The Go client has no import operation, and Direct mode does not retry a mutation over an executor socket. |
+
+Event, notification, and stream listings and export fall through to a live
+executor in Direct mode and return `503 Service Unavailable` with the reason
+when none is connected. Import fails closed in Direct mode for the same reason
+a rejected mutation does: retrying it over a socket could apply it twice. Use
+Attached or Hybrid mode for an SDK that still ships the connector and needs
+import.
+
+Every operation uses the official Go client; Relay does not issue raw SQL
+against `dbos.*` tables.
 
 Payloads are read in their stored format, including DBOS portable JSON. Python
 and TypeScript default to native serializers; configure the portable JSON

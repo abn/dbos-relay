@@ -696,9 +696,255 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 			Output: outputs,
 		}, nil
 
+	case *protocol.GetMetricsRequest:
+		return c.getMetrics(cli, req)
+
+	case *protocol.RetentionRequest:
+		if err := enforceRetention(cli, req.Body); err != nil {
+			return nil, fmt.Errorf("failed to enforce retention policy: %w", err)
+		}
+		return &protocol.RetentionResponse{
+			Envelope: protocol.Envelope{
+				Type:      protocol.MessageTypeRetention,
+				RequestID: req.RequestID,
+			},
+			Success: true,
+		}, nil
+
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOperation, msg.GetMessageType())
 	}
+}
+
+// getMetrics builds the workflow and step count series from the system
+// database. Source: dbos-transact-py SystemDatabase.get_metrics and
+// dbos-transact-ts SystemDatabase.getMetrics, both of which group
+// workflow_status by name over created_at and operation_outputs by
+// function_name over completed_at_epoch_ms.
+func (c *SDKClient) getMetrics(cli dbos.Client, req *protocol.GetMetricsRequest) (protocol.Message, error) {
+	if req.MetricClass != "workflow_step_count" {
+		return nil, fmt.Errorf("unexpected metric class %q", req.MetricClass)
+	}
+	start, err := time.Parse(time.RFC3339, req.StartTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid metrics start time %q: %w", req.StartTime, err)
+	}
+	end, err := time.Parse(time.RFC3339, req.EndTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid metrics end time %q: %w", req.EndTime, err)
+	}
+	// The aggregate filters are inclusive on the upper bound, while the public
+	// SDK metric queries use created_at/completed_at < end. Step back one
+	// millisecond, the stored precision, to keep the same half-open window.
+	endBefore := end.Add(-time.Millisecond)
+
+	workflows, err := cli.GetWorkflowAggregates(cli, dbos.GetWorkflowAggregatesInput{
+		GroupByName:     true,
+		SelectCount:     true,
+		StartTime:       start,
+		EndTime:         endBefore,
+		ApplicationName: req.ApplicationName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate workflows: %w", err)
+	}
+	steps, err := cli.GetStepAggregates(cli, dbos.GetStepAggregatesInput{
+		GroupByFunctionName: true,
+		SelectCount:         true,
+		CompletedAfter:      start,
+		CompletedBefore:     endBefore,
+		ApplicationName:     req.ApplicationName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate steps: %w", err)
+	}
+
+	metrics := make([]protocol.MetricData, 0, len(workflows)+len(steps))
+	for _, row := range workflows {
+		metrics = append(metrics, protocol.MetricData{
+			MetricType: "workflow_count",
+			MetricName: aggregateGroupValue(row.Group, "name"),
+			Value:      aggregateCountValue(row.Count),
+		})
+	}
+	for _, row := range steps {
+		metrics = append(metrics, protocol.MetricData{
+			MetricType: "step_count",
+			MetricName: aggregateGroupValue(row.Group, "function_name"),
+			Value:      aggregateCountValue(row.Count),
+		})
+	}
+
+	return &protocol.GetMetricsResponse{
+		Envelope: protocol.Envelope{
+			Type:      protocol.MessageTypeGetMetrics,
+			RequestID: req.RequestID,
+		},
+		Metrics: metrics,
+	}, nil
+}
+
+func aggregateGroupValue(group map[string]*string, key string) string {
+	if value, ok := group[key]; ok && value != nil {
+		return *value
+	}
+	return ""
+}
+
+func aggregateCountValue(count *int64) float64 {
+	if count == nil {
+		return 0
+	}
+	return float64(*count)
+}
+
+// defaultRetentionBatchSize bounds one delete or cancel round when the request
+// does not set a batch size.
+const defaultRetentionBatchSize = 1000
+
+// terminalWorkflowOptions restrict a list to statuses that retention may
+// delete. Source: docs.dbos.dev/conductor/retention: running, enqueued, and
+// delayed workflows are never deleted.
+func terminalWorkflowOptions() []dbos.ListWorkflowsOption {
+	return []dbos.ListWorkflowsOption{
+		dbos.WithFilterStatus(
+			dbos.WorkflowStatusSuccess,
+			dbos.WorkflowStatusError,
+			dbos.WorkflowStatusCancelled,
+			dbos.WorkflowStatusMaxRecoveryAttemptsExceeded,
+		),
+	}
+}
+
+// enforceRetention applies the garbage-collection and global-timeout halves of
+// a retention request in the same order as the SDK executors: collect old
+// terminal history first, then cancel workflows that outlived the global
+// timeout. Source: dbos-transact-py dbos/_conductor/conductor.py and
+// dbos-transact-ts src/conductor/conductor.ts retention handlers.
+func enforceRetention(cli dbos.Client, body protocol.RetentionRequestBody) error {
+	batchSize := defaultRetentionBatchSize
+	if body.GCBatchSize != nil {
+		if *body.GCBatchSize < 0 {
+			return fmt.Errorf("gc_batch_size must not be negative")
+		}
+		if *body.GCBatchSize > 0 {
+			batchSize = *body.GCBatchSize
+		}
+	}
+
+	cutoff, err := retentionCutoff(cli, body)
+	if err != nil {
+		return err
+	}
+	if cutoff != nil {
+		if err := deleteTerminalWorkflowsBefore(cli, *cutoff, batchSize); err != nil {
+			return err
+		}
+	}
+	if body.TimeoutCutoffEpochMs != nil {
+		if err := cancelActiveWorkflowsBefore(cli, time.UnixMilli(int64(*body.TimeoutCutoffEpochMs)), batchSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// retentionCutoff resolves the more restrictive of the time threshold and the
+// rows threshold. The rows threshold is the creation time of the Nth newest
+// terminal workflow, which keeps that workflow and every newer one.
+func retentionCutoff(cli dbos.Client, body protocol.RetentionRequestBody) (*time.Time, error) {
+	var cutoff *time.Time
+	if body.GCCutoffEpochMs != nil {
+		value := time.UnixMilli(int64(*body.GCCutoffEpochMs))
+		cutoff = &value
+	}
+	if body.GCRowsThreshold != nil {
+		threshold := *body.GCRowsThreshold
+		if threshold <= 0 {
+			return nil, fmt.Errorf("gc_rows_threshold must be positive")
+		}
+		opts := append(terminalWorkflowOptions(),
+			dbos.WithFilterSortDesc(),
+			dbos.WithFilterLimit(1),
+			dbos.WithFilterOffset(threshold-1),
+		)
+		rows, err := cli.ListWorkflows(cli, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve the retention row threshold: %w", err)
+		}
+		if len(rows) == 1 {
+			rowsCutoff := rows[0].CreatedAt
+			if cutoff == nil || rowsCutoff.After(*cutoff) {
+				cutoff = &rowsCutoff
+			}
+		}
+	}
+	return cutoff, nil
+}
+
+func deleteTerminalWorkflowsBefore(cli dbos.Client, cutoff time.Time, batchSize int) error {
+	// The client filter is inclusive (created_at <= cutoff), while the SDK
+	// retention delete is strict (created_at < cutoff). Step back one
+	// millisecond, the stored precision, so a workflow created exactly at the
+	// cutoff survives.
+	//
+	// DeleteWorkflows takes explicit IDs, not a status predicate. The terminal
+	// filter is therefore applied when the batch is selected, and a resume that
+	// lands between that list and the delete has the same race as any other
+	// explicit delete through the public client.
+	exclusiveBefore := cutoff.Add(-time.Millisecond)
+	for {
+		opts := append(terminalWorkflowOptions(),
+			dbos.WithFilterCreatedBefore(exclusiveBefore),
+			dbos.WithFilterLimit(batchSize),
+		)
+		rows, err := cli.ListWorkflows(cli, opts...)
+		if err != nil {
+			return fmt.Errorf("failed to list workflows for retention: %w", err)
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		ids := make([]string, len(rows))
+		for i, row := range rows {
+			ids[i] = row.ID
+		}
+		if err := cli.DeleteWorkflows(cli, ids); err != nil {
+			return fmt.Errorf("failed to delete retained workflows: %w", err)
+		}
+		if len(rows) < batchSize {
+			return nil
+		}
+	}
+}
+
+func cancelActiveWorkflowsBefore(cli dbos.Client, cutoff time.Time, batchSize int) error {
+	for _, status := range []dbos.WorkflowStatusType{dbos.WorkflowStatusPending, dbos.WorkflowStatusEnqueued} {
+		for {
+			rows, err := cli.ListWorkflows(cli,
+				dbos.WithFilterStatus(status),
+				dbos.WithFilterCreatedBefore(cutoff),
+				dbos.WithFilterLimit(batchSize),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to list workflows for the global timeout: %w", err)
+			}
+			if len(rows) == 0 {
+				break
+			}
+			ids := make([]string, len(rows))
+			for i, row := range rows {
+				ids[i] = row.ID
+			}
+			if err := cli.CancelWorkflows(cli, ids); err != nil {
+				return fmt.Errorf("failed to cancel timed-out workflows: %w", err)
+			}
+			if len(rows) < batchSize {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // Enqueue writes a workflow row to the application system database. The
