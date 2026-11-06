@@ -9,7 +9,8 @@ status: accepted
 
 ## Status
 
-Accepted. Implementation and the conformance matrix land in a separate change.
+Accepted. The engine, recovery path, and probe are implemented. The
+multi-SDK matrix extension follows.
 
 ## Context
 
@@ -69,18 +70,24 @@ The rules are:
 2. **Read-only by default.** A Direct connection is read-only unless the
    operator explicitly opts into read-write for that application. In read-write
    mode the allowlist is the client's operations: cancel, resume, fork, rewind,
-   delete, enqueue, send, set event, schedule changes, queue changes, and
-   recovery. The operator's read-write choice is the gate for Direct mutations;
+   delete, schedule changes, setting the latest application version, and
+   recovery. Enqueue, send, set-event, queue changes, export, import, and
+   retention are not exposed by this release. The operator's read-write choice
+   is the gate for Direct mutations;
    the legacy condition that mutations are allowed only when no executor is
-   connected does not apply to Direct mode. There is no DDL, no migration, and
-   no query Relay invents.
+   connected does not apply to Direct mode. A read-only Direct connection fails
+   closed: the router does not retry the mutation over an executor socket to
+   bypass the operator's choice. There is no DDL, no migration, and no query
+   Relay invents.
 3. **Recovery needs a liveness signal.** Relay calls
    `ReenqueueForRecovery` for a dead executor only when a deployment-level
    signal says the executor is gone. The signal comes from a Kubernetes
    operator watching pod lifecycle or from a small `relay-probe` process that
    shares the application process lifetime and reports its executor ID.
-   Without a signal, Direct mode observes and controls but does not
-   automatically recover, and it says so.
+   After re-enqueueing, Relay verifies that no PENDING work remains for the
+   dead executor before deleting its record; a version mismatch keeps the
+   record so the sweep can retry. Without a signal, Direct mode observes and
+   controls but does not automatically recover, and it says so.
 4. **A bounded schema window.** Direct mode v1 pins Go SDK `v1.7.0`, which
    requires schema 123 and tolerates newer. The supported window is schema 123
    through 125, which covers both post-split cohorts. The prototypes cover a
@@ -90,11 +97,12 @@ The rules are:
    check until the pin is raised, but they are not claimed as tested. A schema
    below 123 is refused with a problem response, not read with guessed columns.
    Applications below the floor use Attached mode.
-5. **Portable payloads for writes.** Cross-language writes use DBOS portable
-   JSON. The v1.7.0 pin uses `PortableWorkflowArgs`; a later pin can use
-   `WithEnqueuePortableWorkflow`. Relay never re-serializes a payload in another
-   runtime's native format and never unpickles untrusted data. Values it cannot
-   decode safely are displayed as opaque.
+5. **Payload handling.** Direct mode reads payloads in their stored format,
+   including DBOS portable JSON, and never re-serializes a payload in another
+   runtime's native format or unpickles untrusted data. Values it cannot decode
+   safely are displayed as opaque. The v1.7.0 client supports portable JSON for
+   a future enqueue path; this release does not expose enqueue, send, or
+   set-event as REST operations.
 6. **No per-language SDKs.** Direct mode is implemented once in Relay's Go
    server. The optional probe and operator are deployment components, not
    application libraries. Relay does not publish Python, TypeScript, or Java
@@ -122,9 +130,9 @@ a fixture and a conformance run, not a routine dependency bump.
 
 ### Schema floor and the legacy fallback
 
-The current data plane pins Go SDK `v1.3.0` to keep schema-107 applications
-working. Direct mode uses `v1.7.0`, which requires schema 123. The two clients
-cannot coexist in one Go module.
+The previous data plane pinned Go SDK `v1.3.0` to keep schema-107
+applications working. Direct mode uses `v1.7.0`, which requires schema 123.
+The two clients cannot coexist in one Go module.
 
 Direct mode therefore retires the `v1.3.0` fallback. The consequences are
 deliberate:

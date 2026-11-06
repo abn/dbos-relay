@@ -17,11 +17,16 @@ Python, TypeScript, Go, and Java.
 |---|---|---|---|---|
 | Sample app connects to Relay over the socket; appears in executors | required | required | required | required |
 | Conformance suite + REST endpoint probes | required | required | required | required |
-| Data plane read: status, list, steps; payloads preserved byte-equal | required | required | required | required |
-| Field parity: same workflow via socket and data plane, byte-equal after normalisation | required | required | required | may lag (upstream schema v19 vs v107) |
+| Data plane read: status, list, steps; payloads preserved | required | required | required | required |
+| Field parity: same workflow via socket and data plane, byte-equal after normalisation | required | required | required | Attached only (schema 114) |
 | Chaos, real timers: SIGKILL executor, recovery on survivor, workflow completes exactly once | required | required | required | required |
-| Data-plane cancel and resume while executor is down; restarted executor honours both | required | required | required | may lag (upstream schema v19 vs v107) |
+| Data-plane cancel and resume while executor is down; restarted executor honours both | required | required | required | Attached only (schema 114) |
 | Fork via data plane to a live version; executor dequeues and runs it | required | required | required | required |
+
+The data-plane rows are exercised by the Direct mode suite in
+`internal/dataplane`. The Attached matrix keeps its sample applications on
+pre-split SDKs and skips those rows by default. The multi-SDK matrix extension
+adds cross-language Direct cells.
 
 ## Cell definitions and test requirements
 
@@ -63,9 +68,14 @@ A workflow is forked via data-plane API targeting a specific application version
 running that version dequeues the workflow from `_dbos_internal_queue`, executes the remaining
 steps, and records the outcome.
 
-## Lagging cells policy
+## Data-plane cells in the Attached matrix
 
-Cells marked "may lag" are explicitly permitted to lag by at most one iteration. For Java, Cell 4 (field parity) and Cell 6 (offline cancel and resume) lag because upstream DBOS Java SDK 0.8.0 system databases use migration sequence 19, which lacks schema elements (such as `completed_at` and `application_name`) expected by the Go SDK data-plane client (version 107). Under ADR 0004 schema safety, Relay's Go data-plane client refuses connection to older schemas rather than attempting uncoordinated DDL. Lagging tests must never be silently omitted: the test runner explicitly reports them as skipped by name in its execution summary. Any required cell without a passing test causes the test runner to fail.
+Cells 4, 6, and 7 are skipped in the Attached matrix by default. Its sample
+applications stay on pre-split SDKs, and the current Direct client requires
+schema 123. Direct mode coverage runs in `internal/dataplane` against a
+hermetic SQLite database and live PostgreSQL. The multi-SDK matrix extension
+adds schema 123 and 125 cells across languages. Skipped cells are reported by
+name in the execution summary; a skipped cell is not a passing cell.
 
 ## SDK version ceiling
 
@@ -73,5 +83,11 @@ The sample applications in `examples/` are pinned inside the supported SDK range
 
 ### Payload parity at the ceiling
 
-Cell 4 compares a workflow's fields from the executor's response with a data-plane read of the same workflow. The Go SDK moved workflow inputs, outputs and errors into the `workflow_input` and `workflow_output` tables in v1.4.0 (migration 109), so a Go sample application at v1.6.0 stores payloads out of line exactly as Python and TypeScript already did. The pinned Go SDK client v1.3.0 reads payloads from `workflow_status` only, so the data-plane read returns no payload while the executor's response still carries it. The cell logs that divergence and continues, comparing the remaining fields byte for byte. The gap and the reasoning for keeping the pin are recorded in
-[ADR 0013](../adr/0013-out-of-line-workflow-payloads.md).
+Direct mode uses Go SDK v1.7.0, which reads the out-of-line
+`workflow_input` and `workflow_output` tables introduced in v1.4.0 (migration
+109). The payload blind spot recorded in
+[ADR 0013](../adr/0013-out-of-line-workflow-payloads.md) applied to the
+retired v1.3.0 fallback and does not apply to Direct mode. The Attached matrix
+skips the data-plane parity cell; the live PostgreSQL data-plane test asserts
+payload parity against the real client, and the hermetic SQLite test covers
+workflow and step reads.

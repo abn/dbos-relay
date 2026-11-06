@@ -56,10 +56,12 @@ In Attached mode, executors open outbound WebSockets to Relay, and workflow
 reads and mutations are dispatched over that socket to an executor, which
 answers from its own system database. In Direct mode, Relay uses the official
 MIT Go client against the application's system database when the operator
-configures it, so it can serve a fleet with no connected executors. Live
-executors take precedence over database reads. Direct mode is planned. See
+configures it, so it can serve a fleet with no connected executors. In hybrid
+mode, live executors take precedence over database reads; in direct mode, the
+database is preferred. See
 [ADR 0004](adr/0004-data-plane-via-sdk-client.md),
-[ADR 0015](adr/0015-direct-mode-system-database.md), and
+[ADR 0015](adr/0015-direct-mode-system-database.md),
+[Direct mode](usage/direct.md), and
 [data plane](architecture/dataplane.md).
 
 ## What Relay will do

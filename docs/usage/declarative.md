@@ -48,7 +48,8 @@ data_plane:
   # Sensitive database credentials use environment variable expansion or secret file indirection
   order-service:
     connection_url: "${ORDER_SERVICE_DB_URL}"
-    mode: "read"
+    integration: "direct"
+    mode: "read-write"
     statement_timeout_secs: 10
     max_connections: 5
 
@@ -57,6 +58,7 @@ data_plane:
       env: "PAYMENT_DB_URL"
       # Or secret file:
       # file: "/var/run/secrets/db_url"
+    integration: "hybrid"
     mode: "read"
     statement_timeout_secs: 10
     max_connections: 5
@@ -82,7 +84,8 @@ The declarative manifest schema supports the following fields:
 * `data_plane`: Map of application names to data-plane configurations:
   * `connection_url`: Database URL with optional `${ENV_VAR}` expansion.
   * `connection_string_from`: Secret source indirection with `env` or `file`.
-  * `mode`: Access mode (`read` or `read-write`, defaults to `read`).
+  * `integration`: How Relay reaches the application. `hybrid` (default) prefers a live executor and falls back to the database; `direct` prefers the database and uses a live executor only for operations the database cannot serve; `attached` ignores the database.
+  * `mode`: Access mode (`read` or `read-write`, defaults to `read`). Read-write is required for lifecycle mutations, schedule changes, and recovery.
   * `statement_timeout_secs`: Statement execution timeout.
   * `max_connections`: Connection pool size.
 

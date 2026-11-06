@@ -13,10 +13,11 @@ status: draft
   supported Attached SDK connects with only the Conductor URL and key changed,
   and appears as a live executor. The supported ceiling is recorded in
   [Supported SDKs](../usage/supported-sdks.md).
-- **Direct mode (planned).** On post-split SDKs in the supported schema window,
-  Relay observes and controls workflows through the application's own system
-  database using the MIT Go client, with no connector and no enterprise
-  package. See [ADR 0015](../adr/0015-direct-mode-system-database.md).
+- **Direct mode.** On post-split SDKs in the supported schema window, Relay
+  observes and controls workflows through the application's own system database
+  using the MIT Go client, with no connector and no enterprise package. See
+  [ADR 0015](../adr/0015-direct-mode-system-database.md) and
+  [Direct mode](../usage/direct.md).
 - **Automatic recovery.** In Attached mode, kill an executor and its pending
   workflows are recovered on a healthy executor within the configured grace
   period, with outcomes still exactly-once. In Direct mode, the same outcome

@@ -17,10 +17,10 @@ license.
 Relay connects to DBOS applications in two ways. **Attached mode** speaks the
 Conductor executor protocol, for SDK releases that still ship the connector and
 for Java. **Direct mode** reads and controls workflows through the
-application's own system database using DBOS's MIT client, so it is designed to
-work with post-split SDK releases in the supported schema window. Direct mode
-is planned; see [Supported SDKs](docs/usage/supported-sdks.md) for the exact
-boundaries.
+application's own system database using DBOS's MIT client, so it works with
+post-split SDK releases in the supported schema window. See [Supported
+SDKs](docs/usage/supported-sdks.md) for the exact boundaries and [Direct
+mode](docs/usage/direct.md) for the operator guide.
 
 Read the announcement post: [Relay: An Open-Source Control Plane for DBOS
 Applications](https://abn.is/void/relay-an-open-source-control-plane-for-dbos-applications/).
@@ -33,7 +33,7 @@ Applications](https://abn.is/void/relay-an-open-source-control-plane-for-dbos-ap
 
 - **Dual-Engine Storage (ADR 0011)**: Pure-Go embedded SQLite (`modernc.org/sqlite`) for zero-dependency local development and single-node instances, plus PostgreSQL for clustered, multi-instance production deployments.
 - **Conductor Protocol Parity in Attached Mode**: Complete 33-message bidirectional WebSocket protocol support, verified against the official DBOS Transact SDKs up to the supported Attached ceiling.
-- **Direct Mode (planned)**: Observe and control workflows through the application's own system database using DBOS's MIT client, with no connector, no enterprise package, and no vendor key. Designed to work with post-split SDK releases across languages.
+- **Direct Mode**: Observe and control workflows through the application's own system database using DBOS's MIT client, with no connector, no enterprise package, and no vendor key. Works with post-split SDK releases across the supported schema window.
 - **Zero Application Changes**: Neither mode requires an upstream SDK modification or a custom wrapper. Attached mode uses standard DBOS environment variables; Direct mode needs a database connection and, for automatic recovery, a liveness signal from the deployment.
 - **Embedded Web Dashboard**: Self-hosted operations console on port 8090 with interactive SVG workflow DAG family visualization, execution curves, canvas viewport (pan/zoom), step history, real-time Server-Sent Events (SSE) telemetry, schedule management, and alerting rules.
 - **Declarative Fleet Management**: Manage applications, queues, and alert policies declaratively via `relay.yaml` with `relay apply` and `relay diff`.
@@ -106,9 +106,9 @@ go run .
 ```
 
 These settings use Attached mode. Post-split SDK releases no longer contain
-the connector, so they cannot use these settings. Direct mode is the planned
-path for those releases; see [Supported
-SDKs](docs/usage/supported-sdks.md).
+the connector, so they cannot use these settings. Use [Direct
+mode](docs/usage/direct.md) for those releases; see [Supported
+SDKs](docs/usage/supported-sdks.md) for the schema window.
 
 ## Documentation
 
