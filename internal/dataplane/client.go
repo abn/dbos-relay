@@ -26,6 +26,12 @@ type SDKClient struct {
 // Provenance: dbos-inc/dbos-transact-golang (commit fb3e33e0b4c3c709b9271eb935adce5eaf9386f5, dbos/dbos.go:779)
 // Note: Upstream DBOS Go SDK client requires system database schema version 123 or higher.
 func NewSDKClient(cfg AppConfig) (Client, error) {
+	return NewSDKClientWithContext(context.Background(), cfg)
+}
+
+// NewSDKClientWithContext initializes an SDKClient whose lifetime is tied to
+// ctx. Use it when the caller has an operation context to honour.
+func NewSDKClientWithContext(parent context.Context, cfg AppConfig) (Client, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("database URL is required")
 	}
@@ -35,7 +41,7 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 		timeout = 5 * time.Second
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 
 	appName := cfg.ApplicationName
 	if appName == "" {
@@ -65,6 +71,7 @@ func NewSDKClient(cfg AppConfig) (Client, error) {
 	client, err := dbos.NewClient(ctx, dbos.ClientConfig{
 		DatabaseURL:            dbURL,
 		AppName:                appName,
+		Logger:                 cfg.Logger,
 		SystemDBStartupTimeout: startupTimeout,
 	})
 	if err != nil {

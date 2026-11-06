@@ -178,6 +178,21 @@ func (b *postgresBackend) MigrateDown(ctx context.Context, steps int) error {
 	return nil
 }
 
+func (b *postgresBackend) ProbeWrite(ctx context.Context) error {
+	tx, err := b.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("starting write probe: %w", err)
+	}
+	if _, err := tx.Exec(ctx, "UPDATE organisations SET name = name WHERE false"); err != nil {
+		_ = tx.Rollback(ctx)
+		return fmt.Errorf("write probe failed: %w", err)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		return fmt.Errorf("rolling back write probe: %w", err)
+	}
+	return nil
+}
+
 func (b *postgresBackend) Close() {
 	if b.pool != nil {
 		b.pool.Close()
