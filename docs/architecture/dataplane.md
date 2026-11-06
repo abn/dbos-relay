@@ -1,11 +1,18 @@
 ---
 type: Reference
 title: Data-plane access via SDK client
-description: Optional application database access via official Go SDK client.
+description: Legacy optional application database access via the official Go SDK client; Direct mode supersedes the fallback described here.
 status: draft
 ---
 
 # Data-plane access via SDK client
+
+> **Superseded for Direct mode (2026-11-06).** [ADR 0015](../adr/0015-direct-mode-system-database.md)
+> makes the data plane a first-class Direct mode, pins the MIT Go client at
+> `v1.7.0`, and covers schema 123 through 125. Direct mode allows portable JSON
+> writes for enqueue, send, and events. The legacy `v1.3.0` fallback, the
+> schema-107 floor, and the deferred operations described below apply only to
+> the fallback until it is retired.
 
 Relay provides an optional, opt-in data plane for applications that configure direct database access.
 This allows Relay to serve workflow queries and administrative operations even when zero executors
@@ -20,7 +27,7 @@ Direct database access is governed by strict architectural boundaries:
 * **Default read-only**: Data plane connections default to `read` mode. Mutation operations (`CancelWorkflow`,
   `ResumeWorkflow`, `ForkWorkflow`) are rejected unless the operator explicitly opts in to `read-write` mode.
 * **Schema safety and migration immunity**: The SDK client constructor (`dbos.NewClient`) hardcodes `SkipMigrations: true`, guaranteeing Relay never executes migrations against customer application databases. When establishing connections, it calls `VerifyMigrations`. If the target database schema version is newer than Relay's Go SDK version expects, it operates safely without error. If the schema version is older, it fails fast with `*models.UnmigratedDatabaseError` and refuses connection, leaving the schema untouched.
-* **Multi-SDK schema compatibility**: Direct data-plane database access requires a system database schema version of v107 or higher, as expected by the pinned official Go client library (`v1.3.0`). Applications written in Go, Python, and TypeScript do not share compatible schema versions in current releases. TypeScript v5.1.10 (schema 122), Python (schema 123), and the Go SDK at v1.4.0 and above (migration `109_create_workflow_payload_tables`, first released in v1.4.0) sit ahead of the pinned client and store workflow inputs and outputs out of line, in `workflow_input` and `workflow_output`, which `v1.3.0` does not read. A read served from the data plane therefore returns empty input, output, and error payloads for those applications; status, list, and step metadata are unaffected. Live executors answer payload requests over the WebSocket protocol, so the gap appears only when a read falls back to the data plane during an outage. The reasoning behind keeping the pin is recorded in [ADR 0013](../adr/0013-out-of-line-workflow-payloads.md). Applications using the upstream Java SDK (such as version 0.8.0, which provisions system database schema v19) cannot be read via the Go SDK data-plane client and fail migration verification safely. However, Java applications remain fully functional with Relay through the live WebSocket protocol and standard REST control-plane operations.
+* **Multi-SDK schema compatibility**: This fallback requires a system database schema version of v107 or higher, as expected by the pinned Go client (`v1.3.0`). The current post-split releases are all at schema 125 and will be served by Direct mode ([ADR 0015](../adr/0015-direct-mode-system-database.md)), not by this fallback. Applications at the schema generations the fallback can reach do not share compatible versions: TypeScript v5.1.10 (schema 122), Python (schema 123), and the Go SDK at v1.4.0 and above (migration `109_create_workflow_payload_tables`, first released in v1.4.0) store workflow inputs and outputs out of line, in `workflow_input` and `workflow_output`, which `v1.3.0` does not read. A read served from this fallback therefore returns empty input, output, and error payloads for those applications; status, list, and step metadata are unaffected. Live executors answer payload requests over the WebSocket protocol, so the gap appears only when a read falls back to this path during an outage. The reasoning behind the pin is recorded in [ADR 0013](../adr/0013-out-of-line-workflow-payloads.md). Applications using Java 0.8.0 (schema 19) cannot be read by this fallback and fail migration verification safely. Java 1.2.0 (schema 114) is above the fallback's floor and is served by Attached mode in the supported configuration. Java applications remain fully functional through the WebSocket protocol and standard REST control-plane operations.
 * **Deferred operations and serialization boundary**: Inter-workflow communication and event retrieval (`GetEvent`, `Send`, `Enqueue`, `ReadStream`) are deferred in v1 (returning HTTP 501 Not Implemented or HTTP 503) due to cross-language serialization boundaries between Go, Python, TypeScript, and Java runtimes.
 * **Executor precedence**: When a live executor is connected, requests are routed to the executor over
   WebSocket. The data plane acts as a fallback when no executors are reachable.
