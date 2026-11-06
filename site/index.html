@@ -3,10 +3,67 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0f16" media="(prefers-color-scheme: dark)">
 <title>Relay: open control plane for DBOS Transact</title>
 <meta name="description" content="Relay is an open-source, self-hostable control plane for DBOS Transact. Attached mode speaks the Conductor protocol. Direct mode uses the application system database with no connector. MIT licensed.">
 <link rel="icon" type="image/svg+xml" href="/assets/favicon-dots.svg">
 <link rel="preload" href="/assets/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+(() => {
+  document.documentElement.classList.add("js");
+  const key = "relay-landing-theme";
+  const root = document.documentElement;
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  let stored = null;
+  try { stored = localStorage.getItem(key); } catch {}
+  let preference = stored === "light" || stored === "dark" ? stored : "auto";
+
+  const resolve = () => preference === "auto" ? (media.matches ? "dark" : "light") : preference;
+
+  const apply = () => {
+    root.dataset.theme = resolve();
+    root.dataset.themePreference = preference;
+    const color = root.dataset.theme === "dark" ? "#0c0f16" : "#f4f5f7";
+    document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+      meta.content = color;
+    });
+  };
+
+  const announce = () => {
+    apply();
+    document.dispatchEvent(new CustomEvent("relaythemechange"));
+  };
+
+  const set = (next) => {
+    preference = next === "light" || next === "dark" ? next : "auto";
+    try {
+      if (preference === "auto") localStorage.removeItem(key);
+      else localStorage.setItem(key, preference);
+    } catch {}
+    announce();
+  };
+
+  const toggle = () => {
+    const system = media.matches ? "dark" : "light";
+    const next = root.dataset.theme === "dark" ? "light" : "dark";
+    set(next === system ? "auto" : next);
+  };
+
+  apply();
+  const onSystemChange = () => {
+    if (preference === "auto") announce();
+  };
+  if (media.addEventListener) media.addEventListener("change", onSystemChange);
+  else if (media.addListener) media.addListener(onSystemChange);
+
+  window.relayTheme = {
+    toggle,
+    get preference() { return preference; },
+    get theme() { return root.dataset.theme; },
+  };
+})();
+</script>
 <style>
 @font-face {
   font-family: "Archivo";
@@ -27,6 +84,10 @@
   --accent: #1f4ed8;
   --code: #171717;
   --code-ink: #ece9e2;
+  --code-inline: rgba(22, 22, 22, 0.06);
+  --selection-ink: #ffffff;
+  --button-hover-ink: #ffffff;
+  --shot-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 18px 40px rgba(0, 0, 0, 0.08);
   --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -45,7 +106,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-::selection { background: var(--accent); color: #fff; }
+::selection { background: var(--accent); color: var(--selection-ink); }
 
 a { color: inherit; text-decoration: none; }
 a:hover { color: var(--accent); }
@@ -146,6 +207,34 @@ img { display: block; max-width: 100%; height: auto; }
 .nav a:hover { color: var(--ink); }
 .nav .github { color: var(--ink); font-weight: 600; }
 
+.theme-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.js .theme-toggle { display: inline-flex; }
+
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+.theme-toggle svg { width: 16px; height: 16px; }
+
+.theme-icon-sun { display: block; }
+.theme-icon-moon { display: none; }
+
+:root[data-theme="dark"] .theme-icon-sun { display: none; }
+:root[data-theme="dark"] .theme-icon-moon { display: block; }
+
 /* Hero */
 
 .hero {
@@ -203,7 +292,7 @@ img { display: block; max-width: 100%; height: auto; }
 .button.primary:hover {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--button-hover-ink);
 }
 
 .button.secondary {
@@ -248,7 +337,7 @@ img { display: block; max-width: 100%; height: auto; }
   border-radius: 10px;
   overflow: hidden;
   background: #111;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 18px 40px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shot-shadow);
   animation: enter 0.55s 0.08s ease-out both;
 }
 
@@ -450,7 +539,7 @@ code {
 }
 
 p code, dd code {
-  background: rgba(22, 22, 22, 0.06);
+  background: var(--code-inline);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -532,6 +621,44 @@ tbody th { font-weight: 600; width: 28%; text-align: left; }
 
 .footer-links a:hover { color: var(--ink); }
 
+/* Dark theme */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0c0f16;
+  --paper-raised: #131924;
+  --ink: #eef1f6;
+  --muted: #9aa4b2;
+  --rule: #242b37;
+  --rule-strong: #eef1f6;
+  --accent: #8aa4ff;
+  --code: #05070c;
+  --code-ink: #e6e9ef;
+  --code-inline: rgba(255, 255, 255, 0.08);
+  --selection-ink: #0c0f16;
+  --button-hover-ink: #0c0f16;
+  --shot-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --paper: #0c0f16;
+    --paper-raised: #131924;
+    --ink: #eef1f6;
+    --muted: #9aa4b2;
+    --rule: #242b37;
+    --rule-strong: #eef1f6;
+    --accent: #8aa4ff;
+    --code: #05070c;
+    --code-ink: #e6e9ef;
+    --code-inline: rgba(255, 255, 255, 0.08);
+    --selection-ink: #0c0f16;
+    --button-hover-ink: #0c0f16;
+    --shot-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 60px rgba(0, 0, 0, 0.35);
+  }
+}
+
 /* Motion */
 
 @keyframes enter {
@@ -588,8 +715,11 @@ tbody th { font-weight: 600; width: 28%; text-align: left; }
   td:nth-child(3)::before { content: "Conductor: "; color: var(--muted); font-weight: 400; }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 520px) {
   .brand-tag { display: none; }
+}
+
+@media (max-width: 360px) {
   .header-inner { gap: 8px; }
   .nav { gap: 10px; font-size: 12px; }
 }
@@ -624,6 +754,15 @@ tbody th { font-weight: 600; width: 28%; text-align: left; }
       <a href="/playground/">Playground</a>
       <a class="github" href="https://github.com/abn/dbos-relay" target="_blank" rel="noopener">GitHub</a>
     </nav>
+    <button class="theme-toggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+      <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M12 2.8V5M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5l-1.6 1.6M7.1 16.9l-1.6 1.6M18.5 18.5l-1.6-1.6M7.1 7.1 5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -815,6 +954,30 @@ relay probe --relay-url http://127.0.0.1:8090 \
     </nav>
   </div>
 </footer>
+
+<script>
+(() => {
+  const api = window.relayTheme;
+  const button = document.querySelector(".theme-toggle");
+  if (!api || !button) return;
+
+  const render = () => {
+    const root = document.documentElement;
+    const action = root.dataset.theme === "dark"
+      ? "Switch to light theme"
+      : "Switch to dark theme";
+    const label = root.dataset.themePreference === "auto"
+      ? `Theme: Auto. ${action}`
+      : action;
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+  };
+
+  button.addEventListener("click", () => api.toggle());
+  document.addEventListener("relaythemechange", render);
+  render();
+})();
+</script>
 
 </body>
 </html>
