@@ -450,9 +450,9 @@
       return renderEmptyDAG();
     }
     rootSteps.sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
-    const nodeWidth = 200;
-    const nodeHeight = 64;
-    const gapX = 54;
+    const nodeWidth = 180;
+    const nodeHeight = 62;
+    const gapX = 30;
     const hasChildren = children.length > 0;
     const startX = hasChildren ? 44 : 32;
     const startY = hasChildren ? 74 : 36;
@@ -495,8 +495,8 @@
       const rootStatusColor = getWorkflowStatusColor(rootWf.status);
       cardsSvg += `
       <g class="dag-group-card root-group" transform="translate(16, 20)">
-        <rect width="${rootCardWidth}" height="${rootCardHeight}" rx="10" class="group-card-bg" />
-        <rect width="${rootCardWidth}" height="36" rx="10" class="group-card-header-bg" />
+        <rect width="${rootCardWidth}" height="${rootCardHeight}" rx="2" class="group-card-bg" />
+        <rect width="${rootCardWidth}" height="36" rx="2" class="group-card-header-bg" />
         <rect y="26" width="${rootCardWidth}" height="10" class="group-card-header-fill" />
         <circle cx="16" cy="18" r="4.5" fill="${rootStatusColor}" />
         <text x="28" y="22" class="group-card-title">Root Workflow: ${escapeHtml3(rootWf.workflowName || rootWf.workflowId || "unnamed")}</text>
@@ -536,8 +536,8 @@
         const displayTitle = truncate(titleText, maxTitleChars);
         cardsSvg += `
         <g class="dag-group-card child-group" transform="translate(${childCardX}, ${childY})">
-          <rect width="${childCardWidth}" height="${childCardHeight}" rx="10" class="group-card-bg child-card-border" />
-          <rect width="${childCardWidth}" height="36" rx="10" class="group-card-header-bg" />
+          <rect width="${childCardWidth}" height="${childCardHeight}" rx="2" class="group-card-bg child-card-border" />
+          <rect width="${childCardWidth}" height="36" rx="2" class="group-card-header-bg" />
           <rect y="26" width="${childCardWidth}" height="10" class="group-card-header-fill" />
           <circle cx="16" cy="18" r="4.5" fill="${childStatusColor}" />
           <text x="28" y="22" class="group-card-title">${escapeHtml3(displayTitle)}<title>${escapeHtml3(titleText)}</title></text>
@@ -616,23 +616,19 @@
       <div class="dag-viewport" id="dag-viewport" tabindex="0" role="region" aria-label="Workflow DAG Canvas. Use mouse or buttons to zoom and pan.">
         <svg class="dag-canvas" id="dag-canvas" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <pattern id="dag-dot-grid" width="22" height="22" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.3" fill="var(--border-strong)" opacity="0.45" />
-            </pattern>
             <marker id="arrowhead-default" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--border-strong)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--line)" />
             </marker>
             <marker id="arrowhead-success" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--color-success)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--success)" />
             </marker>
             <marker id="arrowhead-error" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--color-error)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--error)" />
             </marker>
             <marker id="arrowhead-running" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--color-info)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--info)" />
             </marker>
           </defs>
-          <rect width="100%" height="100%" fill="url(#dag-dot-grid)" class="canvas-grid-bg" />
           <g class="dag-zoom-layer" id="dag-zoom-layer">
             <g class="dag-cards">${cardsSvg}</g>
             <g class="dag-family-edges">${familyEdgesSvg}</g>
@@ -653,21 +649,17 @@
        data-step-json="${escapeHtml3(JSON.stringify(step))}"
        cursor="pointer" tabindex="0" role="button"
        aria-label="Step ${stepId}: ${escapeHtml3(stepName)} (${statusText})">
-      <rect width="${width}" height="${height}" rx="8" class="node-bg" />
+      <rect width="${width}" height="${height}" rx="2" class="node-bg" />
       <circle cx="18" cy="20" r="4.5" fill="${statusColor}" />
 
       <text x="28" y="24" class="node-step-id">#${stepId}</text>
       <text x="48" y="24" class="node-name" width="${width - 55}">
-        ${truncate(escapeHtml3(stepName), 15)}
+        ${truncate(escapeHtml3(stepName), 20)}
       </text>
 
       <text x="18" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
       ${durationText ? `<text x="${width - 12}" y="48" class="node-duration" text-anchor="end">${durationText}</text>` : ""}
 
-      ${isChildCaller ? `
-        <rect x="${width - 24}" y="8" width="16" height="16" rx="4" class="child-wf-badge" fill="var(--color-purple)" />
-        <path d="M ${width - 18} 12 L ${width - 14} 16 L ${width - 10} 12" stroke="#ffffff" stroke-width="1.8" fill="none" />
-      ` : ""}
     </g>
   `;
   }
@@ -685,16 +677,16 @@
   }
   function getStepStatusMeta(step) {
     if (step.error || step.status && String(step.status).toUpperCase() === "ERROR") {
-      return { statusClass: "step-error", statusText: "ERROR", statusColor: "var(--color-error)" };
+      return { statusClass: "step-error", statusText: "ERROR", statusColor: "var(--error)" };
     }
     const statusStr = String(step.status || "").toUpperCase();
     if (statusStr === "SUCCESS" || statusStr === "COMPLETED" || step.completedAt) {
-      return { statusClass: "step-success", statusText: "COMPLETED", statusColor: "var(--color-success)" };
+      return { statusClass: "step-success", statusText: "COMPLETED", statusColor: "var(--success)" };
     }
     if (statusStr === "RUNNING" || !step.completedAt && step.startedAt) {
-      return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--color-info)" };
+      return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--info)" };
     }
-    return { statusClass: "step-pending", statusText: "PENDING", statusColor: "var(--text-tertiary)" };
+    return { statusClass: "step-pending", statusText: "PENDING", statusColor: "var(--faint)" };
   }
   function getStepDurationText(step) {
     if (step.durationMs != null || step.duration_ms != null) {
@@ -714,14 +706,14 @@
   function getWorkflowStatusColor(status) {
     switch (String(status || "").toUpperCase()) {
       case "SUCCESS":
-        return "var(--color-success)";
+        return "var(--success)";
       case "ERROR":
-        return "var(--color-error)";
+        return "var(--error)";
       case "PENDING":
       case "ENQUEUED":
-        return "var(--color-info)";
+        return "var(--info)";
       default:
-        return "var(--text-tertiary)";
+        return "var(--faint)";
     }
   }
   function getOutcomeClass(status) {
@@ -879,7 +871,7 @@
             </button>
           </div>
           <div class="modal-body">
-            <p id="confirm-dialog-desc" style="font-size: 13px; color: var(--text-primary);">
+            <p id="confirm-dialog-desc" style="font-size: 13px; color: var(--ink);">
               ${escapeHtml4(message)}
             </p>
 
@@ -927,7 +919,7 @@
           <span class="card-title">Authentication Required</span>
         </div>
         <div class="card-body">
-          <p style="margin-bottom: 12px; color: var(--text-secondary);">
+          <p style="margin-bottom: 12px; color: var(--muted);">
             This Relay instance requires an API key or bearer token to ${escapeHtml4(actionName)}.
           </p>
           <div class="form-field" style="max-width: 480px;">
@@ -972,7 +964,7 @@
             <h4 class="empty-state-title">No Connected Executors</h4>
             <p class="empty-state-desc">${desc}</p>
             <div class="empty-state-hint">
-              <div style="color:var(--text-tertiary); margin-bottom:4px;">Connect your application by configuring its Conductor URL:</div>
+              <div style="color:var(--faint); margin-bottom:4px;">Connect your application by configuring its Conductor URL:</div>
               <code>conductor_url: "ws://&lt;relay-host&gt;:8080"</code>
             </div>
             <div class="empty-state-actions">
@@ -1021,7 +1013,7 @@
             </button>
           </div>
           <div class="modal-body">
-            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+            <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
               Provide an API key or OIDC bearer token to authenticate with the Relay control plane.
             </p>
             <div class="form-field">
@@ -1193,13 +1185,14 @@
       localStorage.setItem("relay-theme", theme);
       const themeBtn = document.querySelector("[data-action='toggleTheme']");
       if (themeBtn) {
+        const label = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
         themeBtn.innerHTML = theme === "dark" ? `
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        <span class="theme-text" style="margin-left:4px;">Light</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2Z"/></svg>
       ` : `
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        <span class="theme-text" style="margin-left:4px;">Dark</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.8V5M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5l-1.6 1.6M7.1 16.9l-1.6 1.6M18.5 18.5l-1.6-1.6M7.1 7.1 5.5 5.5"/></svg>
       `;
+        themeBtn.setAttribute("aria-label", label);
+        themeBtn.setAttribute("title", label);
       }
     }
     toggleTheme() {
@@ -1286,70 +1279,78 @@
       this.renderContentView();
     }
     renderSidebar() {
-      const navItems = [
-        { id: "fleet", label: "Fleet & Apps", icon: `<path d="M4 6h16M4 12h16M4 18h16"/>` },
-        { id: "workflows", label: "Workflows", icon: `<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>` },
-        { id: "queues", label: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
-        { id: "schedules", label: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
-        { id: "alerting", label: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` },
-        { id: "metrics", label: "Metrics", icon: `<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>` },
-        { id: "keys", label: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` },
-        { id: "roles", label: "Roles", icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>` },
-        { id: "autoscaling", label: "Autoscaling", icon: `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>` },
-        { id: "settings", label: "Settings", icon: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>` },
-        { id: "audit", label: "Audit Log", icon: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>` }
+      const navGroups = [
+        {
+          label: "Operate",
+          items: [
+            { id: "fleet", label: "Fleet", title: "Fleet & Applications", icon: `<path d="M4 6h16M4 12h16M4 18h16"/>` },
+            { id: "workflows", label: "Workflows", title: "Workflows", icon: `<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>` },
+            { id: "queues", label: "Queues", title: "Queues", icon: `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>` },
+            { id: "schedules", label: "Schedules", title: "Schedules", icon: `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>` },
+            { id: "autoscaling", label: "Autoscaling", title: "Autoscaling", icon: `<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>` }
+          ]
+        },
+        {
+          label: "Observe",
+          items: [
+            { id: "metrics", label: "Metrics", title: "Metrics", icon: `<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>` },
+            { id: "alerting", label: "Alerts", title: "Alert Rules", icon: `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>` }
+          ]
+        },
+        {
+          label: "Administer",
+          items: [
+            { id: "keys", label: "API Keys", title: "API Keys", icon: `<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>` },
+            { id: "roles", label: "Roles", title: "Roles", icon: `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>` },
+            { id: "audit", label: "Audit", title: "Audit Log", icon: `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>` },
+            { id: "settings", label: "Settings", title: "Settings", icon: `<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>` }
+          ]
+        }
       ];
+      const isActive = (id) => this.currentRoute === id || this.currentRoute === "workflow-detail" && id === "workflows";
       return `
       <aside class="sidebar ${this.mobileNavOpen ? "mobile-open" : ""} ${this.sidebarFolded ? "folded" : ""}">
         <div class="sidebar-header">
-          <a href="#/fleet" class="brand-logo" aria-label="Relay Home" title="Relay Home">
-            <svg width="24" height="24" viewBox="0 0 32 32" fill="none" class="brand-logo-svg" aria-hidden="true">
+          <a href="#/fleet" class="brand-logo" aria-label="Relay home" title="Relay home">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="brand-logo-svg" aria-hidden="true">
               <rect width="32" height="32" rx="8" fill="#1f4ed8"/>
               <rect x="6.5" y="6.5" width="9" height="9" rx="2.5" fill="#ffffff"/>
               <rect x="17" y="17" width="9" height="9" rx="2.5" fill="#ffffff"/>
               <path d="M13.5 13.5L15.5 15.5" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
             </svg>
             <span class="brand-text">Relay</span>
-            <span class="sidebar-hover-expand" data-action="toggleSidebarFold" title="Expand sidebar" aria-label="Expand sidebar">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </span>
           </a>
-          <span class="brand-badge">Dashboard</span>
-          <button class="sidebar-fold-toggle" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}" title="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
-          </button>
         </div>
-        <nav class="sidebar-nav" aria-label="Main Navigation">
-          ${navItems.map((item) => `
-            <a href="#/${item.id}"
-               class="nav-item ${this.currentRoute === item.id || this.currentRoute === "workflow-detail" && item.id === "workflows" ? "active" : ""}"
-               data-navigate="${item.id}"
-               title="${item.label}">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                ${item.icon}
-              </svg>
-              <span class="nav-label">${item.label}</span>
-            </a>
+        <nav class="sidebar-nav" aria-label="Main navigation">
+          ${navGroups.map((group) => `
+            <div class="nav-group">
+              <span class="nav-group-label">${group.label}</span>
+              ${group.items.map((item) => `
+                <a href="#/${item.id}"
+                   class="nav-item ${isActive(item.id) ? "active" : ""}"
+                   data-navigate="${item.id}"
+                   title="${item.title}"
+                   ${isActive(item.id) ? 'aria-current="page"' : ""}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    ${item.icon}
+                  </svg>
+                  <span class="nav-label">${item.label}</span>
+                </a>
+              `).join("")}
+            </div>
           `).join("")}
         </nav>
         <div class="sidebar-footer">
-          <span class="sidebar-footer-text">Relay Control Plane</span>
           <div class="sidebar-footer-actions">
-            <button class="btn btn-xs btn-secondary" data-action="toggleTheme" aria-label="Toggle dark and light theme" title="Toggle theme">
+            <button class="btn btn-xs btn-secondary" type="button" data-action="toggleTheme" aria-label="${this.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}" title="${this.theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}">
               ${this.theme === "dark" ? `
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                <span class="theme-text" style="margin-left:4px;">Light</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2Z"/></svg>
               ` : `
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                <span class="theme-text" style="margin-left:4px;">Dark</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.8V5M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5l-1.6 1.6M7.1 16.9l-1.6 1.6M18.5 18.5l-1.6-1.6M7.1 7.1 5.5 5.5"/></svg>
               `}
             </button>
-            <button class="btn btn-xs btn-secondary sidebar-collapse-btn" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}" title="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <button class="btn btn-xs btn-secondary sidebar-collapse-btn" type="button" data-action="toggleSidebarFold" aria-label="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}" title="${this.sidebarFolded ? "Expand sidebar" : "Fold sidebar"}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 ${this.sidebarFolded ? '<polyline points="9 18 15 12 9 6"/>' : '<polyline points="15 18 9 12 15 6"/>'}
               </svg>
             </button>
@@ -1363,50 +1364,53 @@
       return `
       <header class="top-header">
         <div class="header-left">
-          <button class="mobile-nav-toggle" data-action="toggleMobileNav" aria-label="Toggle navigation menu">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button class="mobile-nav-toggle" type="button" data-action="toggleMobileNav" aria-label="Open navigation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
               <path d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           </button>
-          <h1 class="header-title" title="${escapeHtml4(this.getRouteTitle())}">${escapeHtml4(this.getRouteTitle())}</h1>
+          <div>
+            <h1 class="header-title" title="${escapeHtml4(this.getRouteTitle())}">${escapeHtml4(this.getRouteTitle())}</h1>
+            <p class="header-subtitle">${escapeHtml4(this.getRouteDescription())}</p>
+          </div>
         </div>
         <div class="header-right">
           <div class="selector-group">
-            <label class="form-label" for="header-org-select" style="margin:0;">Org:</label>
+            <label class="form-label" for="header-org-select">Org</label>
             <select id="header-org-select" class="select-sm" data-change="org" aria-label="Active organization">
               ${this.organizations.length > 0 ? this.organizations.map((o) => `<option value="${escapeHtml4(o)}" ${o === this.orgName ? "selected" : ""}>${escapeHtml4(o)}</option>`).join("") : `<option value="${escapeHtml4(this.orgName)}" selected>${escapeHtml4(this.orgName)}</option>`}
             </select>
           </div>
           ${this.currentRoute === "audit" || this.currentRoute === "keys" ? "" : `
           <div class="selector-group">
-            <label class="form-label" for="header-app-select" style="margin:0;">App:</label>
+            <label class="form-label" for="header-app-select">App</label>
             <select id="header-app-select" class="select-sm" data-change="app" aria-label="Active application">
-              <option value="" ${!this.appName ? "selected" : ""}>All Applications</option>
+              <option value="" ${!this.appName ? "selected" : ""}>All applications</option>
               ${this.apps.map((a) => `<option value="${escapeHtml4(a.name)}" ${a.name === this.appName ? "selected" : ""}>${escapeHtml4(a.name)}</option>`).join("")}
             </select>
           </div>`}
           <div class="selector-group">
             <span class="poll-indicator" title="Live telemetry refresh">
               <span class="poll-dot ${this.pollInterval === "stream" || this.pollInterval > 0 ? "active" : ""}"></span>
-              <span>Live:</span>
+              <span>Live</span>
             </span>
             <select class="select-sm" data-change="pollInterval" aria-label="Live telemetry mode">
               <option value="0" ${this.pollInterval === 0 ? "selected" : ""}>Off</option>
-              <option value="stream" ${this.pollInterval === "stream" ? "selected" : ""}>Stream (SSE)</option>
+              <option value="stream" ${this.pollInterval === "stream" ? "selected" : ""}>Stream</option>
               <option value="2000" ${this.pollInterval === 2e3 ? "selected" : ""}>2s</option>
               <option value="5000" ${this.pollInterval === 5e3 ? "selected" : ""}>5s</option>
               <option value="15000" ${this.pollInterval === 15e3 ? "selected" : ""}>15s</option>
             </select>
           </div>
-          <button class="btn btn-xs btn-secondary" data-action="refresh" aria-label="Refresh telemetry (Shortcut: R)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-            <span style="margin-left:4px;">Refresh</span>
+          <button class="btn btn-xs btn-secondary" type="button" data-action="refresh" aria-label="Refresh telemetry (shortcut R)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            <span>Refresh</span>
             <span class="hotkey-badge">R</span>
           </button>
           ${hasKey ? `
-            <button class="btn btn-xs btn-secondary" data-action="signOut" title="Clear saved credential">Sign Out</button>
+            <button class="btn btn-xs btn-secondary" type="button" data-action="signOut" title="Clear saved credential">Sign out</button>
           ` : `
-            <button class="btn btn-xs btn-primary" data-action="openSignIn" title="Set API Key or Bearer Token">Sign In</button>
+            <button class="btn btn-xs btn-primary" type="button" data-action="openSignIn" title="Set API key or bearer token">Sign in</button>
           `}
         </div>
       </header>
@@ -1439,7 +1443,37 @@
         case "audit":
           return `Audit Log: ${this.orgName}`;
         default:
-          return "Relay Dashboard";
+          return "Relay Console";
+      }
+    }
+    getRouteDescription() {
+      switch (this.currentRoute) {
+        case "fleet":
+          return "Fleet health, application inventory, and recent execution.";
+        case "workflows":
+          return "Search and inspect workflow executions across the active application scope.";
+        case "workflow-detail":
+          return "Execution lineage, steps, and payloads.";
+        case "queues":
+          return "Queue configuration and worker concurrency reported by live executors.";
+        case "schedules":
+          return "Cron schedules and manual triggers.";
+        case "alerting":
+          return "Rules that watch workflow health and notify operators.";
+        case "metrics":
+          return "Rates, queue depth, latency, and executor distribution.";
+        case "keys":
+          return "Organization API keys and their scope.";
+        case "roles":
+          return "Role definitions and permissions.";
+        case "autoscaling":
+          return "Executor recommendations for external scalers.";
+        case "settings":
+          return "Per-application runtime and retention settings.";
+        case "audit":
+          return "A chronological record of control-plane operations.";
+        default:
+          return "Relay control plane.";
       }
     }
     async onOrgChange(newOrgName) {
@@ -1473,6 +1507,10 @@
       const headerTitle = document.querySelector(".header-title");
       if (headerTitle) {
         headerTitle.textContent = this.getRouteTitle();
+      }
+      const headerSubtitle = document.querySelector(".header-subtitle");
+      if (headerSubtitle) {
+        headerSubtitle.textContent = this.getRouteDescription();
       }
       if (this.pollInterval === "stream") {
         this.startSSE();
@@ -1585,14 +1623,14 @@
         const failedWfs = allWorkflows.filter((w) => w.status === "ERROR").length;
         const recentWorkflows = [...allWorkflows].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 8);
         const filterBannerHtml = isFiltered ? `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:10px 16px; background:var(--card-bg); border:1px solid var(--border-color); border-radius:var(--radius-md);">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:12px; color:var(--text-secondary);">Filtered to application:</span>
-            <span class="badge badge-info">${escapeHtml4(this.appName)}</span>
-            ${selectedApp ? `<span class="badge badge-neutral">${escapeHtml4(selectedApp.language || "dbos")}</span>` : ""}
+        <div class="scope-banner">
+          <div class="scope-banner-context">
+            <span class="scope-label">Filtered to application</span>
+            <span class="badge">${escapeHtml4(this.appName)}</span>
+            ${selectedApp ? `<span class="badge">${escapeHtml4(selectedApp.language || "dbos")}</span>` : ""}
             ${selectedApp ? renderStatusPill(selectedApp.status) : ""}
           </div>
-          <button class="btn btn-xs btn-secondary" data-app-change="" aria-label="Reset filter to all applications">Show All Applications</button>
+          <button class="btn btn-xs btn-secondary" data-app-change="" aria-label="Reset filter to all applications">Show all applications</button>
         </div>
       ` : "";
         const kpiCardsHtml = isFiltered ? `
@@ -1609,7 +1647,7 @@
           </div>
           <div class="stat-card">
             <span class="stat-label">Connected Executors</span>
-            <span class="stat-value" style="color: var(--color-success-text);">${activeExecutors}</span>
+            <span class="stat-value">${activeExecutors}</span>
             <div class="kpi-subtext">
               <span class="kpi-sub-pill kpi-success">${activeExecutors} healthy</span>
               ${disconnectedExecutors > 0 ? `<span class="kpi-sub-pill kpi-error">${disconnectedExecutors} disconnected</span>` : `<span class="kpi-sub-pill">0 disconnected</span>`}
@@ -1643,7 +1681,7 @@
           </div>
           <div class="stat-card">
             <span class="stat-label">Connected Executors</span>
-            <span class="stat-value" style="color: var(--color-success-text);">${activeExecutors}</span>
+            <span class="stat-value">${activeExecutors}</span>
             <div class="kpi-subtext">
               <span class="kpi-sub-pill kpi-success">${activeExecutors} healthy</span>
               ${disconnectedExecutors > 0 ? `<span class="kpi-sub-pill kpi-error">${disconnectedExecutors} disconnected</span>` : `<span class="kpi-sub-pill">0 disconnected</span>`}
@@ -1672,15 +1710,15 @@
           <div class="card-header">
             <div>
               <span class="card-title">Application Details: ${escapeHtml4(this.appName)}</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Runtime configuration</span>
+              <span class="card-note">Runtime configuration</span>
             </div>
             <div style="display:flex; gap:6px;">
-              <button class="btn btn-xs btn-primary" data-app-change='${escapeHtml4(this.appName)}' data-navigate="workflows">Workflows \u2192</button>
+              <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(this.appName)}' data-navigate="workflows">Workflows</button>
               <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(this.appName)}' data-navigate="queues">Queues</button>
             </div>
           </div>
           <div class="card-body">
-            <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom:0;">
+            <div class="stat-grid">
               <div>
                 <span class="stat-label">Application Name</span>
                 <div><strong>${escapeHtml4(this.appName)}</strong></div>
@@ -1714,14 +1752,14 @@
                 </div>
               </div>
             </div>
-            <div style="margin-top:16px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:var(--radius-sm); font-size:12px; color:var(--text-secondary); display:flex; align-items:flex-start; gap:10px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px; color:var(--color-info-text);" aria-hidden="true">
+            <div class="data-plane-note">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                 <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
                 <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
               </svg>
               <div>
-                <div style="color:var(--text-primary); font-weight:600; margin-bottom:2px;">Application Data Plane</div>
+                <div class="data-plane-note-title">Application data plane</div>
                 <div>
                   ${activeExecutors > 0 ? `Operational telemetry and workflow dispatches are serviced via ${activeExecutors} connected ${activeExecutors === 1 ? "executor" : "executors"} connecting to the application system database. Relay coordinates executions without storing database credentials.` : `No executors are currently connected. Live dispatch and queue operations require an active executor connected to the application database (or direct data plane fallback configured in Relay server).`}
                 </div>
@@ -1734,12 +1772,12 @@
           <div class="card-header">
             <div>
               <span class="card-title">Applications</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Registered applications in fleet</span>
+              <span class="card-note">Registered applications in fleet</span>
             </div>
             <span class="badge badge-neutral">${allApps.length} total</span>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table app-table">
               <thead>
                 <tr>
                   <th>Application</th>
@@ -1779,12 +1817,12 @@
                       <td>
                         <div style="display:flex; gap:6px;">
                           <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(a.name)}' title="Inspect application details on Fleet view">Details</button>
-                          <button class="btn btn-xs btn-primary" data-app-change='${escapeHtml4(a.name)}' data-navigate="workflows">Workflows \u2192</button>
+                          <button class="btn btn-xs btn-secondary" data-app-change='${escapeHtml4(a.name)}' data-navigate="workflows">Workflows</button>
                         </div>
                       </td>
                     </tr>
                   `;
-        }).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No applications registered.</td></tr>`}
+        }).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--faint); padding:24px;">No applications registered.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1799,16 +1837,16 @@
           <div class="card-header">
             <div>
               <span class="card-title">${isFiltered ? `Recent Workflows (${escapeHtml4(this.appName)})` : "Recent Fleet Workflows"}</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">
+              <span class="card-note">
                 ${isFiltered ? `Live operational telemetry for ${escapeHtml4(this.appName)}` : "Live operational telemetry across applications"}
               </span>
             </div>
             <a href="#/workflows" class="btn btn-xs btn-secondary" data-navigate="workflows">
-              ${isFiltered ? "View App Workflows \u2192" : "View All Workflows \u2192"}
+              ${isFiltered ? "View app workflows" : "View all workflows"}
             </a>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table workflow-table">
               <thead>
                 <tr>
                   <th>Status</th>
@@ -1836,10 +1874,10 @@
                     </td>
                     <td>${calculateDuration(w.createdAt, w.completedAt, w.status, w.durationMs || w.duration_ms)}</td>
                     <td>
-                      <a href="#/workflow/${escapeHtml4(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">Inspect \u2197</a>
+                      <a href="#/workflow/${escapeHtml4(w.workflowId)}" class="btn btn-xs btn-secondary" data-navigate="workflow/${escapeHtml4(w.workflowId)}" data-wf-app="${escapeHtml4(w.appName)}">Inspect</a>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="${isFiltered ? "7" : "8"}" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflow executions recorded${isFiltered ? ` for ${escapeHtml4(this.appName)}` : " across applications"}.</td></tr>`}
+                `).join("") : `<tr><td colspan="${isFiltered ? "7" : "8"}" style="text-align:center; color:var(--faint); padding:24px;">No workflow executions recorded${isFiltered ? ` for ${escapeHtml4(this.appName)}` : " across applications"}.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1849,14 +1887,14 @@
           <div class="card-header">
             <div>
               <span class="card-title">${isFiltered ? `Connected Executors (${escapeHtml4(this.appName)})` : "Connected Executors"}</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">
+              <span class="card-note">
                 ${isFiltered ? `Live nodes connected for ${escapeHtml4(this.appName)}` : "Live nodes connected to Relay"}
               </span>
             </div>
             <span class="badge badge-neutral">${allExecutors.length} total</span>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table executor-table">
               <thead>
                 <tr>
                   <th>Executor ID</th>
@@ -1879,7 +1917,7 @@
                     <td>${escapeHtml4(e.language || "unknown")}</td>
                     <td>${formatTimestamp(e.updatedAt)}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="${isFiltered ? "6" : "7"}" style="text-align:center; color:var(--text-tertiary); padding:24px;">No executors currently connected${isFiltered ? ` for ${escapeHtml4(this.appName)}` : ""}.</td></tr>`}
+                `).join("") : `<tr><td colspan="${isFiltered ? "6" : "7"}" style="text-align:center; color:var(--faint); padding:24px;">No executors currently connected${isFiltered ? ` for ${escapeHtml4(this.appName)}` : ""}.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -1938,7 +1976,7 @@
 
         <div class="card">
           <div class="table-container">
-            <table class="data-table" id="workflows-table">
+            <table class="data-table workflow-table" id="workflows-table">
               <thead>
                 <tr>
                   <th>Workflow ID</th>
@@ -1963,7 +2001,7 @@
                     <td>${formatTimestamp(wf.createdAt)}</td>
                     <td>${calculateDuration(wf.createdAt, wf.completedAt, wf.status, wf.durationMs || wf.duration_ms)}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--text-tertiary); padding:24px;">No workflows found.</td></tr>`}
+                `).join("") : `<tr><td colspan="8" style="text-align:center; color:var(--faint); padding:24px;">No workflows found.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2110,7 +2148,7 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 0;">
+            <div class="stat-grid">
               <div>
                 <span class="stat-label">Application</span>
                 <div><span class="badge badge-info">${escapeHtml4(targetApp)}</span></div>
@@ -2138,7 +2176,7 @@
         <div class="card">
           <div class="card-header">
             <span class="card-title">Execution Steps (${steps.length}${childWorkflows.length > 0 ? ` + ${childWorkflows.length} child workflows` : ""})</span>
-            <span style="font-size:12px; color:var(--text-secondary);">Click any step to inspect parameters, output, or child executions</span>
+            <span style="font-size:12px; color:var(--muted);">Click any step to inspect parameters, output, or child executions</span>
           </div>
           <div class="card-body" style="padding:0;">
             ${renderWorkflowDAG(familyData, "window.selectStep")}
@@ -2200,7 +2238,7 @@
           <tbody>
             ${events.length > 0 ? events.map((e) => `
               <tr><td><code>${escapeHtml4(e.key)}</code></td><td>${renderJsonViewer(e.value)}</td></tr>
-            `).join("") : `<tr><td colspan="2" style="text-align:center; color:var(--text-tertiary);">No events recorded.</td></tr>`}
+            `).join("") : `<tr><td colspan="2" style="text-align:center; color:var(--faint);">No events recorded.</td></tr>`}
           </tbody>
         </table>
       `;
@@ -2218,7 +2256,7 @@
                 <td>${n.consumed ? "Yes" : "No"}</td>
                 <td>${formatTimestamp(n.createdAt)}</td>
               </tr>
-            `).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--text-tertiary);">No notifications recorded.</td></tr>`}
+            `).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--faint);">No notifications recorded.</td></tr>`}
           </tbody>
         </table>
       `;
@@ -2317,7 +2355,7 @@
             </div>
             ${step.error ? `
               <div>
-                <span class="stat-label" style="color:var(--color-error-text);">Error Stack</span>
+                <span class="stat-label" style="color:var(--error);">Error Stack</span>
                 ${renderJsonViewer(step.error, "Error Details")}
               </div>
             ` : ""}
@@ -2456,7 +2494,7 @@
           <div class="card-header">
             <div>
               <span class="card-title">Queues</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
+              <span class="card-note">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="badge badge-neutral">${queues.length} total</span>
@@ -2464,7 +2502,7 @@
             </div>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table queue-table">
               <thead>
                 <tr>
                   <th>Queue Name</th>
@@ -2487,7 +2525,7 @@
                     <td>${q.priorityEnabled ? "Yes" : "No"}</td>
                     <td>${q.partitionQueue ? "Yes" : "No"}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No queues configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--faint); padding:24px;">No queues configured.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2533,7 +2571,7 @@
           <div class="card-header">
             <div>
               <span class="card-title">Scheduled Jobs</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
+              <span class="card-note">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="badge badge-neutral">${schedules.length} total</span>
@@ -2541,7 +2579,7 @@
             </div>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table schedule-table">
               <thead>
                 <tr>
                   <th>Schedule Name</th>
@@ -2573,7 +2611,7 @@
                       </div>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No schedules configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--faint); padding:24px;">No schedules configured.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2649,25 +2687,19 @@
           rules = (list || []).map((r) => ({ ...r, appName: this.appName }));
         }
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <span class="text-secondary" style="font-size:12px;">Active Alert Rules${this.appName ? ` (${escapeHtml4(this.appName)})` : " across all applications"}</span>
-          </div>
-          <div>
-            <button class="btn btn-sm btn-primary" data-action="openCreateAlert">+ New Alert Rule</button>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-header">
             <div>
-              <span class="card-title">Active Alert Rules</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
+              <span class="card-title">Alert Rules</span>
+              <span class="card-note">${this.appName ? escapeHtml4(this.appName) : "Across all applications"}</span>
             </div>
-            <span class="badge badge-neutral">${rules.length} total</span>
+            <div class="header-actions">
+              <span class="badge badge-neutral">${rules.length} total</span>
+              <button class="btn btn-sm btn-primary" data-action="openCreateAlert">New alert rule</button>
+            </div>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table alert-table">
               <thead>
                 <tr>
                   <th>Rule ID</th>
@@ -2692,7 +2724,7 @@
                       <button class="btn btn-xs btn-danger" data-delete-rule='${escapeHtml4(r.id)}' data-rule-app='${escapeHtml4(r.appName || "")}'>Delete</button>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--text-tertiary); padding:24px;">No alerting rules configured.</td></tr>`}
+                `).join("") : `<tr><td colspan="7" style="text-align:center; color:var(--faint); padding:24px;">No alerting rules configured.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2810,18 +2842,16 @@
       try {
         const keys = await this.client.listAPIKeys(this.orgName);
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <span class="text-secondary" style="font-size:12px;">Organization API Keys (${this.orgName})</span>
-          </div>
-          <div>
-            <button class="btn btn-sm btn-primary" data-action="openCreateKey">+ Mint API Key</button>
-          </div>
-        </div>
-
         <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">API Keys</span>
+              <span class="card-note">${keys.length} ${keys.length === 1 ? "key" : "keys"} in ${escapeHtml4(this.orgName)}</span>
+            </div>
+            <button class="btn btn-sm btn-primary" data-action="openCreateKey">Mint API key</button>
+          </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table keys-table">
               <thead>
                 <tr>
                   <th>Key Name</th>
@@ -2842,7 +2872,7 @@
                       <button class="btn btn-xs btn-danger" data-revoke-key='${escapeHtml4(k.tokenName)}'>Revoke</button>
                     </td>
                   </tr>
-                `).join("") : `<tr><td colspan="5" style="text-align:center; color:var(--text-tertiary);">No API keys found.</td></tr>`}
+                `).join("") : `<tr><td colspan="5" style="text-align:center; color:var(--faint);">No API keys found.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2916,7 +2946,7 @@
             <span id="modal-key-created-title">API Key Created: ${escapeHtml4(name)}</span>
           </div>
           <div class="modal-body">
-            <p style="font-size:13px; color:var(--color-warning-text); font-weight:500;">
+            <p style="font-size:13px; color:var(--warning); font-weight:500;">
               Please copy this key now. It will not be shown again.
             </p>
             <div class="json-viewer" style="padding:12px; margin-top:8px;">
@@ -2969,20 +2999,16 @@
         const users = members && members.users || {};
         const memberRows = Object.entries(users);
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <span class="text-secondary" style="font-size:12px;">Organization Roles (${escapeHtml4(this.orgName)})</span>
-          </div>
-          <div>
-            <button class="btn btn-sm btn-primary" data-action="openCreateRole">+ New Role</button>
-          </div>
-        </div>
-
         <div class="card">
-          <div class="card-header"><div><span class="card-title">Roles</span>
-          <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${roleList.length} roles</span></div></div>
+          <div class="card-header">
+            <div>
+              <span class="card-title">Roles</span>
+              <span class="card-note">${roleList.length} roles in ${escapeHtml4(this.orgName)}</span>
+            </div>
+            <button class="btn btn-sm btn-primary" data-action="openCreateRole">New role</button>
+          </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table roles-table">
               <thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Actions</th></tr></thead>
               <tbody>
                 ${roleList.length > 0 ? roleList.map((r) => `
@@ -2991,7 +3017,7 @@
                     <td>${r.isGlobal ? `<span class="badge badge-neutral">built-in</span>` : `<span class="badge badge-info">custom</span>`}</td>
                     <td><code>${escapeHtml4((r.permissions || []).join(", "))}</code></td>
                     <td>${r.isGlobal ? `<span class="text-secondary" style="font-size:11px;">cannot delete</span>` : `<button class="btn btn-xs btn-danger" data-delete-role='${escapeHtml4(r.name)}'>Delete</button>`}</td>
-                  </tr>`).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--text-tertiary);">No roles found.</td></tr>`}
+                  </tr>`).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--faint);">No roles found.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -2999,9 +3025,9 @@
 
         <div class="card">
           <div class="card-header"><div><span class="card-title">Members</span>
-          <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${memberRows.length} members</span></div></div>
+          <span class="card-note">${memberRows.length} members</span></div></div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table members-table">
               <thead><tr><th>User</th><th>Current Role</th><th>Grant Role</th><th>Actions</th></tr></thead>
               <tbody>
                 ${memberRows.length > 0 ? memberRows.map(([username, role]) => `
@@ -3015,7 +3041,7 @@
                       <button class="btn btn-xs btn-secondary" data-grant-role='${escapeHtml4(username)}' style="margin-left:6px;">Apply</button>
                     </td>
                     <td><button class="btn btn-xs btn-danger" data-remove-member='${escapeHtml4(username)}'>Remove</button></td>
-                  </tr>`).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--text-tertiary);">No members found.</td></tr>`}
+                  </tr>`).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--faint);">No members found.</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -3148,32 +3174,25 @@
       }
       if (!this.appName) {
         el.innerHTML = `
-        <div class="card"><div class="card-body" style="text-align:center; color:var(--text-tertiary); padding:24px;">
-          Select an application above to view and edit its settings.
-        </div></div>`;
+        <div class="empty-state">
+          <div class="empty-state-title">No application selected</div>
+          <p class="empty-state-desc">Choose an application in the header to view and edit its retention and timeout settings.</p>
+        </div>`;
         return;
       }
       try {
         const app = await this.client.getApplication(this.orgName, this.appName);
         const msToHours = (ms) => ms === null || ms === void 0 ? "" : String(ms / 36e5);
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <span class="text-secondary" style="font-size:12px;">Application Settings</span>
-          </div>
-          <div>
-            <button class="btn btn-sm btn-primary" data-action="submitAppSettings">Save Settings</button>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-header">
             <div>
               <span class="card-title">Retention & Timeouts</span>
-              <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Blank leaves the current value unchanged</span>
+              <span class="card-note">Blank leaves the current value unchanged</span>
             </div>
+            <button class="btn btn-sm btn-primary" data-action="submitAppSettings">Save settings</button>
           </div>
-          <div class="card-body">
+          <div class="card-body settings-form">
             <div class="form-field">
               <label class="form-label" for="set-gc-rows">Retention: completed workflows kept</label>
               <input type="number" id="set-gc-rows" class="input-text" min="0" placeholder="Unset (keep all)" value="${app.gcRowsThreshold ?? ""}">
@@ -3247,9 +3266,10 @@
       }
       if (!this.appName) {
         el.innerHTML = `
-        <div class="card"><div class="card-body" style="text-align:center; color:var(--text-tertiary); padding:24px;">
-          Select an application above to manage its autoscaling policy.
-        </div></div>`;
+        <div class="empty-state">
+          <div class="empty-state-title">No application selected</div>
+          <p class="empty-state-desc">Choose an application in the header to review and set its autoscaling policy.</p>
+        </div>`;
         return;
       }
       try {
@@ -3275,20 +3295,16 @@
         }).join("");
         const rollout = policy && policy.rollout || {};
         el.innerHTML = `
-        <div class="toolbar">
-          <div class="filter-group">
-            <span class="text-secondary" style="font-size:12px;">Autoscaling Policy</span>
-          </div>
-          <div>
-            ${policy ? `<button class="btn btn-sm btn-danger" data-action="deleteAutoscalingPolicy">Delete Policy</button>` : ""}
-            <button class="btn btn-sm btn-primary" data-action="submitAutoscalingPolicy">Save Policy</button>
-          </div>
-        </div>
-
         <div class="card">
           <div class="card-header">
-            <div><span class="card-title">Policy</span>
-            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Backlog on the policy queue drives desired executors; the orchestrator actuates</span></div>
+            <div>
+              <span class="card-title">Policy</span>
+              <span class="card-note">Backlog on the policy queue drives desired executors; the orchestrator actuates</span>
+            </div>
+            <div class="header-actions">
+              ${policy ? `<button class="btn btn-sm btn-danger" data-action="deleteAutoscalingPolicy">Delete policy</button>` : ""}
+              <button class="btn btn-sm btn-primary" data-action="submitAutoscalingPolicy">Save policy</button>
+            </div>
           </div>
           <div class="card-body">
             <div class="form-field">
@@ -3306,18 +3322,18 @@
               <label class="form-label" for="scale-max-exec">Maximum executors per old version (blank = uncapped)</label>
               <input type="number" id="scale-max-exec" class="input-text" min="0" placeholder="Uncapped" value="${rollout.maxExecutorsForOldApplicationVersions ?? ""}">
             </div>
-            ${queuesError ? `<p style="font-size:12px; color:var(--color-error-text);">Queues unavailable: ${escapeHtml4(queuesError.message)}</p>` : eligible.length === 0 ? `<p style="font-size:12px; color:var(--text-tertiary);">No eligible queues: a policy queue must exist, be unpartitioned, and have worker concurrency set.</p>` : ""}
+            ${queuesError ? `<p style="font-size:12px; color:var(--error);">Queues unavailable: ${escapeHtml4(queuesError.message)}</p>` : eligible.length === 0 ? `<p style="font-size:12px; color:var(--faint);">No eligible queues: a policy queue must exist, be unpartitioned, and have worker concurrency set.</p>` : ""}
           </div>
         </div>
 
         <div class="card">
           <div class="card-header">
             <div><span class="card-title">Desired Executors</span>
-            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">Live recommendation per application version</span></div>
+            <span class="card-note">Live recommendation per application version</span></div>
             <span class="badge badge-neutral">${recs.length} versions</span>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table autoscale-table">
               <thead>
                 <tr>
                   <th>Version</th>
@@ -3329,7 +3345,7 @@
                 </tr>
               </thead>
               <tbody>
-                ${recsError ? `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">${policy ? `Recommendations unavailable: ${escapeHtml4(recsError.message)}` : "Attach a policy to see recommendations."}</td></tr>` : recs.length > 0 ? recs.map((r) => `
+                ${recsError ? `<tr><td colspan="6" style="text-align:center; color:var(--faint); padding:24px;">${policy ? `Recommendations unavailable: ${escapeHtml4(recsError.message)}` : "Attach a policy to see recommendations."}</td></tr>` : recs.length > 0 ? recs.map((r) => `
                   <tr>
                     <td><code>${escapeHtml4(r.applicationVersion)}</code></td>
                     <td>${r.isLatest ? `<span class="badge badge-info">latest</span>` : "-"}</td>
@@ -3338,7 +3354,7 @@
                     <td>${escapeHtml4(r.queueName)}</td>
                     <td>${formatTimestamp(new Date(r.observedAt).toISOString())}</td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">${policy ? "No versions to report." : "Attach a policy to see recommendations."}</td></tr>`}
+                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--faint); padding:24px;">${policy ? "No versions to report." : "Attach a policy to see recommendations."}</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -3441,7 +3457,7 @@
         }
         let sections = "";
         if (families.length === 0 || families.every((fam) => fam.samples.length === 0)) {
-          sections = `<div class="card"><div class="card-body"><div class="empty-state"><h4 class="empty-state-title">No metric samples</h4><p class="empty-state-desc">The scrape returned no series. Adjust or clear the filters.</p></div></div></div>`;
+          sections = `<div class="empty-state"><div class="empty-state-title">No metric samples</div><p class="empty-state-desc">The scrape returned no series. Adjust or clear the filters.</p></div>`;
         } else {
           sections += this.renderWorkflowRateCard(samplesOf, P, sum);
           sections += this.renderQueueDepthCard(samplesOf, P, sum);
@@ -3463,9 +3479,9 @@
           </div>
         </div>
 
-        <div class="stat-grid">
-          <div class="stat-card"><span class="stat-label">Workflow Success Rate</span><span class="stat-value" style="color: var(--color-success-text);">${formatMetricValue(successRate)}/s</span></div>
-          <div class="stat-card"><span class="stat-label">Workflow Failed Rate</span><span class="stat-value" style="color: var(--color-error-text);">${formatMetricValue(failedRate)}/s</span></div>
+        <div class="stat-grid metrics-grid">
+          <div class="stat-card"><span class="stat-label">Workflow Success Rate</span><span class="stat-value">${formatMetricValue(successRate)}/s</span></div>
+          <div class="stat-card"><span class="stat-label">Workflow Failed Rate</span><span class="stat-value is-error">${formatMetricValue(failedRate)}/s</span></div>
           <div class="stat-card"><span class="stat-label">Enqueued Workflows</span><span class="stat-value">${formatMetricValue(enqueued)}</span></div>
           <div class="stat-card"><span class="stat-label">Pending Workflows</span><span class="stat-value">${formatMetricValue(pending)}</span></div>
           <div class="stat-card"><span class="stat-label">Registered Executors</span><span class="stat-value">${formatMetricValue(executors)}</span></div>
@@ -3501,9 +3517,9 @@
       return `
       <div class="card">
         <div class="card-header"><div><span class="card-title">Workflow Rates</span>
-        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">per second by workflow</span></div></div>
+        <span class="card-note">per second by workflow</span></div></div>
         <div class="table-container">
-          <table class="data-table">
+          <table class="data-table workflow-rates-table">
             <thead><tr><th>Workflow</th><th>Application</th><th>Started/s</th><th>Success/s</th><th>Failed/s</th><th>Cancelled/s</th><th style="width:25%;">Success Share</th></tr></thead>
             <tbody>
               ${rows.map((r) => `
@@ -3514,7 +3530,7 @@
                   <td>${formatMetricValue(r.success)}</td>
                   <td>${formatMetricValue(r.failed)}</td>
                   <td>${formatMetricValue(r.cancelled)}</td>
-                  <td>${metricBar(r.success, max, "var(--color-success)")}</td>
+                  <td>${metricBar(r.success, max, "var(--success)")}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -3541,9 +3557,9 @@
       return `
       <div class="card">
         <div class="card-header"><div><span class="card-title">Queue Depth</span>
-        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">enqueued and pending by queue</span></div></div>
+        <span class="card-note">enqueued and pending by queue</span></div></div>
         <div class="table-container">
-          <table class="data-table">
+          <table class="data-table queue-depth-table">
             <thead><tr><th>Queue</th><th>Workflow</th><th>Enqueued</th><th>Pending</th><th style="width:25%;">Backlog Share</th></tr></thead>
             <tbody>
               ${rows.map((r) => `
@@ -3552,7 +3568,7 @@
                   <td>${escapeHtml4(r.workflow)}</td>
                   <td>${formatMetricValue(r.enqueued)}</td>
                   <td>${formatMetricValue(r.pending)}</td>
-                  <td>${metricBar(r.enqueued + r.pending, max, "var(--color-info)")}</td>
+                  <td>${metricBar(r.enqueued + r.pending, max, "var(--info)")}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -3583,9 +3599,9 @@
       return `
       <div class="card">
         <div class="card-header"><div><span class="card-title">Latency Maxima</span>
-        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">windowed maxima in seconds</span></div></div>
+        <span class="card-note">windowed maxima in seconds</span></div></div>
         <div class="table-container">
-          <table class="data-table">
+          <table class="data-table latency-table">
             <thead><tr><th>Workflow / Step</th><th>Max Queue Wait (s)</th><th>Max Total Latency (s)</th><th>Max Step Duration (s)</th></tr></thead>
             <tbody>
               ${rows.map((r) => `
@@ -3620,9 +3636,9 @@
       return `
       <div class="card">
         <div class="card-header"><div><span class="card-title">Executors</span>
-        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">registered by application version and status</span></div></div>
+        <span class="card-note">registered by application version and status</span></div></div>
         <div class="table-container">
-          <table class="data-table">
+          <table class="data-table executor-metrics-table">
             <thead><tr><th>Application</th><th>Version</th><th>Status</th><th>Count</th><th style="width:25%;">Share</th></tr></thead>
             <tbody>
               ${rows.map((r) => `
@@ -3631,7 +3647,7 @@
                   <td><code>${escapeHtml4(r.version)}</code></td>
                   <td>${escapeHtml4(r.status)}</td>
                   <td>${formatMetricValue(r.count)}</td>
-                  <td>${metricBar(r.count, max, "var(--color-warning)")}</td>
+                  <td>${metricBar(r.count, max, "var(--warning)")}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -3658,9 +3674,9 @@
       return `
       <div class="card">
         <div class="card-header"><div><span class="card-title">Step Rates</span>
-        <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">per second by step</span></div></div>
+        <span class="card-note">per second by step</span></div></div>
         <div class="table-container">
-          <table class="data-table">
+          <table class="data-table step-rates-table">
             <thead><tr><th>Step</th><th>Application</th><th>Success/s</th><th>Failed/s</th><th style="width:25%;">Success Share</th></tr></thead>
             <tbody>
               ${rows.map((r) => `
@@ -3669,7 +3685,7 @@
                   <td>${escapeHtml4(r.application)}</td>
                   <td>${formatMetricValue(r.success)}</td>
                   <td>${formatMetricValue(r.failed)}</td>
-                  <td>${metricBar(r.success, max, "var(--color-success)")}</td>
+                  <td>${metricBar(r.success, max, "var(--success)")}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -3725,14 +3741,14 @@
         <div class="card">
           <div class="card-header">
             <div><span class="card-title">Audit Log</span>
-            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">${escapeHtml4(this.orgName)} &middot; newest first</span></div>
+            <span class="card-note">${escapeHtml4(this.orgName)} &middot; newest first</span></div>
             <div>
               <button class="btn btn-xs btn-secondary" data-action="auditPrevPage" ${f.offset === 0 ? "disabled" : ""}>Prev</button>
               <button class="btn btn-xs btn-secondary" data-action="auditNextPage" ${rows.length < f.limit ? "disabled" : ""}>Next</button>
             </div>
           </div>
           <div class="table-container">
-            <table class="data-table">
+            <table class="data-table audit-table">
               <thead>
                 <tr>
                   <th>Time</th>
@@ -3753,7 +3769,7 @@
                     <td>${e.target ? `<code>${escapeHtml4(e.target.id)}</code> <span class="text-secondary" style="font-size:11px;">(${escapeHtml4(e.target.type)})</span>` : "-"}</td>
                     <td><code>${escapeHtml4(e.sourceIp || "")}</code></td>
                   </tr>
-                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--text-tertiary); padding:24px;">No audit entries match.</td></tr>`}
+                `).join("") : `<tr><td colspan="6" style="text-align:center; color:var(--faint); padding:24px;">No audit entries match.</td></tr>`}
               </tbody>
             </table>
           </div>

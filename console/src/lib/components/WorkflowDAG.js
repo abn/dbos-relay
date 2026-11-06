@@ -30,9 +30,9 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
 
   rootSteps.sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
 
-  const nodeWidth = 200;
-  const nodeHeight = 64;
-  const gapX = 54;
+  const nodeWidth = 180;
+  const nodeHeight = 62;
+  const gapX = 30;
   const hasChildren = children.length > 0;
 
   const startX = hasChildren ? 44 : 32;
@@ -90,8 +90,8 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
 
     cardsSvg += `
       <g class="dag-group-card root-group" transform="translate(16, 20)">
-        <rect width="${rootCardWidth}" height="${rootCardHeight}" rx="10" class="group-card-bg" />
-        <rect width="${rootCardWidth}" height="36" rx="10" class="group-card-header-bg" />
+        <rect width="${rootCardWidth}" height="${rootCardHeight}" rx="2" class="group-card-bg" />
+        <rect width="${rootCardWidth}" height="36" rx="2" class="group-card-header-bg" />
         <rect y="26" width="${rootCardWidth}" height="10" class="group-card-header-fill" />
         <circle cx="16" cy="18" r="4.5" fill="${rootStatusColor}" />
         <text x="28" y="22" class="group-card-title">Root Workflow: ${escapeHtml(rootWf.workflowName || rootWf.workflowId || "unnamed")}</text>
@@ -141,8 +141,8 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
       // Child Workflow Card
       cardsSvg += `
         <g class="dag-group-card child-group" transform="translate(${childCardX}, ${childY})">
-          <rect width="${childCardWidth}" height="${childCardHeight}" rx="10" class="group-card-bg child-card-border" />
-          <rect width="${childCardWidth}" height="36" rx="10" class="group-card-header-bg" />
+          <rect width="${childCardWidth}" height="${childCardHeight}" rx="2" class="group-card-bg child-card-border" />
+          <rect width="${childCardWidth}" height="36" rx="2" class="group-card-header-bg" />
           <rect y="26" width="${childCardWidth}" height="10" class="group-card-header-fill" />
           <circle cx="16" cy="18" r="4.5" fill="${childStatusColor}" />
           <text x="28" y="22" class="group-card-title">${escapeHtml(displayTitle)}<title>${escapeHtml(titleText)}</title></text>
@@ -232,23 +232,19 @@ export function renderWorkflowDAG(input, onSelectStepCallbackName = "window.sele
       <div class="dag-viewport" id="dag-viewport" tabindex="0" role="region" aria-label="Workflow DAG Canvas. Use mouse or buttons to zoom and pan.">
         <svg class="dag-canvas" id="dag-canvas" viewBox="0 0 ${totalWidth} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <pattern id="dag-dot-grid" width="22" height="22" patternUnits="userSpaceOnUse">
-              <circle cx="2" cy="2" r="1.3" fill="var(--border-strong)" opacity="0.45" />
-            </pattern>
             <marker id="arrowhead-default" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--border-strong)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--line)" />
             </marker>
             <marker id="arrowhead-success" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--color-success)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--success)" />
             </marker>
             <marker id="arrowhead-error" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--color-error)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--error)" />
             </marker>
             <marker id="arrowhead-running" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-              <polygon points="0 0, 8 3, 0 6" fill="var(--color-info)" />
+              <polygon points="0 0, 8 3, 0 6" fill="var(--info)" />
             </marker>
           </defs>
-          <rect width="100%" height="100%" fill="url(#dag-dot-grid)" class="canvas-grid-bg" />
           <g class="dag-zoom-layer" id="dag-zoom-layer">
             <g class="dag-cards">${cardsSvg}</g>
             <g class="dag-family-edges">${familyEdgesSvg}</g>
@@ -270,21 +266,17 @@ function renderStepNodeSvg(step, x, y, width, height, statusClass, statusText, s
        data-step-json="${escapeHtml(JSON.stringify(step))}"
        cursor="pointer" tabindex="0" role="button"
        aria-label="Step ${stepId}: ${escapeHtml(stepName)} (${statusText})">
-      <rect width="${width}" height="${height}" rx="8" class="node-bg" />
+      <rect width="${width}" height="${height}" rx="2" class="node-bg" />
       <circle cx="18" cy="20" r="4.5" fill="${statusColor}" />
 
       <text x="28" y="24" class="node-step-id">#${stepId}</text>
       <text x="48" y="24" class="node-name" width="${width - 55}">
-        ${truncate(escapeHtml(stepName), 15)}
+        ${truncate(escapeHtml(stepName), 20)}
       </text>
 
       <text x="18" y="48" class="node-status" fill="${statusColor}">${statusText}</text>
       ${durationText ? `<text x="${width - 12}" y="48" class="node-duration" text-anchor="end">${durationText}</text>` : ""}
 
-      ${isChildCaller ? `
-        <rect x="${width - 24}" y="8" width="16" height="16" rx="4" class="child-wf-badge" fill="var(--color-purple)" />
-        <path d="M ${width - 18} 12 L ${width - 14} 16 L ${width - 10} 12" stroke="#ffffff" stroke-width="1.8" fill="none" />
-      ` : ""}
     </g>
   `;
 }
@@ -304,16 +296,16 @@ function renderEmptyDAG() {
 
 function getStepStatusMeta(step) {
   if (step.error || (step.status && String(step.status).toUpperCase() === "ERROR")) {
-    return { statusClass: "step-error", statusText: "ERROR", statusColor: "var(--color-error)" };
+    return { statusClass: "step-error", statusText: "ERROR", statusColor: "var(--error)" };
   }
   const statusStr = String(step.status || "").toUpperCase();
   if (statusStr === "SUCCESS" || statusStr === "COMPLETED" || step.completedAt) {
-    return { statusClass: "step-success", statusText: "COMPLETED", statusColor: "var(--color-success)" };
+    return { statusClass: "step-success", statusText: "COMPLETED", statusColor: "var(--success)" };
   }
   if (statusStr === "RUNNING" || (!step.completedAt && step.startedAt)) {
-    return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--color-info)" };
+    return { statusClass: "step-running", statusText: "RUNNING", statusColor: "var(--info)" };
   }
-  return { statusClass: "step-pending", statusText: "PENDING", statusColor: "var(--text-tertiary)" };
+  return { statusClass: "step-pending", statusText: "PENDING", statusColor: "var(--faint)" };
 }
 
 function getStepDurationText(step) {
@@ -335,14 +327,14 @@ function getStepDurationText(step) {
 function getWorkflowStatusColor(status) {
   switch (String(status || "").toUpperCase()) {
     case "SUCCESS":
-      return "var(--color-success)";
+      return "var(--success)";
     case "ERROR":
-      return "var(--color-error)";
+      return "var(--error)";
     case "PENDING":
     case "ENQUEUED":
-      return "var(--color-info)";
+      return "var(--info)";
     default:
-      return "var(--text-tertiary)";
+      return "var(--faint)";
   }
 }
 

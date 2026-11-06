@@ -39,10 +39,12 @@
       { name: "orders-standard", appName: "ecommerce-checkout", concurrency: 50, workerConcurrency: 5, partitionQueue: false, activeCount: 2 }
     ],
     schedules: [
-      { name: "daily-reconciliation", appName: "ecommerce-checkout", schedule: "0 0 * * *", workflowName: "ReconciliationWorkflow", status: "ACTIVE", lastRun: new Date().toISOString() }
+      { name: "nightly-invoices-cron", appName: "ecommerce-checkout", schedule: "0 2 * * *", workflowName: "ReconcileDailyInvoices", status: "ACTIVE", lastRun: "2026-11-06T02:00:00Z" },
+      { name: "hourly-warehouse-sync", appName: "ecommerce-checkout", schedule: "0 * * * *", workflowName: "SyncWarehouseStock", status: "ACTIVE", lastRun: "2026-11-06T05:00:00Z" }
     ],
     alerts: [
-      { id: "rule-1", name: "High Error Rate", appName: "ecommerce-checkout", metric: "workflow_failure_rate", condition: "gt", threshold: 5, status: "ACTIVE" }
+      { id: "rule-1", name: "High Error Rate", appName: "ecommerce-checkout", ruleType: "WorkflowFailure", minIntervalSecs: 60, ruleMetadata: { channel: "slack", severity: "critical" }, status: "ACTIVE", lastFiredAt: "2026-11-06T04:43:37Z" },
+      { id: "rule-2", name: "Slow Queue", appName: "ecommerce-checkout", ruleType: "SlowQueue", minIntervalSecs: 120, ruleMetadata: { channel: "pagerduty", threshold_ms: 5000 }, status: "ACTIVE", lastFiredAt: null }
     ],
     roles: [
       { name: "admin", isGlobal: true, permissions: ["application.read", "application.write", "websocket.connect", "metric.read", "organization.read", "organization.write", "token.read", "token.write"] },
@@ -215,37 +217,47 @@
         organization: r.organization,
         status: r.status,
         runtime: r.runtime,
+        language: r.runtime,
         createdAt: r.created_at
       })) : state.apps;
       return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
     // 3. /v2/orgs/{org}/apps/{app}/executors
-    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/executors$/)) {
-      const rows = await queryDb("SELECT id, name, status, hostname, ip_address, version, last_heartbeat FROM executors;");
+    const executorsMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/executors$/);
+    if (executorsMatch) {
+      const appName = decodeURIComponent(executorsMatch[1]);
+      const rows = await queryDb(
+        "SELECT e.id, e.name, e.status, e.hostname, e.ip_address, e.version, e.last_heartbeat, a.runtime AS language " +
+        "FROM executors e LEFT JOIN applications a ON a.name = e.name WHERE e.name = $1;",
+        [appName]
+      );
       const data = rows && rows.length > 0 ? rows.map(r => ({
         executorId: r.id,
         id: r.id,
-        name: r.name || "ecommerce-checkout",
-        appName: r.name || "ecommerce-checkout",
+        name: r.name || appName,
+        appName: r.name || appName,
         status: (r.status || "HEALTHY").toUpperCase(),
         hostname: r.hostname || "browser-wasm",
         ipAddress: r.ip_address,
         version: r.version || "1.0.0",
         appVersion: r.version || "1.0.0",
-        language: "typescript",
+        language: r.language || "typescript",
         createdAt: "2026-09-18T18:00:00Z",
         updatedAt: r.last_heartbeat || new Date().toISOString(),
         lastHeartbeat: r.last_heartbeat || new Date().toISOString()
-      })) : state.executors;
+      })) : state.executors.filter(e => e.appName === appName);
       return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
     // 4. /v2/orgs/{org}/apps/{app}/workflows (List workflows)
-    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/workflows$/)) {
+    const workflowsMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/workflows$/);
+    if (workflowsMatch) {
+      const appName = decodeURIComponent(workflowsMatch[1]);
       const rows = await queryDb(
-        "SELECT workflow_id, status, name, authenticated_user, output, error, duration_ms, created_at, updated_at " +
-        "FROM dbos.workflow_status ORDER BY created_at DESC LIMIT 50;"
+        "SELECT workflow_id, status, name, authenticated_user, output, error, duration_ms, created_at, updated_at, app_version, application_version " +
+        "FROM dbos.workflow_status WHERE app_id = $1 ORDER BY created_at DESC LIMIT 50;",
+        [appName]
       );
       const data = (rows || []).map(r => {
         const isTerminal = ["SUCCESS", "ERROR", "CANCELLED"].includes(String(r.status || "").toUpperCase());
@@ -275,6 +287,8 @@
           duration_ms: dur,
           authenticatedUser: r.authenticated_user || "playground-user",
           authenticated_user: r.authenticated_user || "playground-user",
+          appVersion: r.app_version || r.application_version || "-",
+          applicationVersion: r.app_version || r.application_version || "-",
           output: r.output,
           error: r.error
         };
@@ -370,6 +384,8 @@
           duration_ms: dur,
           authenticatedUser: r.authenticated_user || "playground-user",
           authenticated_user: r.authenticated_user || "playground-user",
+          appVersion: r.app_version || r.application_version || "-",
+          applicationVersion: r.app_version || r.application_version || "-",
           output: r.output,
           error: r.error
         };
@@ -383,18 +399,46 @@
     }
 
     // 9. /v2/orgs/{org}/apps/{app}/queues
-    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/queues$/)) {
-      return new Response(JSON.stringify(state.queues), { status: 200, headers: jsonHeaders });
+    const queuesMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/queues$/);
+    if (queuesMatch) {
+      const appName = decodeURIComponent(queuesMatch[1]);
+      const data = state.queues.filter(q => q.appName === appName);
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
     // 10. /v2/orgs/{org}/apps/{app}/schedules
-    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/schedules$/)) {
-      return new Response(JSON.stringify(state.schedules), { status: 200, headers: jsonHeaders });
+    const schedulesMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/schedules$/);
+    if (schedulesMatch) {
+      const appName = decodeURIComponent(schedulesMatch[1]);
+      const data = state.schedules
+        .filter(s => s.appName === appName)
+        .map(s => ({
+          scheduleName: s.name,
+          name: s.name,
+          appName: s.appName,
+          workflowName: s.workflowName,
+          cronExpression: s.schedule,
+          schedule: s.schedule,
+          status: s.status,
+          lastFiredAt: s.lastRun,
+          lastRun: s.lastRun
+        }));
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
-    // 11. /v2/orgs/{org}/apps/{app}/alerts
-    if (path.match(/^\/v2\/orgs\/[^/]+\/apps\/[^/]+\/alerts$/)) {
-      return new Response(JSON.stringify(state.alerts), { status: 200, headers: jsonHeaders });
+    // 11. /v2/orgs/{org}/apps/{app}/alerts and /alerting-rules
+    const alertsMatch = path.match(/^\/v2\/orgs\/[^/]+\/apps\/([^/]+)\/(?:alerts|alerting-rules)$/);
+    if (alertsMatch) {
+      const appName = decodeURIComponent(alertsMatch[1]);
+      const data = state.alerts
+        .filter(a => a.appName === appName)
+        .map(a => ({
+          ...a,
+          ruleType: a.ruleType || a.metric || "WorkflowFailure",
+          minIntervalSecs: a.minIntervalSecs || 60,
+          ruleMetadata: a.ruleMetadata || { channel: "slack", severity: "warning" }
+        }));
+      return new Response(JSON.stringify(data), { status: 200, headers: jsonHeaders });
     }
 
     // 12. /v2/orgs/{org}/tokens or /keys
