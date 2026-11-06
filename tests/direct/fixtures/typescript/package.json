@@ -1,0 +1,17 @@
+{
+  "name": "relay-direct-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "5.4.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.9.0"
+  }
+}

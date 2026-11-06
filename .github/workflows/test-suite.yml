@@ -47,6 +47,24 @@ jobs:
           RELAY_TEST_DATABASE_URL: postgres://relay:relay@localhost:5433/relay?sslmode=disable
         run: make test
 
+      - name: Set up Python for Direct mode fixture
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install Python Direct mode fixture
+        run: python3 -m pip install --upgrade pip -r tests/direct/fixtures/python/requirements.txt
+
+      - name: Set up Node.js for Direct mode fixture
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Run Direct mode cross-language test
+        env:
+          RELAY_TEST_DATABASE_URL: postgres://relay:relay@localhost:5433/relay?sslmode=disable
+        run: make test/direct
+
       - name: Build binary
         run: make build
 

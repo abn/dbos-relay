@@ -91,3 +91,13 @@ retired v1.3.0 fallback and does not apply to Direct mode. The Attached matrix
 skips the data-plane parity cell; the live PostgreSQL data-plane test asserts
 payload parity against the real client, and the hermetic SQLite test covers
 workflow and step reads.
+
+### Direct mode cross-language suite
+
+`tests/direct` runs the official Python `3.4.0` and TypeScript `5.4.0` SDKs
+against a PostgreSQL system database, then reads the result through Relay's
+Direct client. It asserts status, output, steps, recovery, and cancel. The
+Python fixture also runs against SQLite, which needs no server. The fixtures use
+the portable JSON serializer so the Go client can decode cross-language
+payloads. Native Python pickle and TypeScript superjson payloads are outside
+this suite and outside the cross-language payload guarantee.

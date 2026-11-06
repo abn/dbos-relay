@@ -21,8 +21,8 @@ SDK version. It is the path for applications on post-split SDK releases. See
 
 Direct mode is implemented for the supported schema window. The engine and
 recovery path are covered by hermetic SQLite tests and live PostgreSQL
-data-plane tests; the probe is covered by liveness tests. The multi-SDK matrix
-extension follows.
+data-plane tests; the probe is covered by liveness tests. Python and TypeScript
+cross-language coverage lives in `tests/direct`.
 
 The two boundaries are recorded here, with the evidence behind each one.
 
@@ -165,8 +165,9 @@ and live PostgreSQL tests. The multi-SDK matrix extension follows.
   longer present at the recorded baseline. It needs network access, so it is
   not part of `make check`; run it on a schedule or before a release.
 * The Direct mode tests run the real client against schema 123 and exercise
-  read, control, schedule, and recovery without a connector. The multi-SDK
-  matrix extension adds a schema 125 cell and cross-language coverage.
+  read, control, schedule, and recovery without a connector. The cross-language
+  suite runs Python `3.4.0` and TypeScript `5.4.0` at schema 125 against
+  PostgreSQL, and Python against SQLite without a server.
 
 ## Renewing a boundary
 
