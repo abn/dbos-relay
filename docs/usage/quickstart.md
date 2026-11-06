@@ -234,4 +234,4 @@ When upgrading Relay:
 - In high-availability deployments, upgrade the database schema before rolling out updated Relay instances.
 - Older Relay binaries refuse to start against a newer schema version (`no migration found for version`).
 - If a migration fails mid-apply, the database is marked dirty; resolve the schema state before restarting `relay serve`.
-- Relay migrations provide paired `.down.sql` scripts, but the CLI exposes no automated rollback command; rollback requires restoring from a database backup or applying down migrations with the external `golang-migrate` tool.
+- Relay migrations provide paired `.down.sql` scripts and the CLI exposes `relay migrate down`. The primary rollback procedure is restoring a database snapshot; see [Operations and migrations](operations.md) for down migrations and dirty-state handling.

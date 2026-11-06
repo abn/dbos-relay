@@ -115,6 +115,7 @@ SDKs](docs/usage/supported-sdks.md) for the schema window.
 The project wiki is maintained in [`docs/`](docs/index.md) as an Open Knowledge Format (OKF v0.2) bundle:
 
 - [Overview](docs/overview.md): Project scope, architecture, and background
+- [Migrating from Conductor](docs/usage/from-conductor.md): Move an application to Attached or Direct mode
 - [Design & Compatibility Tiers](docs/design/compatibility-tiers.md): Verification tiers and conformance gates
 - [Architecture](docs/architecture/index.md): Module boundaries, recovery lifecycle, and data-plane access
 - [Doctor preflight](docs/usage/doctor.md): Read-only migration and production readiness checks

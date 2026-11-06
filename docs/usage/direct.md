@@ -10,7 +10,9 @@ status: stable
 Direct mode lets Relay observe and control a DBOS Transact application through
 the application's own system database. It uses the official MIT Go client, so
 it works with SDK releases that no longer ship the Conductor connector. The
-application needs no code change and no enterprise package.
+application needs no code change for core operation and no enterprise package.
+Payload portability and the liveness signal may require configuration or
+deployment changes.
 
 Direct mode is one of three integration modes. `hybrid` keeps the executor
 first and falls back to the database. `attached` uses the executor only and
@@ -24,6 +26,10 @@ manifest.
   `3.3.0`, TypeScript `5.3.0`) and the current releases (Go `v1.8.0`, Python
   `3.4.0`, TypeScript `5.4.0`). A schema below 123 is refused; use Attached
   mode instead.
+- A supported application system database. PostgreSQL and SQLite are supported
+  and tested. SQLite-compatible engines such as Turso use the client's SQLite
+  driver and are compatible but not covered by Relay's tests; verify the target
+  engine before production use.
 - A database URL for the application system database, supplied through an
   environment variable or a secret file. Relay never stores the URL in its own
   database.
@@ -33,9 +39,10 @@ manifest.
 - Read-only access by default. Enable read-write only when the operator needs
   lifecycle mutations, schedule changes, enqueue, send, retention execution, or
   recovery.
-- For automatic recovery, a liveness signal from `relay probe` or a deployment
-  operator. Without it, Direct mode observes and controls but does not detect a
-  dead executor.
+- For automatic recovery, a liveness signal from `relay probe`. An
+  operator-provided signal is planned but has no published contract yet; do not
+  plan on it. Without a signal, Direct mode observes and controls but does not
+  detect a dead executor.
 
 ## Configuration
 
@@ -56,9 +63,17 @@ data_plane:
     max_connections: 5
 ```
 
-Apply the manifest with `relay apply -f relay.yaml`. Relay registers the
-connection and routes requests for `order-service` to the database first. A
-live executor is used for operations the database path does not support.
+`relay apply -f relay.yaml --database-url "$RELAY_DATABASE_URL"` provisions
+control-plane records such as the organisation, applications, alert rules, and
+API keys, but it does not register the data-plane connection. Start or restart
+Relay with `RELAY_CONFIG` pointing at the manifest. The server applies the
+manifest and registers each non-Attached data plane at startup; schema
+verification happens when the client is created. If initialization fails,
+Relay logs `failed eager data-plane client initialization`, keeps the
+application configured, and retries after a short backoff with
+`failed lazy data-plane client initialization`. Once initialized, Relay routes
+requests for `order-service` to the database first. A live executor is used for
+operations the database path does not support.
 
 ## Liveness probe
 
@@ -82,9 +97,9 @@ relay probe --relay-url "http://relay.internal:8090" --org production --app "$DB
 On graceful shutdown the probe sends a stop heartbeat. If the process is
 killed, the heartbeat expires and Relay starts the grace period.
 
-In Kubernetes, a deployment operator can supply the same signal from pod
-lifecycle events instead of running the probe. Both paths feed the same
-recovery dispatcher.
+The probe is the supported liveness path today. A Kubernetes operator that
+supplies the same signal from pod lifecycle events is planned but has no
+published contract yet; do not design a migration around it.
 
 ## Supported operations
 

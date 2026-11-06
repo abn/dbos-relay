@@ -9,7 +9,8 @@ status: draft
 
 Relay supports declarative fleet management through YAML manifests (`relay.yaml`).
 The declarative workflow enables automated, reproducible provisioning of organisations,
-applications, alerting rules, and data-plane connections.
+applications, alerting rules, and API keys. Data-plane connections are declared in the
+same manifest and registered by `relay serve` at startup.
 
 ## Manifest format
 
@@ -89,6 +90,12 @@ The declarative manifest schema supports the following fields:
   * `statement_timeout_secs`: Statement execution timeout.
   * `max_connections`: Connection pool size.
 
+`relay apply` does not register data-plane connections. Start Relay with
+`RELAY_CONFIG` pointing at the manifest so the server registers each non-Attached
+entry and verifies the application schema. If initialization fails, Relay logs
+`failed eager data-plane client initialization`, keeps the application
+configured, and retries after a short backoff.
+
 ## Secret indirection
 
 Never commit raw database credentials in `relay.yaml`. Relay provides two mechanisms for credential indirection:
@@ -141,3 +148,6 @@ Actions performed during apply:
 4. Mints a default conductor API key (`default-conductor-key`) when applications are created.
 5. If `--env-out` is specified, writes the generated keys to the target environment file. As a security safeguard, `relay apply` inspects git repositories and refuses to write secrets to an unignored path (`refusing to write secrets to unignored path ... inside git repository`).
 6. Reports a summary of changes applied.
+
+Data-plane entries are declared for `relay serve`, not applied by this command. See
+[Direct mode](direct.md) for the runtime behavior.
