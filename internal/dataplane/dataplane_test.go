@@ -17,6 +17,8 @@ import (
 
 type mockClient struct {
 	onDispatch func(ctx context.Context, msg protocol.Message) (protocol.Message, error)
+	onEnqueue  func(ctx context.Context, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error)
+	onSend     func(ctx context.Context, input dataplane.SendWorkflowMessageInput) error
 	onRecover  func(ctx context.Context, executorIDs []string, appVersion string) ([]string, error)
 	closed     bool
 }
@@ -26,6 +28,20 @@ func (m *mockClient) Dispatch(ctx context.Context, msg protocol.Message) (protoc
 		return m.onDispatch(ctx, msg)
 	}
 	return nil, nil
+}
+
+func (m *mockClient) Enqueue(ctx context.Context, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+	if m.onEnqueue != nil {
+		return m.onEnqueue(ctx, input)
+	}
+	return dataplane.EnqueueWorkflowResult{WorkflowID: "wf-enqueue"}, nil
+}
+
+func (m *mockClient) Send(ctx context.Context, input dataplane.SendWorkflowMessageInput) error {
+	if m.onSend != nil {
+		return m.onSend(ctx, input)
+	}
+	return nil
 }
 
 func (m *mockClient) Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error) {
@@ -561,5 +577,80 @@ func TestManager_IntegrationDefaultsAndRecovery(t *testing.T) {
 	}
 	if len(ids) != 1 || ids[0] != "wf-1" {
 		t.Fatalf("unexpected recovered ids: %v", ids)
+	}
+}
+
+func TestManager_WriteOperationsRequireReadWrite(t *testing.T) {
+	appID := pgtype.UUID{Bytes: [16]byte{30, 1, 1}, Valid: true}
+	var enqueueCalls, sendCalls int
+	mock := &mockClient{
+		onEnqueue: func(ctx context.Context, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+			enqueueCalls++
+			if string(input.Payload) != `{"order":42}` {
+				t.Fatalf("expected payload to be preserved, got %s", input.Payload)
+			}
+			return dataplane.EnqueueWorkflowResult{WorkflowID: "wf-new"}, nil
+		},
+		onSend: func(ctx context.Context, input dataplane.SendWorkflowMessageInput) error {
+			sendCalls++
+			if string(input.Payload) != `["ready",true]` {
+				t.Fatalf("expected payload to be preserved, got %s", input.Payload)
+			}
+			return nil
+		},
+	}
+
+	mgr := dataplane.NewManager(func(cfg dataplane.AppConfig) (dataplane.Client, error) {
+		return mock, nil
+	})
+	if err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://localhost:5432/test",
+		Mode:          dataplane.ModeRead,
+		Integration:   dataplane.IntegrationDirect,
+	}); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	enqueueInput := dataplane.EnqueueWorkflowInput{
+		WorkflowName: "orders",
+		QueueName:    "orders-q",
+		Payload:      []byte(`{"order":42}`),
+	}
+	if _, err := mgr.Enqueue(context.Background(), appID, enqueueInput); !errors.Is(err, dataplane.ErrReadOnlyMode) {
+		t.Fatalf("expected read-only enqueue to fail, got %v", err)
+	}
+	sendInput := dataplane.SendWorkflowMessageInput{
+		DestinationID: "wf-1",
+		Topic:         "orders",
+		Payload:       []byte(`["ready",true]`),
+	}
+	if err := mgr.Send(context.Background(), appID, sendInput); !errors.Is(err, dataplane.ErrReadOnlyMode) {
+		t.Fatalf("expected read-only send to fail, got %v", err)
+	}
+	if enqueueCalls != 0 || sendCalls != 0 {
+		t.Fatalf("read-only writes reached the client: enqueue=%d send=%d", enqueueCalls, sendCalls)
+	}
+
+	if err := mgr.RegisterApp(dataplane.AppConfig{
+		ApplicationID: appID,
+		DatabaseURL:   "postgres://localhost:5432/test",
+		Mode:          dataplane.ModeReadWrite,
+		Integration:   dataplane.IntegrationDirect,
+	}); err != nil {
+		t.Fatalf("re-register failed: %v", err)
+	}
+	res, err := mgr.Enqueue(context.Background(), appID, enqueueInput)
+	if err != nil {
+		t.Fatalf("read-write enqueue failed: %v", err)
+	}
+	if res.WorkflowID != "wf-new" {
+		t.Fatalf("expected workflow ID wf-new, got %q", res.WorkflowID)
+	}
+	if err := mgr.Send(context.Background(), appID, sendInput); err != nil {
+		t.Fatalf("read-write send failed: %v", err)
+	}
+	if enqueueCalls != 1 || sendCalls != 1 {
+		t.Fatalf("expected one write each, got enqueue=%d send=%d", enqueueCalls, sendCalls)
 	}
 }

@@ -52,6 +52,14 @@ func (m *mockDataPlaneClient) Dispatch(ctx context.Context, msg protocol.Message
 	return nil, nil
 }
 
+func (m *mockDataPlaneClient) Enqueue(ctx context.Context, input dataplane.EnqueueWorkflowInput) (dataplane.EnqueueWorkflowResult, error) {
+	return dataplane.EnqueueWorkflowResult{WorkflowID: "wf-enqueue"}, nil
+}
+
+func (m *mockDataPlaneClient) Send(ctx context.Context, input dataplane.SendWorkflowMessageInput) error {
+	return nil
+}
+
 func (m *mockDataPlaneClient) Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error) {
 	return executorIDs, nil
 }

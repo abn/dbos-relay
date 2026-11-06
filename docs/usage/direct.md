@@ -88,9 +88,10 @@ recovery dispatcher.
 ## Supported operations
 
 Direct mode serves workflow queries, steps, aggregates, cancel, resume, fork,
-rewind, delete, schedules, queues, application versions, and recovery. Every
-operation uses the official Go client; Relay does not issue raw SQL against
-`dbos.*` tables.
+rewind, delete, schedules, queues, application versions, and recovery. The data
+plane also implements enqueue and send with DBOS portable JSON. Every operation
+uses the official Go client; Relay does not issue raw SQL against `dbos.*`
+tables.
 
 The following operations stay on the executor path and return
 `503 Service Unavailable` when no executor is connected:
@@ -106,7 +107,17 @@ serializer when payloads need to be readable across languages. In Python use
 `DBOSPortableJSONSerializer`; in TypeScript use a serializer whose `name()` is
 `portable_json`. The cross-language fixtures in `tests/direct` are a worked
 example. Values Relay cannot decode are displayed as opaque and are not written
-back. Enqueue, send, and set-event are not exposed by this release.
+back.
+
+Enqueue and send are implemented in the Direct data plane, with the payload
+stored as DBOS portable JSON and the read-write gate enforced. The REST surface
+does not expose them yet: the vendored Conductor OpenAPI defines no enqueue,
+send, or set-event operation, and Relay does not add public routes outside that
+contract. Set-event is additionally blocked on the client. The MIT Go client
+exposes `SetEvent` only on a workflow context, and the exported
+`dbos/internals` seam does not export the input type its `SystemDatabase.SetEvent`
+requires. A workflow that depends on set-event, or on enqueue or send through
+the API, remains a migration blocker.
 
 ## Security
 

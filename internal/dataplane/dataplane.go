@@ -2,7 +2,9 @@ package dataplane
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -65,9 +67,69 @@ type AppConfig struct {
 	StatementTimeout time.Duration
 }
 
+// EnqueueWorkflowInput describes a workflow to enqueue through the application
+// system database. Payload is a JSON value and is stored with the DBOS portable
+// JSON serializer, wrapped as the workflow's single positional argument.
+type EnqueueWorkflowInput struct {
+	WorkflowName       string
+	QueueName          string
+	Payload            json.RawMessage
+	WorkflowID         *string
+	ApplicationVersion *string
+	QueuePartitionKey  *string
+}
+
+// EnqueueWorkflowResult reports the workflow ID created by an enqueue.
+type EnqueueWorkflowResult struct {
+	WorkflowID string
+}
+
+// SendWorkflowMessageInput describes a message to deliver to a workflow. Payload
+// is a JSON value stored with the DBOS portable JSON serializer.
+type SendWorkflowMessageInput struct {
+	DestinationID  string
+	Topic          string
+	Payload        json.RawMessage
+	IdempotencyKey *string
+}
+
+// Validate checks that the input can be written without re-encoding an opaque
+// value. Writes accept JSON only so a value Relay cannot decode is rejected
+// rather than reinterpreted.
+func (i EnqueueWorkflowInput) Validate() error {
+	if i.WorkflowName == "" {
+		return fmt.Errorf("workflow name is required")
+	}
+	if i.QueueName == "" {
+		return fmt.Errorf("queue name is required")
+	}
+	return validateJSONPayload(i.Payload)
+}
+
+// Validate checks that the input can be written without re-encoding an opaque
+// value.
+func (i SendWorkflowMessageInput) Validate() error {
+	if i.DestinationID == "" {
+		return fmt.Errorf("destination workflow ID is required")
+	}
+	return validateJSONPayload(i.Payload)
+}
+
+func validateJSONPayload(payload json.RawMessage) error {
+	if len(payload) == 0 {
+		return fmt.Errorf("payload is required")
+	}
+	if !json.Valid(payload) {
+		return fmt.Errorf("payload must be valid JSON")
+	}
+	return nil
+}
+
 // Client represents the data-plane interface to an application's system database.
 type Client interface {
 	Dispatch(ctx context.Context, msg protocol.Message) (protocol.Message, error)
+	Enqueue(ctx context.Context, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error)
+	Send(ctx context.Context, input SendWorkflowMessageInput) error
 	Recover(ctx context.Context, executorIDs []string, appVersion string) ([]string, error)
 	HasPendingWorkflows(ctx context.Context, executorID, appVersion string) (bool, error)
 	Close() error
@@ -81,6 +143,8 @@ type Manager interface {
 	GetMode(appID pgtype.UUID) (Mode, bool)
 	GetIntegration(appID pgtype.UUID) (Integration, bool)
 	Dispatch(ctx context.Context, appID pgtype.UUID, msg protocol.Message) (protocol.Message, error)
+	Enqueue(ctx context.Context, appID pgtype.UUID, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error)
+	Send(ctx context.Context, appID pgtype.UUID, input SendWorkflowMessageInput) error
 	Recover(ctx context.Context, appID pgtype.UUID, executorIDs []string, appVersion string) ([]string, error)
 	HasPendingWorkflows(ctx context.Context, appID pgtype.UUID, executorID, appVersion string) (bool, error)
 	Close() error

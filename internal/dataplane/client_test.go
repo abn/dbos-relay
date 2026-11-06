@@ -162,3 +162,31 @@ func TestMapWorkflowStatus_FieldParity(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteInputValidation(t *testing.T) {
+	if err := (EnqueueWorkflowInput{WorkflowName: "wf", QueueName: "q", Payload: []byte(`{"a":1}`)}).Validate(); err != nil {
+		t.Fatalf("expected valid enqueue input, got %v", err)
+	}
+	if err := (EnqueueWorkflowInput{WorkflowName: "", QueueName: "q", Payload: []byte(`{}`)}).Validate(); err == nil {
+		t.Fatal("expected missing workflow name to fail")
+	}
+	if err := (EnqueueWorkflowInput{WorkflowName: "wf", QueueName: "", Payload: []byte(`{}`)}).Validate(); err == nil {
+		t.Fatal("expected missing queue name to fail")
+	}
+	if err := (EnqueueWorkflowInput{WorkflowName: "wf", QueueName: "q", Payload: []byte(`not-json`)}).Validate(); err == nil {
+		t.Fatal("expected invalid JSON payload to fail")
+	}
+	if err := (EnqueueWorkflowInput{WorkflowName: "wf", QueueName: "q"}).Validate(); err == nil {
+		t.Fatal("expected empty payload to fail")
+	}
+
+	if err := (SendWorkflowMessageInput{DestinationID: "wf-1", Payload: []byte(`"opaque"`)}).Validate(); err != nil {
+		t.Fatalf("expected valid send input, got %v", err)
+	}
+	if err := (SendWorkflowMessageInput{DestinationID: "", Payload: []byte(`"x"`)}).Validate(); err == nil {
+		t.Fatal("expected missing destination to fail")
+	}
+	if err := (SendWorkflowMessageInput{DestinationID: "wf-1", Payload: []byte(`not-json`)}).Validate(); err == nil {
+		t.Fatal("expected invalid JSON payload to fail")
+	}
+}

@@ -701,6 +701,73 @@ func (c *SDKClient) Dispatch(ctx context.Context, msg protocol.Message) (protoco
 	}
 }
 
+// Enqueue writes a workflow row to the application system database. The
+// payload is a JSON value wrapped in the SDK's portable JSON envelope, so an
+// executor in another language can decode it without Relay re-encoding the
+// value. Source: dbos-transact-golang v1.7.0, dbos/workflow.go Enqueue and
+// dbos/serialization.go PortableWorkflowArgs.
+func (c *SDKClient) Enqueue(ctx context.Context, input EnqueueWorkflowInput) (EnqueueWorkflowResult, error) {
+	if err := input.Validate(); err != nil {
+		return EnqueueWorkflowResult{}, err
+	}
+	dbosCtx, ok := c.client.(dbos.Context)
+	if !ok {
+		return EnqueueWorkflowResult{}, fmt.Errorf("data-plane client does not expose a DBOS context")
+	}
+	cli := dbos.From(dbosCtx, ctx)
+
+	var opts []dbos.EnqueueOption
+	if input.WorkflowID != nil && *input.WorkflowID != "" {
+		opts = append(opts, dbos.WithEnqueueWorkflowID(*input.WorkflowID))
+	}
+	if input.ApplicationVersion != nil && *input.ApplicationVersion != "" {
+		opts = append(opts, dbos.WithEnqueueApplicationVersion(*input.ApplicationVersion))
+	}
+	if input.QueuePartitionKey != nil && *input.QueuePartitionKey != "" {
+		opts = append(opts, dbos.WithEnqueueQueuePartitionKey(*input.QueuePartitionKey))
+	}
+
+	args := dbos.PortableWorkflowArgs{
+		PositionalArgs: []any{input.Payload},
+	}
+	handle, err := cli.Enqueue(cli, input.QueueName, input.WorkflowName, args, opts...)
+	if err != nil {
+		return EnqueueWorkflowResult{}, fmt.Errorf("failed to enqueue workflow %s: %w", input.WorkflowName, err)
+	}
+	return EnqueueWorkflowResult{WorkflowID: handle.GetWorkflowID()}, nil
+}
+
+// Send writes a notification row for the destination workflow. The payload is
+// a JSON value stored with the portable JSON serializer, so a receiver in
+// another language can decode it. Source: dbos-transact-golang v1.7.0,
+// dbos/workflow.go Send and dbos/serialization.go WithPortableSend.
+func (c *SDKClient) Send(ctx context.Context, input SendWorkflowMessageInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	dbosCtx, ok := c.client.(dbos.Context)
+	if !ok {
+		return fmt.Errorf("data-plane client does not expose a DBOS context")
+	}
+	cli := dbos.From(dbosCtx, ctx)
+
+	opts := []dbos.SendOption{dbos.WithPortableSend()}
+	if input.IdempotencyKey != nil && *input.IdempotencyKey != "" {
+		opts = append(opts, dbos.WithIdempotencyKey(*input.IdempotencyKey))
+	}
+	if err := cli.Send(cli, input.DestinationID, input.Payload, input.Topic, opts...); err != nil {
+		return fmt.Errorf("failed to send message to workflow %s: %w", input.DestinationID, err)
+	}
+	return nil
+}
+
+// SetEvent is deliberately not implemented. The MIT Go client exposes
+// dbos.Context.SetEvent only to a running workflow, and the exported
+// dbos/internals seam does not export sysdb.WorkflowSetEventInput, the input
+// type its SystemDatabase.SetEvent method requires. Calling it would need
+// reflection or a second access path, neither of which is an acceptable
+// substitute for a published client operation.
+
 // internalQueueName is the SDK's internal recovery queue. Source:
 // dbos-transact-golang v1.7.0, dbos/internal/models (InternalQueueName).
 const internalQueueName = "_dbos_internal_queue"
